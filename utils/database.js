@@ -9,6 +9,7 @@ const pool = new Pool({
 // Create tables if they don't exist
 async function initDatabase() {
   const queries = `
+    -- Existing lead tables
     CREATE TABLE IF NOT EXISTS leads (
       user_id TEXT PRIMARY KEY,
       username TEXT,
@@ -30,20 +31,38 @@ async function initDatabase() {
       booked_at TIMESTAMP DEFAULT NOW()
     );
 
+    -- New tables for verification & ticket system
+    CREATE TABLE IF NOT EXISTS guild_config (
+      guild_id TEXT PRIMARY KEY,
+      verify_role_id TEXT,
+      verify_enabled BOOLEAN DEFAULT false,
+      ticket_category_id TEXT,
+      ticket_logs_channel_id TEXT,
+      staff_role_id TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS tickets (
+      id SERIAL PRIMARY KEY,
+      guild_id TEXT,
+      user_id TEXT,
+      channel_id TEXT,
+      status TEXT DEFAULT 'open',
+      created_at TIMESTAMP DEFAULT NOW(),
+      closed_at TIMESTAMP
+    );
+
+    -- Indexes
     CREATE INDEX IF NOT EXISTS idx_leads_last_interaction ON leads(last_interaction);
     CREATE INDEX IF NOT EXISTS idx_leads_last_followup ON leads(last_followup_sent);
+    CREATE INDEX IF NOT EXISTS idx_tickets_guild_id ON tickets(guild_id);
+    CREATE INDEX IF NOT EXISTS idx_tickets_user_id ON tickets(user_id);
+    CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
   `;
   await pool.query(queries);
   console.log('[DB] Tables ready');
 }
 
-// ------------------------- Lead Management -------------------------
-/**
- * Insert or update a lead record.
- * @param {string} userId - Discord user ID
- * @param {string} username - Discord username
- * @param {object} data - { selectedModel, step, tempData, lastInteraction }
- */
+// ------------------------- Lead Management (existing) -------------------------
 async function upsertLead(userId, username, data) {
   const { selectedModel, step, tempData, lastInteraction } = data;
   const query = `
@@ -66,11 +85,6 @@ async function upsertLead(userId, username, data) {
   ]);
 }
 
-/**
- * Get a lead's stored data.
- * @param {string} userId
- * @returns {Promise<object|null>} { selectedModel, step, tempData, lastInteraction }
- */
 async function getLead(userId) {
   const res = await pool.query('SELECT * FROM leads WHERE user_id = $1', [userId]);
   if (res.rows.length === 0) return null;
@@ -83,11 +97,6 @@ async function getLead(userId) {
   };
 }
 
-/**
- * Get all leads that haven't interacted in X hours and haven't received a follow‑up recently.
- * @param {number} hours - Stale threshold (default 48)
- * @returns {Promise<Array>} List of { user_id, selected_model }
- */
 async function getStaleLeads(hours = 48) {
   const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
   const query = `
@@ -100,33 +109,17 @@ async function getStaleLeads(hours = 48) {
   return res.rows;
 }
 
-/**
- * Update the timestamp when a follow‑up was sent to a lead.
- * @param {string} userId
- */
 async function updateLastFollowup(userId) {
   await pool.query('UPDATE leads SET last_followup_sent = NOW() WHERE user_id = $1', [userId]);
 }
 
-// ------------------------- Test Drive Bookings -------------------------
-/**
- * Save a test drive booking.
- * @param {string} userId
- * @param {string} username
- * @param {string} date - YYYY-MM-DD
- * @param {string} time - HH:MM
- * @param {string} locationType - 'showroom' or 'home'
- * @param {string} threadChannelId - Discord channel ID
- */
 async function saveTestDriveBooking(userId, username, date, time, locationType, threadChannelId) {
-  // Ensure lead exists first (with minimal info)
   await upsertLead(userId, username, {
     selectedModel: null,
     step: 'test_drive_booked',
     tempData: {},
     lastInteraction: new Date()
   });
-
   const query = `
     INSERT INTO test_drive_bookings (user_id, date, time, location_type, thread_channel_id)
     VALUES ($1, $2, $3, $4, $5)
@@ -134,10 +127,6 @@ async function saveTestDriveBooking(userId, username, date, time, locationType, 
   await pool.query(query, [userId, date, time, locationType, threadChannelId]);
 }
 
-/**
- * Get all bookings for a user.
- * @param {string} userId
- */
 async function getUserBookings(userId) {
   const res = await pool.query(
     'SELECT * FROM test_drive_bookings WHERE user_id = $1 ORDER BY booked_at DESC',
@@ -146,18 +135,92 @@ async function getUserBookings(userId) {
   return res.rows;
 }
 
-// ------------------------- Cleanup / Analytics (optional) -------------------------
-/**
- * Delete leads older than X days (GDPR / data retention).
- * @param {number} days
- */
 async function deleteOldLeads(days = 90) {
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   await pool.query('DELETE FROM leads WHERE last_interaction < $1', [cutoff]);
 }
 
+// ------------------------- Guild Configuration (new) -------------------------
+/**
+ * Get guild configuration (verify role, ticket category, etc.)
+ * @param {string} guildId
+ * @returns {Promise<object>}
+ */
+async function getGuildConfig(guildId) {
+  const res = await pool.query('SELECT * FROM guild_config WHERE guild_id = $1', [guildId]);
+  if (res.rows.length === 0) {
+    return { verify_enabled: false }; // default
+  }
+  return res.rows[0];
+}
+
+/**
+ * Set or update guild configuration.
+ * @param {string} guildId
+ * @param {object} config - Partial config object
+ */
+async function setGuildConfig(guildId, config) {
+  const {
+    verify_role_id,
+    verify_enabled,
+    ticket_category_id,
+    ticket_logs_channel_id,
+    staff_role_id,
+  } = config;
+
+  await pool.query(
+    `INSERT INTO guild_config (guild_id, verify_role_id, verify_enabled, ticket_category_id, ticket_logs_channel_id, staff_role_id)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (guild_id) DO UPDATE SET
+       verify_role_id = EXCLUDED.verify_role_id,
+       verify_enabled = EXCLUDED.verify_enabled,
+       ticket_category_id = EXCLUDED.ticket_category_id,
+       ticket_logs_channel_id = EXCLUDED.ticket_logs_channel_id,
+       staff_role_id = EXCLUDED.staff_role_id`,
+    [guildId, verify_role_id, verify_enabled, ticket_category_id, ticket_logs_channel_id, staff_role_id]
+  );
+}
+
+// ------------------------- Ticket System (new) -------------------------
+/**
+ * Save a new ticket.
+ * @param {string} guildId
+ * @param {string} userId
+ * @param {string} channelId
+ */
+async function saveTicket(guildId, userId, channelId) {
+  await pool.query(
+    'INSERT INTO tickets (guild_id, user_id, channel_id) VALUES ($1, $2, $3)',
+    [guildId, userId, channelId]
+  );
+}
+
+/**
+ * Close a ticket (update status and closed_at).
+ * @param {string} channelId
+ */
+async function closeTicket(channelId) {
+  await pool.query(
+    'UPDATE tickets SET status = $1, closed_at = NOW() WHERE channel_id = $2',
+    ['closed', channelId]
+  );
+}
+
+/**
+ * Get open tickets for a user.
+ * @param {string} userId
+ */
+async function getUserOpenTickets(userId) {
+  const res = await pool.query(
+    'SELECT * FROM tickets WHERE user_id = $1 AND status = $2',
+    [userId, 'open']
+  );
+  return res.rows;
+}
+
 module.exports = {
   initDatabase,
+  // lead management
   upsertLead,
   getLead,
   getStaleLeads,
@@ -165,4 +228,11 @@ module.exports = {
   saveTestDriveBooking,
   getUserBookings,
   deleteOldLeads,
+  // guild config
+  getGuildConfig,
+  setGuildConfig,
+  // ticket system
+  saveTicket,
+  closeTicket,
+  getUserOpenTickets,
 };
