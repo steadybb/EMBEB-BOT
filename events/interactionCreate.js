@@ -438,7 +438,14 @@ async function handleNotSure(interaction) {
   await interaction.update({ embeds: [embed], components: [row] });
 }
 
+// ---------- FIXED: add null check for model ----------
 async function startQuoteFlow(interaction, model) {
+  if (!model) {
+    return interaction.reply({
+      content: '❓ Please select a BYD model first by clicking one of the model buttons.',
+      ephemeral: true
+    });
+  }
   const userId = interaction.user.id;
   await updateUserState(userId, { step: 'awaiting_region' });
 
@@ -465,7 +472,14 @@ async function startQuoteFlow(interaction, model) {
   await interaction.reply({ embeds: [embed], components: [row], ephemeral: false });
 }
 
+// ---------- FIXED: add null check for model ----------
 async function startTestDriveFlow(interaction, model) {
+  if (!model) {
+    return interaction.reply({
+      content: '❓ Please select a BYD model first by clicking one of the model buttons.',
+      ephemeral: true
+    });
+  }
   const embed = new EmbedBuilder()
     .setTitle('🚗 Let’s get you behind the wheel – no pressure.')
     .setDescription(
@@ -560,13 +574,24 @@ async function confirmTestDrive(interaction, client, date, time, locationType) {
   logger.success(`🚗 Test drive booked: ${username} on ${date} at ${time} (${locationType})`);
 }
 
-// ------------------------- STUBS (recommendations, etc.) -------------------------
+// ---------- FIXED: add null check for model ----------
 async function sendBrochure(interaction, model) {
-  await interaction.reply({ content: `📄 Brochure for BYD ${model}: https://byd.com/brochure/${model.toLowerCase()}`, ephemeral: false });
+  if (!model) {
+    return interaction.reply({
+      content: '❓ Please select a BYD model first by clicking one of the model buttons (e.g., Seal, Dolphin).',
+      ephemeral: true
+    });
+  }
+  await interaction.reply({ 
+    content: `📄 Brochure for BYD ${model}: https://byd.com/brochure/${model.toLowerCase()}`, 
+    ephemeral: false 
+  });
 }
+
 async function transferToAdvisor(interaction) {
   await interaction.reply({ content: '💬 A sales advisor will be with you shortly. Creating a private thread...', ephemeral: false });
 }
+
 async function setTradeCondition(interaction, condition) {
   const userId = interaction.user.id;
   const state = await getUserState(userId, interaction.user.username);
@@ -574,6 +599,7 @@ async function setTradeCondition(interaction, condition) {
   await interaction.reply({ content: `✅ Your ${makeModel} with ${odometer} km is rated **${condition}**. Estimated trade‑in: R$ ${Math.floor(Math.random() * 50000 + 50000)}. A formal offer will be sent shortly.`, ephemeral: false });
   await updateUserState(userId, { step: null, tempData: {} });
 }
+
 async function recommendAffordability(interaction) { await interaction.reply({ content: '💸 I recommend the **BYD Dolphin** – great value and low running costs. Want a quote?' }); }
 async function recommendRange(interaction) { await interaction.reply({ content: '⚡ For max range, the **BYD Seal** is best. Highway or rural driving?' }); }
 async function recommendFamily(interaction) { await interaction.reply({ content: '👨‍👩‍👧‍👦 For family space, check out the **BYD ATTO 3** or **Tang**. Safety brochure?' }); }
