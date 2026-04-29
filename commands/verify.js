@@ -1,4 +1,3 @@
-// commands/verify.js
 const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const { getGuildConfig, setGuildConfig } = require('../utils/database');
 const { isAdmin } = require('../utils/permissions');
@@ -9,7 +8,7 @@ module.exports = {
     .setName('verify')
     .setDescription('🔐 BYD server verification (admin only)')
     .addSubcommand(sub => sub.setName('setup').setDescription('Post the verification button panel (branded)'))
-    .addSubcommand(sub => sub.setName('role').setDescription('Set the role to give upon verification').addRoleOption(opt => opt.setName('role').setDescription('Verified role').setRequired(true)))
+    .addSubcommand(sub => sub.setName('role').setDescription('Set the role to give upon verification').addRoleOption(opt => opt.setName('role').setDescription('The role to assign to verified users').setRequired(true)))
     .addSubcommand(sub => sub.setName('enable').setDescription('Enable verification system'))
     .addSubcommand(sub => sub.setName('disable').setDescription('Disable verification system')),
 
@@ -22,7 +21,6 @@ module.exports = {
     const sub = interaction.options.getSubcommand();
     const guildId = interaction.guildId;
 
-    // ---- Set verification role ----
     if (sub === 'role') {
       const role = interaction.options.getRole('role');
       const config = await getGuildConfig(guildId);
@@ -32,7 +30,6 @@ module.exports = {
       return interaction.reply({ content: `✅ Verification role set to ${role.name}`, ephemeral: true });
     }
 
-    // ---- Enable verification system ----
     if (sub === 'enable') {
       const config = await getGuildConfig(guildId);
       if (!config.verify_role_id) {
@@ -44,7 +41,6 @@ module.exports = {
       return interaction.reply({ content: '✅ Verification enabled. Use `/verify setup` to post the button panel.', ephemeral: true });
     }
 
-    // ---- Disable verification system ----
     if (sub === 'disable') {
       const config = await getGuildConfig(guildId);
       config.verify_enabled = false;
@@ -53,7 +49,6 @@ module.exports = {
       return interaction.reply({ content: '❌ Verification disabled. New members will not be prompted.', ephemeral: true });
     }
 
-    // ---- Setup the public verification panel ----
     if (sub === 'setup') {
       const config = await getGuildConfig(guildId);
       if (!config.verify_enabled) {
@@ -63,7 +58,6 @@ module.exports = {
         return interaction.reply({ content: '❌ Verification role not set. Use `/verify role` first.', ephemeral: true });
       }
 
-      // Build a more engaging, BYD‑branded verification embed
       const embed = new EmbedBuilder()
         .setTitle('⚡ Welcome to the BYD Community')
         .setDescription(
@@ -74,7 +68,7 @@ module.exports = {
           `• 🎫 Priority support tickets\n\n` +
           `✨ Verified members get **early access to limited‑edition BYD drops**.`
         )
-        .setColor('#00BFFF') // BYD electric blue
+        .setColor('#00BFFF')
         .setFooter({ text: '⚡ Blade Battery Technology • Trusted by 15,000+ drivers', iconURL: 'https://cdn.byd.com/bot/byd-logo.png' })
         .setTimestamp();
 
