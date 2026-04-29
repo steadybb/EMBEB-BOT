@@ -1,4 +1,5 @@
 // utils/bydData.js
+const logger = require('./logger');
 
 // Base prices (in Brazilian Reais, as used in your examples)
 const models = {
@@ -31,6 +32,8 @@ const TAX_RATE = 0.04; // 4% estimated tax
  * @returns {object} { total, monthlyFinance, incentivesSavings, breakdown }
  */
 function generateQuote(model, region, variant = 'Premium') {
+  logger.debug(`Generating quote for ${model} in ${region} (${variant})`);
+  
   const base = models[model]?.basePrice || 200000;
   const incentives = regionIncentives[region] || { savings: 0 };
   const tax = base * TAX_RATE;
@@ -38,6 +41,8 @@ function generateQuote(model, region, variant = 'Premium') {
   const monthlyFinance = Math.round((total * 0.8) / 60); // 80% financed over 60 months
   const monthlyLease = Math.round(monthlyFinance * 0.91); // ~9% lower for lease
 
+  logger.debug(`Quote result - Total: R$${total.toLocaleString()}, Monthly: R$${monthlyFinance.toLocaleString()}`);
+  
   return {
     total,
     monthlyFinance,
