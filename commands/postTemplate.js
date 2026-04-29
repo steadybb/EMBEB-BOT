@@ -1,69 +1,135 @@
 // commands/posttemplate.js
-const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const buildEmbed = require('../utils/buildEmbed');
 const bydTemplates = require('../modules/bydEmbeds');
 const { isAdmin } = require('../utils/permissions');
+const logger = require('../utils/logger');
 
-// Define which templates need buttons and their button rows
-function getButtonsForTemplate(templateKey) {
-  switch (templateKey) {
-    case 'welcome_greeting':
-    case 'model_prompt':
-      return [
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('welcome_model_dolphin').setLabel('🐬 Dolphin').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId('welcome_model_seal').setLabel('🦭 Seal').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId('welcome_model_atto3').setLabel('⚔️ ATTO 3').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId('welcome_model_han').setLabel('🏯 Han').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId('welcome_model_commercial').setLabel('🚌 Commercial').setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder().setCustomId('welcome_model_notsure').setLabel('❓ Not Sure').setStyle(ButtonStyle.Secondary)
-        )
-      ];
-    case 'quote_display':
-      return [
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('quote_book_testdrive').setLabel('🗓️ Book a Test Drive').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId('quote_chat_advisors').setLabel('💬 Chat With an Advisor').setStyle(ButtonStyle.Secondary)
-        )
-      ];
-    case 'follow_up_dormant':
-      return [
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('followup_brochure').setLabel('📄 Download Brochure').setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder().setCustomId('followup_quote').setLabel('💰 Get Your Quote').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId('followup_testdrive').setLabel('🗓️ Book a Test Drive').setStyle(ButtonStyle.Success)
-        )
-      ];
-    default:
-      return [];
+// Social proof snippets – rotate randomly to feel fresh
+const testimonials = [
+  "“I saved R$ 9,560/year on IPVA alone – the Seal pays for itself!” – Marina, SP",
+  "“The ATTO 3’s Blade Battery gave my family peace of mind.” – Carlos, RJ",
+  "“Best decision I ever made. The Dolphin is a beast in the city.” – Luisa, BH",
+  "“Home charger installed for free – BYD really cares.” – Ahmed, Dubai",
+  "“0‑100 km/h in 3.8s? The Han is a silent killer.” – VIP customer"
+];
+
+const urgentPhrases = [
+  "🔥 Limited stock alert!",
+  "⏳ Offer expires in {{expiry_hours}} hours – act fast!",
+  "🎁 Free charger installation ends soon.",
+  "📉 IPVA exemption may change next quarter – lock yours now."
+];
+
+/**
+ * Pick a random element from an array.
+ */
+function randomItem(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+/**
+ * Calculate expiry date from now + hours.
+ */
+function getExpiryDate(hours) {
+  const d = new Date();
+  d.setHours(d.getHours() + hours);
+  return d.toLocaleString();
+}
+
+function getButtonsForTemplate(templateKey, model) {
+  // Base buttons for model selection – stays the same
+  if (templateKey === 'welcome_greeting' || templateKey === 'model_prompt') {
+    return [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('welcome_model_dolphin').setLabel('🐬 Dolphin').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('welcome_model_seal').setLabel('🦭 Seal').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('welcome_model_atto3').setLabel('⚔️ ATTO 3').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('welcome_model_han').setLabel('🏯 Han').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('welcome_model_commercial').setLabel('🚌 Commercial').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('welcome_model_notsure').setLabel('❓ Not Sure').setStyle(ButtonStyle.Secondary)
+      )
+    ];
   }
+  if (templateKey === 'quote_display') {
+    return [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('quote_book_testdrive').setLabel('🗓️ Book a Test Drive').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('quote_chat_advisors').setLabel('💬 Chat With an Advisor').setStyle(ButtonStyle.Secondary)
+      )
+    ];
+  }
+  if (templateKey === 'follow_up_dormant') {
+    return [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('followup_brochure').setLabel('📄 Download Brochure').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('followup_quote').setLabel('💰 Get Your Quote').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('followup_testdrive').setLabel('🗓️ Book a Test Drive').setStyle(ButtonStyle.Success)
+      )
+    ];
+  }
+  return [];
 }
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('posttemplate')
-    .setDescription('Post a BYD marketing embed template (admin only)')
+    .setDescription('🚀 Send a high‑conversion BYD marketing embed (admin only)')
     .addStringOption(option =>
       option.setName('template')
-        .setDescription('Choose a template')
+        .setDescription('Choose the campaign template')
         .setRequired(true)
         .addChoices(...Object.keys(bydTemplates).map(key => ({ name: key, value: key })))
     )
     .addUserOption(option =>
       option.setName('mention')
-        .setDescription('Mention a user (optional)')
+        .setDescription('Target user (optional – they will be mentioned)')
         .setRequired(false)
     )
     .addBooleanOption(option =>
       option.setName('dm')
-        .setDescription('Send as DM instead of in channel')
+        .setDescription('Send directly to user’s DM instead of channel')
+        .setRequired(false)
+    )
+    // NEW: model override
+    .addStringOption(option =>
+      option.setName('model')
+        .setDescription('BYD model to feature (replaces {{model}})')
+        .setRequired(false)
+        .addChoices(
+          { name: 'Dolphin', value: 'Dolphin' },
+          { name: 'Seal', value: 'Seal' },
+          { name: 'ATTO 3', value: 'ATTO 3' },
+          { name: 'Han', value: 'Han' },
+          { name: 'Commercial', value: 'Commercial' }
+        )
+    )
+    // NEW: urgency – expiry hours
+    .addIntegerOption(option =>
+      option.setName('expiry_hours')
+        .setDescription('Create limited‑time urgency (e.g., 24 hours)')
+        .setRequired(false)
+        .setMinValue(1)
+        .setMaxValue(168)
+    )
+    // NEW: personalised discount / offer text
+    .addStringOption(option =>
+      option.setName('offer')
+        .setDescription('Extra offer (free charger, R$ discount, etc.)')
+        .setRequired(false)
+    )
+    // NEW: personal note from admin
+    .addStringOption(option =>
+      option.setName('note')
+        .setDescription('A personal message to the user (appears above embed)')
         .setRequired(false)
     ),
 
   async execute(interaction) {
     if (!isAdmin(interaction.member)) {
+      logger.warn(`⛔ Non‑admin ${interaction.user.tag} tried /posttemplate`);
       return interaction.reply({
-        content: '❌ You must be an admin to use this command.',
+        content: '❌ This command is for BYD marketing admins only.',
         ephemeral: true
       });
     }
@@ -73,53 +139,88 @@ module.exports = {
     const key = interaction.options.getString('template');
     const mention = interaction.options.getUser('mention');
     const sendDM = interaction.options.getBoolean('dm') ?? false;
-    const template = bydTemplates[key];
+    const modelOverride = interaction.options.getString('model') || 'Seal';
+    const expiryHours = interaction.options.getInteger('expiry_hours');
+    const customOffer = interaction.options.getString('offer');
+    const personalNote = interaction.options.getString('note');
 
+    const template = bydTemplates[key];
     if (!template) {
       return interaction.editReply({ content: '❌ Template not found.' });
     }
 
-    // Replace placeholders like {{username}} with actual values
+    // Build replacement variables (all can be used as {{variable}} in the embed)
+    const targetUser = mention || interaction.user;
+    const expiryDate = expiryHours ? getExpiryDate(expiryHours) : null;
+
     const replacements = {
-      username: mention ? mention.username : interaction.user.username,
-      model: 'Seal',
+      username: targetUser.username,
+      model: modelOverride,
+      // If expiry is set, we include it, else empty string
+      expiry_date: expiryDate || 'soon',
+      expiry_hours: expiryHours?.toString() || '48',
+      offer_text: customOffer || '🎁 Free home charger installation (limited units)',
+      testimonial: randomItem(testimonials),
+      urgency_phrase: expiryHours ? randomItem(urgentPhrases).replace('{{expiry_hours}}', expiryHours.toString()) : ''
     };
 
-    const built = buildEmbed(template.embed, {
-      user: mention || interaction.user,
+    // Build the core embed using your existing builder (supports placeholders)
+    let builtEmbed = buildEmbed(template.embed, {
+      user: targetUser,
       guild: interaction.guild,
       channel: interaction.channel,
-      replacements,
+      replacements
     });
 
-    const components = getButtonsForTemplate(key);
+    // If the template is quote_display or follow_up, we can optionally append a social proof footer
+    if (key === 'quote_display' || key === 'follow_up_dormant') {
+      const footerText = `⭐ Trusted by 15,000+ EV drivers • ${randomItem(testimonials).substring(0, 80)}`;
+      builtEmbed.setFooter({ text: footerText, iconURL: template.embed.footer?.iconURL });
+    }
+
+    // Attach buttons
+    const components = getButtonsForTemplate(key, modelOverride);
+
+    // Prepare final message content: optional personal note + mention
+    let content = '';
+    if (personalNote) content += `📝 *${personalNote}*\n\n`;
+    if (mention) content += `${mention} `;
+
+    // If expiry is set, add a bold urgency banner as plain text above embed
+    if (expiryHours) {
+      content += `⏰ **LIMITED TIME — expires in ${expiryHours} hours** ⏰\n\n`;
+    }
 
     const payload = {
-      embeds: [built],
-      components: components,
-      content: mention ? `${mention}` : null,
+      content: content.trim() || null,
+      embeds: [builtEmbed],
+      components: components
     };
 
     try {
       if (sendDM && mention) {
         await mention.send(payload);
         await interaction.editReply({
-          content: `✅ ${key} embed sent to ${mention.tag} via DM`
+          content: `✅ **${key}** campaign sent to **${mention.tag}** via DM ${expiryHours ? `(⏳ ${expiryHours}h urgency active)` : ''}`
         });
+        logger.success(`📨 DM campaign "${key}" → ${mention.tag} (model: ${modelOverride})`);
       } else {
         const message = await interaction.channel.send(payload);
         await interaction.editReply({
-          content: `✅ ${key} embed sent to ${interaction.channel}`
+          content: `✅ **${key}** campaign posted in ${interaction.channel} ${expiryHours ? `(⏳ ${expiryHours}h expiry)` : ''}`
         });
+        logger.success(`📢 Channel campaign "${key}" → #${interaction.channel.name}`);
 
-        const expiryMinutes = template.expiryMinutes || 10;
+        // Auto‑delete after expiry if set, else use template expiry
+        const autoDeleteMinutes = expiryHours ? expiryHours * 60 : (template.expiryMinutes || 10);
         setTimeout(() => {
           message.delete().catch(() => {});
-        }, expiryMinutes * 60 * 1000);
+          logger.debug(`🗑️ Auto‑deleted campaign "${key}" after ${autoDeleteMinutes} minutes`);
+        }, autoDeleteMinutes * 60 * 1000);
       }
     } catch (err) {
-      console.error(err);
-      await interaction.editReply({ content: '❌ Failed to send embed.' });
+      logger.error(`❌ Campaign "${key}" failed:`, err);
+      await interaction.editReply({ content: '❌ Failed to send campaign. Check permissions and try again.' });
     }
   }
 };
