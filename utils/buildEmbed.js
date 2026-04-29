@@ -1,3 +1,4 @@
+// utils/buildEmbed.js
 const { EmbedBuilder } = require('discord.js');
 
 const namedColors = {
@@ -13,19 +14,67 @@ const namedColors = {
   white: 0xFFFFFF
 };
 
+/**
+ * Replace {{placeholders}} in a string with values from context.
+ * @param {string} str - Input string
+ * @param {object} vars - Key-value pairs for replacement
+ * @returns {string}
+ */
+function replacePlaceholders(str, vars) {
+  if (!str || typeof str !== 'string') return str;
+  let result = str;
+  for (const [key, value] of Object.entries(vars)) {
+    const regex = new RegExp(`{{${key}}}`, 'g');
+    result = result.replace(regex, value);
+  }
+  return result;
+}
+
 module.exports = function buildEmbed(embedData = {}, context = {}) {
   const embed = new EmbedBuilder();
 
-  if (embedData.title) embed.setTitle(embedData.title);
-  if (embedData.description) embed.setDescription(embedData.description);
-  if (embedData.footer) embed.setFooter(embedData.footer);
-  if (embedData.timestamp) embed.setTimestamp(new Date(embedData.timestamp));
-  if (embedData.image?.url) embed.setImage(embedData.image.url);
-  if (embedData.thumbnail?.url) embed.setThumbnail(embedData.thumbnail.url);
-  if (embedData.author) embed.setAuthor(embedData.author);
-  if (embedData.fields) embed.addFields(embedData.fields);
+  // Prepare replacement variables
+  const { user, guild, channel, replacements = {} } = context;
+  const vars = {
+    username: user?.username || 'there',
+    guildname: guild?.name || 'this server',
+    channelname: channel?.name || 'this channel',
+    ...replacements,
+  };
 
-  // ✅ Enhanced color handling
+  // Helper to replace in any string field
+  const replace = (str) => replacePlaceholders(str, vars);
+
+  if (embedData.title) embed.setTitle(replace(embedData.title));
+  if (embedData.description) embed.setDescription(replace(embedData.description));
+  
+  if (embedData.footer) {
+    const footerText = replace(embedData.footer.text);
+    embed.setFooter({ text: footerText, iconURL: embedData.footer.iconURL });
+  }
+  
+  if (embedData.timestamp) embed.setTimestamp(new Date(embedData.timestamp));
+  if (embedData.image?.url) embed.setImage(replace(embedData.image.url));
+  if (embedData.thumbnail?.url) embed.setThumbnail(replace(embedData.thumbnail.url));
+  
+  if (embedData.author) {
+    embed.setAuthor({
+      name: replace(embedData.author.name),
+      iconURL: embedData.author.iconURL ? replace(embedData.author.iconURL) : undefined,
+      url: embedData.author.url,
+    });
+  }
+  
+  if (embedData.fields) {
+    const replacedFields = embedData.fields.map(field => ({
+      name: replace(field.name),
+      value: replace(field.value),
+      inline: field.inline || false,
+    }));
+    embed.addFields(replacedFields);
+  }
+
+  // Enhanced color handling (unchanged from original)
   if (embedData.color !== undefined) {
     let colorValue = null;
 
@@ -36,7 +85,6 @@ module.exports = function buildEmbed(embedData = {}, context = {}) {
         colorValue = namedColors[embedData.color.toLowerCase()];
       }
     } else if (Array.isArray(embedData.color) && embedData.color.length === 3) {
-      // RGB array to int
       const [r, g, b] = embedData.color;
       colorValue = (r << 16) + (g << 8) + b;
     } else if (typeof embedData.color === 'number') {
@@ -46,7 +94,7 @@ module.exports = function buildEmbed(embedData = {}, context = {}) {
     if (!isNaN(colorValue)) {
       embed.setColor(colorValue);
     } else {
-      embed.setColor(0x7289DA); // Default fallback (Discord blurple)
+      embed.setColor(0x7289DA);
     }
   }
 
