@@ -1,5 +1,6 @@
 // utils/buildEmbed.js
 const { EmbedBuilder } = require('discord.js');
+const logger = require('./logger');
 
 const namedColors = {
   red: 0xE74C3C,
@@ -41,6 +42,8 @@ module.exports = function buildEmbed(embedData = {}, context = {}) {
     channelname: channel?.name || 'this channel',
     ...replacements,
   };
+
+  logger.debug(`Building embed with vars: ${Object.keys(vars).join(', ')}`);
 
   // Helper to replace in any string field
   const replace = (str) => replacePlaceholders(str, vars);
@@ -98,5 +101,6 @@ module.exports = function buildEmbed(embedData = {}, context = {}) {
     }
   }
 
+  logger.debug(`Embed built: title="${embedData.title}", color=${embedData.color}`);
   return embed;
 };
