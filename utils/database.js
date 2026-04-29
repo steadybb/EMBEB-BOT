@@ -1,5 +1,6 @@
 // utils/database.js
 const { Pool } = require('pg');
+const logger = require('./logger');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -59,10 +60,10 @@ async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
   `;
   await pool.query(queries);
-  console.log('[DB] Tables ready');
+  logger.db('Tables ready (leads, test_drive_bookings, guild_config, tickets)');
 }
 
-// ------------------------- Lead Management (existing) -------------------------
+// ------------------------- Lead Management -------------------------
 async function upsertLead(userId, username, data) {
   const { selectedModel, step, tempData, lastInteraction } = data;
   const query = `
@@ -140,12 +141,7 @@ async function deleteOldLeads(days = 90) {
   await pool.query('DELETE FROM leads WHERE last_interaction < $1', [cutoff]);
 }
 
-// ------------------------- Guild Configuration (new) -------------------------
-/**
- * Get guild configuration (verify role, ticket category, etc.)
- * @param {string} guildId
- * @returns {Promise<object>}
- */
+// ------------------------- Guild Configuration -------------------------
 async function getGuildConfig(guildId) {
   const res = await pool.query('SELECT * FROM guild_config WHERE guild_id = $1', [guildId]);
   if (res.rows.length === 0) {
@@ -154,11 +150,6 @@ async function getGuildConfig(guildId) {
   return res.rows[0];
 }
 
-/**
- * Set or update guild configuration.
- * @param {string} guildId
- * @param {object} config - Partial config object
- */
 async function setGuildConfig(guildId, config) {
   const {
     verify_role_id,
@@ -181,13 +172,7 @@ async function setGuildConfig(guildId, config) {
   );
 }
 
-// ------------------------- Ticket System (new) -------------------------
-/**
- * Save a new ticket.
- * @param {string} guildId
- * @param {string} userId
- * @param {string} channelId
- */
+// ------------------------- Ticket System -------------------------
 async function saveTicket(guildId, userId, channelId) {
   await pool.query(
     'INSERT INTO tickets (guild_id, user_id, channel_id) VALUES ($1, $2, $3)',
@@ -195,10 +180,6 @@ async function saveTicket(guildId, userId, channelId) {
   );
 }
 
-/**
- * Close a ticket (update status and closed_at).
- * @param {string} channelId
- */
 async function closeTicket(channelId) {
   await pool.query(
     'UPDATE tickets SET status = $1, closed_at = NOW() WHERE channel_id = $2',
@@ -206,10 +187,6 @@ async function closeTicket(channelId) {
   );
 }
 
-/**
- * Get open tickets for a user.
- * @param {string} userId
- */
 async function getUserOpenTickets(userId) {
   const res = await pool.query(
     'SELECT * FROM tickets WHERE user_id = $1 AND status = $2',
