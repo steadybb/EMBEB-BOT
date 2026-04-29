@@ -22,7 +22,7 @@ module.exports = {
     .addSubcommand(sub => sub.setName('setup').setDescription('Post the ticket creation panel (with branded messaging)'))
     .addSubcommand(sub => sub.setName('category').setDescription('Set the category for tickets').addChannelOption(opt => opt.setName('category').setDescription('Category channel').setRequired(true)))
     .addSubcommand(sub => sub.setName('logs').setDescription('Set logs channel').addChannelOption(opt => opt.setName('channel').setDescription('Text channel for logs').setRequired(true)))
-    .addSubcommand(sub => sub.setName('staffrole').setDescription('Set staff role that can manage tickets').addRoleOption(opt => opt.setName('role').setRequired(true))),
+    .addSubcommand(sub => sub.setName('staffrole').setDescription('Set staff role that can manage tickets').addRoleOption(opt => opt.setName('role').setDescription('The staff role that can manage tickets').setRequired(true))),
 
   async execute(interaction) {
     if (!isAdmin(interaction.member)) {
@@ -83,7 +83,7 @@ module.exports = {
           `✨ *“**${getRandomTestimonial()}**”*\n\n` +
           `🔒 Your conversation is encrypted and only visible to you and our staff.`
         )
-        .setColor('#00BFFF') // BYD electric blue
+        .setColor('#00BFFF')
         .setFooter({ text: '⚡ BYD Blade Battery | Trusted by 15,000+ EV drivers', iconURL: 'https://cdn.byd.com/bot/byd-logo.png' })
         .setTimestamp();
 
