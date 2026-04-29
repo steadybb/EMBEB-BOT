@@ -3,6 +3,10 @@ const { Client, GatewayIntentBits, Collection, Partials } = require('discord.js'
 const fs = require('fs');
 const config = require('./config');
 
+// Import database initializer and follow‑up scheduler
+const { initDatabase } = require('./utils/database');
+const startFollowUpScheduler = require('./schedulers/followUp');
+
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.DirectMessages],
   partials: [Partials.Channel] // Needed for DMs
@@ -25,7 +29,23 @@ for (const file of eventFiles) {
 
 client.login(config.token);
 
-client.once('ready', () => {
+client.once('ready', async () => {
   console.log('Logged in as', client.user.tag);
   client.guilds.cache.forEach(g => console.log(`${g.name} (${g.id})`));
+
+  // Initialize PostgreSQL tables
+  try {
+    await initDatabase();
+    console.log('[DB] Database ready');
+  } catch (err) {
+    console.error('[DB] Failed to initialize database:', err);
+  }
+
+  // Start the 48‑hour dormant follow‑up scheduler (runs every hour)
+  try {
+    startFollowUpScheduler(client);
+    console.log('[Scheduler] Follow‑up scheduler started');
+  } catch (err) {
+    console.error('[Scheduler] Failed to start follow‑up scheduler:', err);
+  }
 });
