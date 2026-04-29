@@ -14,7 +14,14 @@ const bydEmbeds = require('../modules/bydEmbeds');
 const { getUserState, updateUserState } = require('../utils/stateManager');
 const { generateQuote, models, regionIncentives } = require('../utils/bydData');
 const { getCalendarPicker, getTimePicker } = require('../utils/calendar');
-const { saveTestDriveBooking, upsertLead } = require('../utils/database');
+const { 
+  saveTestDriveBooking, 
+  upsertLead,
+  getGuildConfig,
+  saveTicket,
+  closeTicket,
+  getUserOpenTickets 
+} = require('../utils/database');
 
 module.exports = (client) => {
   client.on('interactionCreate', async (interaction) => {
@@ -59,6 +66,7 @@ async function handleButton(interaction, client) {
   const userId = user.id;
   let state = await getUserState(userId, user.username);
 
+  // BYD Lead Capture buttons
   if (customId === 'welcome_model_dolphin') return selectModel(interaction, 'Dolphin');
   if (customId === 'welcome_model_seal') return selectModel(interaction, 'Seal');
   if (customId === 'welcome_model_atto3') return selectModel(interaction, 'ATTO 3');
@@ -91,6 +99,11 @@ async function handleButton(interaction, client) {
   if (customId === 'need_family') return recommendFamily(interaction);
   if (customId === 'need_city') return recommendCity(interaction);
   if (customId === 'need_fleet') return handleFleet(interaction);
+
+  // ─── Verification & Ticket System ─────────────────────────────
+  if (customId === 'verify_button') return handleVerify(interaction);
+  if (customId === 'create_ticket') return createTicket(interaction, client);
+  if (customId === 'close_ticket') return closeTicketHandler(interaction, client);
 
   await interaction.reply({ content: '❓ Unknown option. Use the buttons provided.', ephemeral: true });
 }
@@ -215,7 +228,127 @@ async function handleModal(interaction) {
   await interaction.reply({ content: '❓ Unknown form.', ephemeral: true });
 }
 
-// ------------------------- Core Business Functions -------------------------
+// ------------------------- Verification & Ticket Functions -------------------------
+async function handleVerify(interaction) {
+  const guildId = interaction.guildId;
+  const config = await getGuildConfig(guildId);
+  
+  if (!config.verify_enabled) {
+    return interaction.reply({ content: '❌ Verification is disabled on this server.', ephemeral: true });
+  }
+  
+  const roleId = config.verify_role_id;
+  if (!roleId) {
+    return interaction.reply({ content: '❌ Verification role not configured. Contact an admin.', ephemeral: true });
+  }
+  
+  const member = interaction.member;
+  if (member.roles.cache.has(roleId)) {
+    return interaction.reply({ content: '✅ You are already verified!', ephemeral: true });
+  }
+  
+  try {
+    await member.roles.add(roleId);
+    await interaction.reply({ content: '✅ You have been verified! Welcome to the server!', ephemeral: true });
+    
+    // Optional: log to configured channel
+    if (config.ticket_logs_channel_id) {
+      const logChannel = interaction.guild.channels.cache.get(config.ticket_logs_channel_id);
+      if (logChannel) {
+        logChannel.send(`✅ ${member.user.tag} was verified.`);
+      }
+    }
+  } catch (err) {
+    console.error('Verification error:', err);
+    await interaction.reply({ content: '❌ Failed to assign role. Please contact an admin.', ephemeral: true });
+  }
+}
+
+async function createTicket(interaction, client) {
+  const guild = interaction.guild;
+  const config = await getGuildConfig(guild.id);
+  
+  if (!config.ticket_category_id || !config.staff_role_id) {
+    return interaction.reply({ content: '❌ Ticket system not fully configured. Contact an admin.', ephemeral: true });
+  }
+  
+  // Optional: prevent user from having multiple open tickets
+  const openTickets = await getUserOpenTickets(interaction.user.id);
+  if (openTickets.length >= 1) {
+    return interaction.reply({ content: '❌ You already have an open ticket. Please close it before creating a new one.', ephemeral: true });
+  }
+  
+  const category = guild.channels.cache.get(config.ticket_category_id);
+  if (!category) {
+    return interaction.reply({ content: '❌ Ticket category not found. Contact an admin.', ephemeral: true });
+  }
+  
+  const ticketName = `ticket-${interaction.user.username}-${Date.now()}`;
+  const ticketChannel = await guild.channels.create({
+    name: ticketName,
+    type: 0,
+    parent: category.id,
+    permissionOverwrites: [
+      { id: guild.id, deny: ['ViewChannel'] },
+      { id: interaction.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
+      { id: config.staff_role_id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
+      { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
+    ],
+  });
+  
+  await saveTicket(guild.id, interaction.user.id, ticketChannel.id);
+  
+  const embed = new EmbedBuilder()
+    .setTitle('🎫 Support Ticket')
+    .setDescription(`Hello ${interaction.user}, a staff member will assist you shortly.\nTo close this ticket, use the button below.`)
+    .setColor('#3498DB');
+  const closeButton = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Close Ticket').setStyle(ButtonStyle.Danger)
+  );
+  await ticketChannel.send({ content: `<@&${config.staff_role_id}>`, embeds: [embed], components: [closeButton] });
+  await interaction.reply({ content: `✅ Ticket created: ${ticketChannel}`, ephemeral: true });
+  
+  // Log to logs channel if set
+  if (config.ticket_logs_channel_id) {
+    const logChannel = guild.channels.cache.get(config.ticket_logs_channel_id);
+    if (logChannel) {
+      logChannel.send(`🎫 Ticket created by ${interaction.user.tag} -> ${ticketChannel}`);
+    }
+  }
+}
+
+async function closeTicketHandler(interaction, client) {
+  const channel = interaction.channel;
+  if (!channel.name.startsWith('ticket-')) {
+    return interaction.reply({ content: '❌ This command can only be used inside a ticket channel.', ephemeral: true });
+  }
+  
+  const config = await getGuildConfig(interaction.guildId);
+  const staffRoleId = config.staff_role_id;
+  const isStaff = staffRoleId && interaction.member.roles.cache.has(staffRoleId);
+  const isAdmin = interaction.member.permissions.has('Administrator');
+  
+  if (!isStaff && !isAdmin) {
+    return interaction.reply({ content: '❌ Only staff members or admins can close tickets.', ephemeral: true });
+  }
+  
+  await interaction.reply('🔒 Closing ticket in 5 seconds...');
+  
+  setTimeout(async () => {
+    try {
+      await closeTicket(channel.id);
+      if (config.ticket_logs_channel_id) {
+        const logChannel = interaction.guild.channels.cache.get(config.ticket_logs_channel_id);
+        if (logChannel) logChannel.send(`🔒 Ticket closed: ${channel.name}`);
+      }
+      await channel.delete();
+    } catch (err) {
+      console.error('Error closing ticket:', err);
+    }
+  }, 5000);
+}
+
+// ------------------------- Core Business Functions (unchanged) -------------------------
 async function selectModel(interaction, model) {
   const userId = interaction.user.id;
   await updateUserState(userId, { selectedModel: model, step: 'model_selected' });
@@ -312,12 +445,11 @@ async function confirmTestDrive(interaction, client, date, time, locationType) {
   const member = await guild.members.fetch(userId);
   const username = member.user.username;
 
-  // Create private text channel inside "Sales Threads" category
   let category = guild.channels.cache.find(c => c.name === 'Sales Threads' && c.type === 4);
   if (!category) {
     category = await guild.channels.create({
       name: 'Sales Threads',
-      type: 4, // Category
+      type: 4,
     });
   }
 
@@ -326,7 +458,7 @@ async function confirmTestDrive(interaction, client, date, time, locationType) {
 
   const threadChannel = await guild.channels.create({
     name: channelName,
-    type: 0, // Text channel
+    type: 0,
     parent: category.id,
     permissionOverwrites: [
       { id: guild.id, deny: ['ViewChannel'] },
@@ -336,7 +468,6 @@ async function confirmTestDrive(interaction, client, date, time, locationType) {
     ],
   });
 
-  // Send confirmation embed
   const embedTemplate = bydEmbeds.test_drive_confirmed.embed;
   const embed = new EmbedBuilder()
     .setTitle(embedTemplate.title)
@@ -357,9 +488,7 @@ async function confirmTestDrive(interaction, client, date, time, locationType) {
     await threadChannel.send(`🔔 <@&${advisorRole.id}> A new test drive request requires confirmation.`);
   }
 
-  // Save to database
   await saveTestDriveBooking(userId, username, date, time, locationType, threadChannel.id);
-  // Update lead state
   await updateUserState(userId, { step: 'test_drive_booked', tempData: {} });
 }
 
