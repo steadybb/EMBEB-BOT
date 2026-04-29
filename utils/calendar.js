@@ -1,11 +1,14 @@
 // utils/calendar.js
 const { StringSelectMenuBuilder, ActionRowBuilder, EmbedBuilder } = require('discord.js');
+const logger = require('./logger');
 
 /**
  * Generate a select menu with dates for the next 7 days.
  * @returns {Object} { embed, row }
  */
 function getCalendarPicker() {
+  logger.debug('Calendar picker generated');
+
   const dates = [];
   const today = new Date();
 
@@ -37,6 +40,8 @@ function getCalendarPicker() {
  * @returns {Object} { embed, row }
  */
 function getTimePicker(date) {
+  logger.debug(`Time picker generated for ${date}`);
+
   const slots = ['10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
   const selectMenu = new StringSelectMenuBuilder()
     .setCustomId(`calendar_time_select_${date}`)
