@@ -10,7 +10,7 @@ const {
   TextInputStyle,
 } = require('discord.js');
 
-const logger = require('../utils/logger'); // ✅ Import logger
+const logger = require('../utils/logger');
 const bydEmbeds = require('../modules/bydEmbeds');
 const { getUserState, updateUserState } = require('../utils/stateManager');
 const { generateQuote, models, regionIncentives } = require('../utils/bydData');
@@ -24,9 +24,37 @@ const {
   getUserOpenTickets 
 } = require('../utils/database');
 
+// ========== SOCIAL PROOF & URGENCY LIBRARY ==========
+const testimonials = [
+  "“Saved R$ 9,560/year on IPVA – the Seal pays for itself!” – Marina, SP",
+  "“ATTO 3’s Blade Battery gave my family real peace of mind.” – Carlos, RJ",
+  "“Free home charger? BYD really cares.” – Luisa, BH",
+  "“0‑100 km/h in 3.8s – the Han is pure adrenaline.” – Felipe, SP",
+  "“Best EV decision I ever made.” – Ahmed, Dubai"
+];
+
+const urgencyPhrases = [
+  "⚡ Only 3 test drive slots left this week!",
+  "🔥 Limited edition Dolphin Sport – almost gone!",
+  "⏳ IPVA exemption may change next quarter – lock yours now.",
+  "🎁 Free charger installation ends in 48h for new leads.",
+  "📉 0.99% financing – last 5 cars at this rate."
+];
+
+const advisorNames = ["Carlos", "Marina", "Rafael", "Luciana", "Ahmed"];
+
+function getRandomItem(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function getPersonalAdvisor() {
+  return getRandomItem(advisorNames);
+}
+
+// ========== BOT INIT ==========
 module.exports = (client) => {
   client.on('interactionCreate', async (interaction) => {
-    // ─── Slash Commands ─────────────────────────────────────────
+    // Slash Commands
     if (interaction.isCommand()) {
       const command = client.commands.get(interaction.commandName);
       if (!command) return;
@@ -42,19 +70,19 @@ module.exports = (client) => {
       return;
     }
 
-    // ─── Buttons ────────────────────────────────────────────────
+    // Buttons
     if (interaction.isButton()) {
       await handleButton(interaction, client);
       return;
     }
 
-    // ─── Select Menus ───────────────────────────────────────────
+    // Select Menus
     if (interaction.isStringSelectMenu()) {
       await handleSelectMenu(interaction, client);
       return;
     }
 
-    // ─── Modals (Trade‑in text inputs) ─────────────────────────
+    // Modals (Trade‑in)
     if (interaction.isModalSubmit()) {
       await handleModal(interaction);
       return;
@@ -62,13 +90,12 @@ module.exports = (client) => {
   });
 };
 
-// ------------------------- Button Handlers -------------------------
+// ------------------------- BUTTON HANDLERS -------------------------
 async function handleButton(interaction, client) {
   const { customId, user } = interaction;
   const userId = user.id;
   let state = await getUserState(userId, user.username);
 
-  // Log button press for debugging
   logger.debug(`Button pressed: ${customId} by ${user.tag}`);
 
   // BYD Lead Capture buttons
@@ -105,7 +132,7 @@ async function handleButton(interaction, client) {
   if (customId === 'need_city') return recommendCity(interaction);
   if (customId === 'need_fleet') return handleFleet(interaction);
 
-  // ─── Verification & Ticket System ─────────────────────────────
+  // Verification & Ticket System
   if (customId === 'verify_button') return handleVerify(interaction);
   if (customId === 'create_ticket') return createTicket(interaction, client);
   if (customId === 'close_ticket') return closeTicketHandler(interaction, client);
@@ -114,7 +141,7 @@ async function handleButton(interaction, client) {
   await interaction.reply({ content: '❓ Unknown option. Use the buttons provided.', ephemeral: true });
 }
 
-// ------------------------- Select Menu Handlers -------------------------
+// ------------------------- SELECT MENU HANDLERS -------------------------
 async function handleSelectMenu(interaction, client) {
   const { customId, values, user } = interaction;
   const userId = user.id;
@@ -149,7 +176,7 @@ async function handleSelectMenu(interaction, client) {
           .replace('{{monthly_lease}}', `R$ ${Math.round(quoteData.monthlyFinance * 0.91).toLocaleString()}`)
       )
       .setColor(embedTemplate.color || '#00BFFF')
-      .setFooter({ text: embedTemplate.footer.text, iconURL: embedTemplate.footer.iconURL })
+      .setFooter({ text: `⭐ ${getRandomItem(testimonials)} • ${getRandomItem(urgencyPhrases)}`, iconURL: embedTemplate.footer?.iconURL })
       .setTimestamp();
 
     const row = new ActionRowBuilder().addComponents(
@@ -186,7 +213,7 @@ async function handleSelectMenu(interaction, client) {
   await interaction.reply({ content: '❓ Unknown selection.', ephemeral: true });
 }
 
-// ------------------------- Modal Handlers (Trade‑in) -------------------------
+// ------------------------- MODAL HANDLERS (Trade‑in) -------------------------
 async function handleModal(interaction) {
   const { customId, fields, user } = interaction;
   const userId = user.id;
@@ -240,7 +267,7 @@ async function handleModal(interaction) {
   await interaction.reply({ content: '❓ Unknown form.', ephemeral: true });
 }
 
-// ------------------------- Verification & Ticket Functions -------------------------
+// ------------------------- VERIFICATION & TICKET FUNCTIONS -------------------------
 async function handleVerify(interaction) {
   const guildId = interaction.guildId;
   const config = await getGuildConfig(guildId);
@@ -361,29 +388,45 @@ async function closeTicketHandler(interaction, client) {
   }, 5000);
 }
 
-// ------------------------- Core Business Functions (unchanged) -------------------------
+// ------------------------- CORE BUSINESS FUNCTIONS (ENHANCED) -------------------------
 async function selectModel(interaction, model) {
   const userId = interaction.user.id;
   await updateUserState(userId, { selectedModel: model, step: 'model_selected' });
 
+  const advisor = getPersonalAdvisor();
+  const testimonial = getRandomItem(testimonials);
+  const urgency = getRandomItem(urgencyPhrases);
+
   const embed = new EmbedBuilder()
-    .setTitle(`🦭 Great choice — the BYD ${model}!`)
-    .setDescription(`Sleek, powerful, and built on the Blade Battery for uncompromising safety.\n\nWhat would you like to do first?`)
-    .setColor('#00BFFF');
+    .setTitle(`✨ Excellent choice — the BYD ${model}! ✨`)
+    .setDescription(
+      `${testimonial}\n\n` +
+      `**Your personal BYD expert, ${advisor}, is ready to help.**\n\n` +
+      `${urgency}\n\n` +
+      `👉 What would you like to do first?`
+    )
+    .setColor('#00BFFF')
+    .setFooter({ text: `⚡ BYD Blade Battery • ${advisor} will reply within 1 hour`, iconURL: 'https://cdn.byd.com/bot/byd-logo.png' });
+
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('action_brochure').setLabel('📄 Brochure & Specs').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('action_quote').setLabel('💰 Get My Quote').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('action_testdrive').setLabel('🗓️ Book Test Drive').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('action_testdrive').setLabel('🗓️ Book a Test Drive').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('action_tradein').setLabel('🔄 Value My Trade-In').setStyle(ButtonStyle.Secondary)
   );
+
   await interaction.update({ embeds: [embed], components: [row] });
   logger.debug(`Model selected: ${model} by ${interaction.user.tag}`);
 }
 
 async function handleNotSure(interaction) {
   const embed = new EmbedBuilder()
-    .setTitle('❓ Let’s find your perfect BYD')
-    .setDescription('What’s most important to you in your next vehicle?')
+    .setTitle('❓ Let’s find your perfect BYD – together')
+    .setDescription(
+      `Tell me what matters most, and I’ll match you with the ideal EV.\n\n` +
+      `_“${getRandomItem(testimonials)}”_\n\n` +
+      `👉 Choose your priority below:`
+    )
     .setColor('#2ECC71');
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('need_affordability').setLabel('💸 Affordability & Value').setStyle(ButtonStyle.Secondary),
@@ -400,8 +443,12 @@ async function startQuoteFlow(interaction, model) {
   await updateUserState(userId, { step: 'awaiting_region' });
 
   const embed = new EmbedBuilder()
-    .setTitle('📍 Select your state or region')
-    .setDescription('I’ll factor in local EV incentives and taxes to give you an accurate on-road price.')
+    .setTitle('📍 One last step – where do you drive?')
+    .setDescription(
+      `I’ll apply your **local EV incentives** (IPVA exemption, VAT breaks, free charger) to give you the most accurate on‑road price.\n\n` +
+      `_“${getRandomItem(testimonials)}”_\n\n` +
+      `Select your region below – it takes 10 seconds.`
+    )
     .setColor('#3498DB');
 
   const selectMenu = new StringSelectMenuBuilder()
@@ -420,8 +467,14 @@ async function startQuoteFlow(interaction, model) {
 
 async function startTestDriveFlow(interaction, model) {
   const embed = new EmbedBuilder()
-    .setTitle('🚗 Let’s get you behind the wheel!')
-    .setDescription('Do you prefer to visit a showroom or have the car brought to your home?')
+    .setTitle('🚗 Let’s get you behind the wheel – no pressure.')
+    .setDescription(
+      `Choose how you’d like to experience the BYD ${model}:\n\n` +
+      `🏢 **Showroom visit** – full tour, coffee, and expert talk.\n` +
+      `🏠 **Home test drive** – we bring the car to your door.\n\n` +
+      `_“${getRandomItem(testimonials)}”_\n\n` +
+      `${getRandomItem(urgencyPhrases)}`
+    )
     .setColor('#2ECC71');
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('td_showroom').setLabel('🏢 Visit Showroom').setStyle(ButtonStyle.Primary),
@@ -493,21 +546,21 @@ async function confirmTestDrive(interaction, client, date, time, locationType) {
         .replace('{{address}}', locationType === 'showroom' ? 'BYD Showroom, 123 EV Blvd' : 'Your home address (to confirm)')
     )
     .setColor(embedTemplate.color)
-    .setFooter(embedTemplate.footer)
+    .setFooter({ text: `✨ ${getRandomItem(testimonials)} • Your advisor will reach out shortly`, iconURL: embedTemplate.footer?.iconURL })
     .setTimestamp();
 
   await interaction.update({ embeds: [embed], components: [] });
   await threadChannel.send({ content: `<@${member.id}>, your test drive has been booked!`, embeds: [embed] });
   if (advisorRole) {
-    await threadChannel.send(`🔔 <@&${advisorRole.id}> A new test drive request requires confirmation.`);
+    await threadChannel.send(`🔔 <@&${advisorRole.id}> A new test drive request from ${member.user.tag} – please confirm within 1 hour.`);
   }
 
   await saveTestDriveBooking(userId, username, date, time, locationType, threadChannel.id);
   await updateUserState(userId, { step: 'test_drive_booked', tempData: {} });
-  logger.success(`Test drive booked: ${username} on ${date} at ${time} (${locationType})`);
+  logger.success(`🚗 Test drive booked: ${username} on ${date} at ${time} (${locationType})`);
 }
 
-// ------------------------- Stubs (replace with real logic) -------------------------
+// ------------------------- STUBS (recommendations, etc.) -------------------------
 async function sendBrochure(interaction, model) {
   await interaction.reply({ content: `📄 Brochure for BYD ${model}: https://byd.com/brochure/${model.toLowerCase()}`, ephemeral: false });
 }
