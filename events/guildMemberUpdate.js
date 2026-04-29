@@ -1,6 +1,7 @@
 // events/guildMemberUpdate.js
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const bydEmbeds = require('../modules/bydEmbeds');
+const logger = require('../utils/logger');
 
 module.exports = (client) => {
   client.on('guildMemberUpdate', async (oldMember, newMember) => {
@@ -13,12 +14,16 @@ module.exports = (client) => {
 
     // User just gained the Lead role
     if (!hadLead && hasLead) {
+      logger.info(`User ${newMember.user.tag} gained the Lead role in ${newMember.guild.name}`);
+
       // Send welcome DM
       const embedTemplate = bydEmbeds.welcome_greeting.embed;
-      const { EmbedBuilder } = require('discord.js');
       const embed = new EmbedBuilder(embedTemplate)
         .setTitle(embedTemplate.title.replace('{{username}}', newMember.user.username))
-        .setDescription(embedTemplate.description.replace('{{username}}', newMember.user.username));
+        .setDescription(embedTemplate.description.replace('{{username}}', newMember.user.username))
+        .setColor(embedTemplate.color)
+        .setFooter(embedTemplate.footer)
+        .setTimestamp();
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('welcome_model_dolphin').setLabel('🐬 Dolphin').setStyle(ButtonStyle.Primary),
@@ -31,9 +36,9 @@ module.exports = (client) => {
 
       try {
         await newMember.send({ embeds: [embed], components: [row] });
-        console.log(`Sent welcome DM to ${newMember.user.tag}`);
+        logger.success(`Welcome DM sent to ${newMember.user.tag}`);
       } catch (err) {
-        console.error(`Could not DM ${newMember.user.tag}:`, err);
+        logger.error(`Could not DM ${newMember.user.tag}:`, err);
       }
     }
   });
