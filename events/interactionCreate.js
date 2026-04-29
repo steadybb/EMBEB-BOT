@@ -10,6 +10,7 @@ const {
   TextInputStyle,
 } = require('discord.js');
 
+const logger = require('../utils/logger'); // ✅ Import logger
 const bydEmbeds = require('../modules/bydEmbeds');
 const { getUserState, updateUserState } = require('../utils/stateManager');
 const { generateQuote, models, regionIncentives } = require('../utils/bydData');
@@ -31,8 +32,9 @@ module.exports = (client) => {
       if (!command) return;
       try {
         await command.execute(interaction);
+        logger.cmd(`/${interaction.commandName} executed by ${interaction.user.tag}`);
       } catch (error) {
-        console.error(`❌ Error executing ${interaction.commandName}:`, error);
+        logger.error(`Command ${interaction.commandName} failed:`, error);
         const reply = { content: '❌ There was an error executing this command.', ephemeral: true };
         if (interaction.deferred || interaction.replied) await interaction.editReply(reply);
         else await interaction.reply(reply);
@@ -65,6 +67,9 @@ async function handleButton(interaction, client) {
   const { customId, user } = interaction;
   const userId = user.id;
   let state = await getUserState(userId, user.username);
+
+  // Log button press for debugging
+  logger.debug(`Button pressed: ${customId} by ${user.tag}`);
 
   // BYD Lead Capture buttons
   if (customId === 'welcome_model_dolphin') return selectModel(interaction, 'Dolphin');
@@ -105,6 +110,7 @@ async function handleButton(interaction, client) {
   if (customId === 'create_ticket') return createTicket(interaction, client);
   if (customId === 'close_ticket') return closeTicketHandler(interaction, client);
 
+  logger.warn(`Unknown button customId: ${customId}`);
   await interaction.reply({ content: '❓ Unknown option. Use the buttons provided.', ephemeral: true });
 }
 
@@ -113,6 +119,8 @@ async function handleSelectMenu(interaction, client) {
   const { customId, values, user } = interaction;
   const userId = user.id;
   const state = await getUserState(userId, user.username);
+
+  logger.debug(`Select menu used: ${customId} = ${values[0]} by ${user.tag}`);
 
   if (customId === 'region_select') {
     const region = values[0];
@@ -174,6 +182,7 @@ async function handleSelectMenu(interaction, client) {
     return;
   }
 
+  logger.warn(`Unknown select menu customId: ${customId}`);
   await interaction.reply({ content: '❓ Unknown selection.', ephemeral: true });
 }
 
@@ -182,6 +191,8 @@ async function handleModal(interaction) {
   const { customId, fields, user } = interaction;
   const userId = user.id;
   const state = await getUserState(userId, user.username);
+
+  logger.debug(`Modal submitted: ${customId} by ${user.tag}`);
 
   if (customId === 'tradein_make_model') {
     const makeModel = fields.getTextInputValue('make_model');
@@ -225,6 +236,7 @@ async function handleModal(interaction) {
     return;
   }
 
+  logger.warn(`Unknown modal customId: ${customId}`);
   await interaction.reply({ content: '❓ Unknown form.', ephemeral: true });
 }
 
@@ -250,8 +262,8 @@ async function handleVerify(interaction) {
   try {
     await member.roles.add(roleId);
     await interaction.reply({ content: '✅ You have been verified! Welcome to the server!', ephemeral: true });
+    logger.success(`${member.user.tag} verified in guild ${interaction.guildId}`);
     
-    // Optional: log to configured channel
     if (config.ticket_logs_channel_id) {
       const logChannel = interaction.guild.channels.cache.get(config.ticket_logs_channel_id);
       if (logChannel) {
@@ -259,7 +271,7 @@ async function handleVerify(interaction) {
       }
     }
   } catch (err) {
-    console.error('Verification error:', err);
+    logger.error('Verification error:', err);
     await interaction.reply({ content: '❌ Failed to assign role. Please contact an admin.', ephemeral: true });
   }
 }
@@ -272,7 +284,6 @@ async function createTicket(interaction, client) {
     return interaction.reply({ content: '❌ Ticket system not fully configured. Contact an admin.', ephemeral: true });
   }
   
-  // Optional: prevent user from having multiple open tickets
   const openTickets = await getUserOpenTickets(interaction.user.id);
   if (openTickets.length >= 1) {
     return interaction.reply({ content: '❌ You already have an open ticket. Please close it before creating a new one.', ephemeral: true });
@@ -307,8 +318,8 @@ async function createTicket(interaction, client) {
   );
   await ticketChannel.send({ content: `<@&${config.staff_role_id}>`, embeds: [embed], components: [closeButton] });
   await interaction.reply({ content: `✅ Ticket created: ${ticketChannel}`, ephemeral: true });
+  logger.success(`Ticket created by ${interaction.user.tag}: ${ticketChannel.name}`);
   
-  // Log to logs channel if set
   if (config.ticket_logs_channel_id) {
     const logChannel = guild.channels.cache.get(config.ticket_logs_channel_id);
     if (logChannel) {
@@ -333,6 +344,7 @@ async function closeTicketHandler(interaction, client) {
   }
   
   await interaction.reply('🔒 Closing ticket in 5 seconds...');
+  logger.info(`Ticket ${channel.name} will be closed by ${interaction.user.tag}`);
   
   setTimeout(async () => {
     try {
@@ -342,8 +354,9 @@ async function closeTicketHandler(interaction, client) {
         if (logChannel) logChannel.send(`🔒 Ticket closed: ${channel.name}`);
       }
       await channel.delete();
+      logger.success(`Ticket ${channel.name} closed and deleted`);
     } catch (err) {
-      console.error('Error closing ticket:', err);
+      logger.error('Error closing ticket:', err);
     }
   }, 5000);
 }
@@ -364,6 +377,7 @@ async function selectModel(interaction, model) {
     new ButtonBuilder().setCustomId('action_tradein').setLabel('🔄 Value My Trade-In').setStyle(ButtonStyle.Secondary)
   );
   await interaction.update({ embeds: [embed], components: [row] });
+  logger.debug(`Model selected: ${model} by ${interaction.user.tag}`);
 }
 
 async function handleNotSure(interaction) {
@@ -490,6 +504,7 @@ async function confirmTestDrive(interaction, client, date, time, locationType) {
 
   await saveTestDriveBooking(userId, username, date, time, locationType, threadChannel.id);
   await updateUserState(userId, { step: 'test_drive_booked', tempData: {} });
+  logger.success(`Test drive booked: ${username} on ${date} at ${time} (${locationType})`);
 }
 
 // ------------------------- Stubs (replace with real logic) -------------------------
