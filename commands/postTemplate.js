@@ -21,35 +21,30 @@ const urgentPhrases = [
   "📉 IPVA exemption may change next quarter – lock yours now."
 ];
 
-/**
- * Pick a random element from an array.
- */
 function randomItem(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-/**
- * Calculate expiry date from now + hours.
- */
 function getExpiryDate(hours) {
   const d = new Date();
   d.setHours(d.getHours() + hours);
   return d.toLocaleString();
 }
 
-function getButtonsForTemplate(templateKey, model) {
-  // Base buttons for model selection – stays the same
+function getButtonsForTemplate(templateKey) {
   if (templateKey === 'welcome_greeting' || templateKey === 'model_prompt') {
-    return [
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('welcome_model_dolphin').setLabel('🐬 Dolphin').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('welcome_model_seal').setLabel('🦭 Seal').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('welcome_model_atto3').setLabel('⚔️ ATTO 3').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('welcome_model_han').setLabel('🏯 Han').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('welcome_model_commercial').setLabel('🚌 Commercial').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('welcome_model_notsure').setLabel('❓ Not Sure').setStyle(ButtonStyle.Secondary)
-      )
-    ];
+    // Split 6 buttons into two rows: first row (3 buttons), second row (3 buttons)
+    const row1 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('welcome_model_dolphin').setLabel('🐬 Dolphin').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('welcome_model_seal').setLabel('🦭 Seal').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('welcome_model_atto3').setLabel('⚔️ ATTO 3').setStyle(ButtonStyle.Primary)
+    );
+    const row2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('welcome_model_han').setLabel('🏯 Han').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('welcome_model_commercial').setLabel('🚌 Commercial').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('welcome_model_notsure').setLabel('❓ Not Sure').setStyle(ButtonStyle.Secondary)
+    );
+    return [row1, row2];  // return array of rows
   }
   if (templateKey === 'quote_display') {
     return [
@@ -91,7 +86,6 @@ module.exports = {
         .setDescription('Send directly to user’s DM instead of channel')
         .setRequired(false)
     )
-    // NEW: model override
     .addStringOption(option =>
       option.setName('model')
         .setDescription('BYD model to feature (replaces {{model}})')
@@ -104,7 +98,6 @@ module.exports = {
           { name: 'Commercial', value: 'Commercial' }
         )
     )
-    // NEW: urgency – expiry hours
     .addIntegerOption(option =>
       option.setName('expiry_hours')
         .setDescription('Create limited‑time urgency (e.g., 24 hours)')
@@ -112,13 +105,11 @@ module.exports = {
         .setMinValue(1)
         .setMaxValue(168)
     )
-    // NEW: personalised discount / offer text
     .addStringOption(option =>
       option.setName('offer')
         .setDescription('Extra offer (free charger, R$ discount, etc.)')
         .setRequired(false)
     )
-    // NEW: personal note from admin
     .addStringOption(option =>
       option.setName('note')
         .setDescription('A personal message to the user (appears above embed)')
@@ -149,14 +140,14 @@ module.exports = {
       return interaction.editReply({ content: '❌ Template not found.' });
     }
 
-    // Build replacement variables (all can be used as {{variable}} in the embed)
+    logger.cmd(`/posttemplate ${key} used by ${interaction.user.tag} (DM: ${sendDM}, mention: ${mention?.tag || 'none'})`);
+
     const targetUser = mention || interaction.user;
     const expiryDate = expiryHours ? getExpiryDate(expiryHours) : null;
 
     const replacements = {
       username: targetUser.username,
       model: modelOverride,
-      // If expiry is set, we include it, else empty string
       expiry_date: expiryDate || 'soon',
       expiry_hours: expiryHours?.toString() || '48',
       offer_text: customOffer || '🎁 Free home charger installation (limited units)',
@@ -164,7 +155,6 @@ module.exports = {
       urgency_phrase: expiryHours ? randomItem(urgentPhrases).replace('{{expiry_hours}}', expiryHours.toString()) : ''
     };
 
-    // Build the core embed using your existing builder (supports placeholders)
     let builtEmbed = buildEmbed(template.embed, {
       user: targetUser,
       guild: interaction.guild,
@@ -172,21 +162,17 @@ module.exports = {
       replacements
     });
 
-    // If the template is quote_display or follow_up, we can optionally append a social proof footer
     if (key === 'quote_display' || key === 'follow_up_dormant') {
       const footerText = `⭐ Trusted by 15,000+ EV drivers • ${randomItem(testimonials).substring(0, 80)}`;
       builtEmbed.setFooter({ text: footerText, iconURL: template.embed.footer?.iconURL });
     }
 
-    // Attach buttons
-    const components = getButtonsForTemplate(key, modelOverride);
+    const components = getButtonsForTemplate(key);  // now returns array of rows
 
-    // Prepare final message content: optional personal note + mention
     let content = '';
     if (personalNote) content += `📝 *${personalNote}*\n\n`;
     if (mention) content += `${mention} `;
 
-    // If expiry is set, add a bold urgency banner as plain text above embed
     if (expiryHours) {
       content += `⏰ **LIMITED TIME — expires in ${expiryHours} hours** ⏰\n\n`;
     }
@@ -211,7 +197,6 @@ module.exports = {
         });
         logger.success(`📢 Channel campaign "${key}" → #${interaction.channel.name}`);
 
-        // Auto‑delete after expiry if set, else use template expiry
         const autoDeleteMinutes = expiryHours ? expiryHours * 60 : (template.expiryMinutes || 10);
         setTimeout(() => {
           message.delete().catch(() => {});
