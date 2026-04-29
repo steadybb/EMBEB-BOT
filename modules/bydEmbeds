@@ -1,1 +1,188 @@
-m
+// modules/bydEmbeds.js
+// BYD BladeBot Marketing Embeds – clean, professional, lead capture ready
+
+module.exports = {
+  // 🟢 Triggered when user joins or receives @Lead role
+  welcome_greeting: {
+    embed: {
+      title: '⚡ Welcome to the BYD Sales Hub',
+      author: {
+        name: 'BladeBot • Your EV Guide',
+        iconURL: 'https://cdn.byd.com/bot/bladebot-icon.png',
+      },
+      description:
+        `Hi {{username}}! I'm BladeBot, your personal electric vehicle assistant.\n\n` +
+        `Tap a button below to find your perfect BYD, get a real on‑road quote, or book a test drive – all in under 90 seconds.`,
+      image: { url: 'https://cdn.byd.com/bot/welcome-banner.jpg' },
+      footer: {
+        text: '⚡ BYD Official | Blade Battery Safety',
+        iconURL: 'https://cdn.byd.com/bot/byd-logo.png',
+      },
+      color: '#00BFFF', // electric blue
+      timestamp: new Date().toISOString(),
+    },
+    expiryMinutes: 60,
+  },
+
+  // 🟢 Model selection prompt (context for buttons)
+  model_prompt: {
+    embed: {
+      title: '🐬 Which BYD catches your eye?',
+      author: {
+        name: 'BladeBot • Model Selector',
+        iconURL: 'https://cdn.byd.com/bot/bladebot-icon.png',
+      },
+      description:
+        `Choose a model to see specs, pricing, and availability in your region.\n\n` +
+        `• **Dolphin** – Compact, fun, city‑friendly\n` +
+        `• **Seal** – Sleek sedan, long range\n` +
+        `• **ATTO 3** – Family SUV with Blade Battery\n` +
+        `• **Han** – Luxury executive sedan\n` +
+        `• **Commercial** – Fleet & cargo solutions\n` +
+        `• **Not Sure** – I’ll help you decide`,
+      image: { url: 'https://cdn.byd.com/bot/models-collage.jpg' },
+      footer: {
+        text: 'Tap a button below the embed',
+        iconURL: 'https://cdn.byd.com/bot/button-hint.png',
+      },
+      color: '#2ECC71',
+      timestamp: new Date().toISOString(),
+    },
+    expiryMinutes: 30,
+  },
+
+  // 🟢 Quote display (dynamic placeholders)
+  quote_display: {
+    embed: {
+      title: '💰 Your BYD {{model}} Quote',
+      author: {
+        name: 'BladeBot • Instant Price',
+        iconURL: 'https://cdn.byd.com/bot/bladebot-icon.png',
+      },
+      description:
+        `**{{variant}}** • {{color}}\n\n` +
+        `Vehicle Price:      {{vehicle_price}}\n` +
+        `Registration:       {{reg_fee}}\n` +
+        `Delivery & PDI:     {{delivery_fee}}\n` +
+        `Tax (est.):         {{tax}}\n` +
+        `━━━━━━━━━━━━━━━━━━━\n` +
+        `🔋 **Total On‑Road:** {{total_price}}\n\n` +
+        `⚡ **Incentives:** {{incentives_list}}\n\n` +
+        `💳 **Monthly (60mo, 20% down):** {{monthly_finance}} (finance) / {{monthly_lease}} (lease)`,
+      image: { url: 'https://cdn.byd.com/bot/quote-banner.png' },
+      footer: {
+        text: 'This quote includes current incentives. Valid for 7 days.',
+        iconURL: 'https://cdn.byd.com/bot/quote-icon.png',
+      },
+      color: '#00BFFF',
+      timestamp: new Date().toISOString(),
+    },
+    expiryMinutes: 15,
+  },
+
+  // 🟢 Test drive confirmation
+  test_drive_confirmed: {
+    embed: {
+      title: '✅ Test Drive Booked!',
+      author: {
+        name: 'BladeBot • Scheduling',
+        iconURL: 'https://cdn.byd.com/bot/bladebot-icon.png',
+      },
+      description:
+        `📅 **Date:** {{date}}\n` +
+        `⏰ **Time:** {{time}}\n` +
+        `📍 **Location:** {{location_type}} – {{address}}\n\n` +
+        `A private thread has been created for you and our BYD sales team. We'll confirm all details there within 1 hour.\n\n` +
+        `🚗 We can’t wait to put you behind the wheel.`,
+      image: { url: 'https://cdn.byd.com/bot/test-drive-confirmed.jpg' },
+      footer: {
+        text: 'BYD Test Drive | No obligation',
+        iconURL: 'https://cdn.byd.com/bot/calendar-icon.png',
+      },
+      color: '#2ECC71',
+      timestamp: new Date().toISOString(),
+    },
+    expiryMinutes: 10080, // 7 days
+  },
+
+  // 🟢 Trade-in estimate
+  trade_in_estimate: {
+    embed: {
+      title: '🔄 Your Trade-in Estimate',
+      author: {
+        name: 'BladeBot • Value Your Car',
+        iconURL: 'https://cdn.byd.com/bot/bladebot-icon.png',
+      },
+      description:
+        `**{{user_car_make_model}}** • {{odometer}} km • Condition: {{condition}}\n\n` +
+        `Market range: **{{market_range_low}} – {{market_range_high}}**\n` +
+        `🎯 Our offer: **{{trade_offer}}**\n\n` +
+        `Applied to your new BYD **{{new_model}}**:\n` +
+        `Vehicle price: {{new_price}}\n` +
+        `– Trade credit: {{trade_offer}}\n` +
+        `━━━━━━━━━━━━━━━━━━━\n` +
+        `💰 **Balance due:** {{balance_due}}\n\n` +
+        `⚡ We settle your existing finance and you drive away the same day.`,
+      image: { url: 'https://cdn.byd.com/bot/trade-in-banner.jpg' },
+      footer: {
+        text: 'Offer valid for 7 days / 500km. Final after inspection.',
+        iconURL: 'https://cdn.byd.com/bot/trade-icon.png',
+      },
+      color: '#FF8C00',
+      timestamp: new Date().toISOString(),
+    },
+    expiryMinutes: 10080,
+  },
+
+  // 🟢 48-hour follow-up for dormant leads
+  follow_up_dormant: {
+    embed: {
+      title: '👋 Still thinking about the {{model}}?',
+      author: {
+        name: 'BladeBot • No pressure reminder',
+        iconURL: 'https://cdn.byd.com/bot/bladebot-icon.png',
+      },
+      description:
+        `I'm here if you have questions. Here's a quick recap:\n\n` +
+        `📄 [Download Brochure](https://byd.com/brochure/{{model}})\n` +
+        `💰 [Get Your Quote]({{quote_link}})\n` +
+        `🗓️ [Book a Test Drive]({{test_drive_link}})\n\n` +
+        `Just tap one of the buttons below whenever you're ready.`,
+      image: { url: 'https://cdn.byd.com/bot/follow-up.jpg' },
+      footer: {
+        text: 'BYD | Sustainable mobility for all',
+        iconURL: 'https://cdn.byd.com/bot/byd-logo.png',
+      },
+      color: '#F1C40F',
+      timestamp: new Date().toISOString(),
+    },
+    expiryMinutes: 4320, // 3 days
+  },
+
+  // 🟢 Fleet/commercial handoff
+  commercial_transfer: {
+    embed: {
+      title: '🚛 Fleet & Commercial Inquiry',
+      author: {
+        name: 'BladeBot • Business Team',
+        iconURL: 'https://cdn.byd.com/bot/bladebot-icon.png',
+      },
+      description:
+        `You’ve requested a commercial vehicle solution.\n\n` +
+        `A BYD fleet specialist will be assigned to this thread shortly.\n\n` +
+        `In the meantime, please share:\n` +
+        `• Number of vehicles needed\n` +
+        `• Primary use (last-mile delivery, passenger transport, etc.)\n` +
+        `• Preferred delivery timeframe\n\n` +
+        `We’ll prepare a tailored fleet quote within 4 business hours.`,
+      image: { url: 'https://cdn.byd.com/bot/fleet-banner.jpg' },
+      footer: {
+        text: 'BYD Commercial | Zero-emission logistics',
+        iconURL: 'https://cdn.byd.com/bot/fleet-icon.png',
+      },
+      color: '#9B59B6',
+      timestamp: new Date().toISOString(),
+    },
+    expiryMinutes: 2880,
+  },
+};
