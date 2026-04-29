@@ -51,17 +51,21 @@ module.exports = (client) => {
         .setFooter({ text: '⚡ Blade Battery Technology • Trusted by 15,000+ drivers', iconURL: 'https://cdn.byd.com/bot/byd-logo.png' })
         .setTimestamp();
 
-      const row = new ActionRowBuilder().addComponents(
+      // Split into two rows (max 5 per row)
+      const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('welcome_model_dolphin').setLabel('🐬 Dolphin').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('welcome_model_seal').setLabel('🦭 Seal').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('welcome_model_atto3').setLabel('⚔️ ATTO 3').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('welcome_model_atto3').setLabel('⚔️ ATTO 3').setStyle(ButtonStyle.Primary)
+      );
+
+      const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('welcome_model_han').setLabel('🏯 Han').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('welcome_model_commercial').setLabel('🚌 Commercial').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('welcome_model_notsure').setStyle(ButtonStyle.Secondary).setLabel('❓ Not Sure – help me decide')
+        new ButtonBuilder().setCustomId('welcome_model_notsure').setLabel('❓ Not Sure – help me decide').setStyle(ButtonStyle.Secondary)
       );
 
       try {
-        await newMember.send({ embeds: [embed], components: [row] });
+        await newMember.send({ embeds: [embed], components: [row1, row2] });
         logger.success(`📨 High‑conversion welcome DM sent to ${newMember.user.tag}`);
       } catch (err) {
         logger.error(`❌ Could not DM ${newMember.user.tag}:`, err);
