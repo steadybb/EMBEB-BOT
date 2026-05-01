@@ -831,8 +831,19 @@ async function setTradeCondition(interaction, condition) {
   await updateUserState(userId, { step: null, tempData: {} });
 }
 
-async function recommendAffordability(interaction) { await interaction.reply({ content: '💸 I recommend the **BYD Dolphin** – great value and low running costs. Want a quote?' }); }
-async function recommendRange(interaction) { await interaction.reply({ content: '⚡ For max range, the **BYD Seal** is best. Highway or rural driving?' }); }
-async function recommendFamily(interaction) { await interaction.reply({ content: '👨‍👩‍👧‍👦 For family space, check out the **BYD ATTO 3** or **Tang**. Safety brochure?' }); }
-async function recommendCity(interaction) { await interaction.reply({ content: '🏙️ City parking? **BYD Dolphin** or **Seagull** – compact with parking assist. Range figures?' }); }
-async function handleFleet(interaction) { await interaction.reply({ content: '🚛 A commercial sales advisor will contact you soon.' }); }
+// ----- Expanded recommendations for the full lineup -----
+async function recommendAffordability(interaction) {
+  await interaction.reply({ content: '💸 **Best value picks:**\n• **Seagull** – $19,990 (city EV)\n• **Dolphin** – $29,990 (hatch)\n• **Yuan Plus** – $37,990 (crossover)\n\nWant a quote on any of these?' });
+}
+async function recommendRange(interaction) {
+  await interaction.reply({ content: '⚡ **Longest range:**\n• **Seal** – 350+ miles\n• **Tang** – 320 miles (3‑row SUV)\n• **Han Performance** – 310 miles\n\nWhich one catches your eye?' });
+}
+async function recommendFamily(interaction) {
+  await interaction.reply({ content: '👨‍👩‍👧‍👦 **Family‑friendly BYDs:**\n• **ATTO 3** – compact SUV, $34,990*\n• **Tang** – 3‑row midsize, $49,990*\n• **Song Plus** – spacious family SUV, $42,990*\n\n_*Before EV credits._ Would you like a safety brochure or a test drive?' });
+}
+async function recommendCity(interaction) {
+  await interaction.reply({ content: '🏙️ **Perfect for city driving:**\n• **Seagull** – ultra‑compact, $19,990\n• **Dolphin** – nimble hatch, $29,990\n• **Yuan Plus** – crossover with parking assist, $37,990\n\nAll come with parking sensors and 360° camera. Want to see city range figures?' });
+}
+async function handleFleet(interaction) {
+  await interaction.reply({ content: '🚛 A commercial sales advisor will contact you soon. Please share your fleet size and use case in the thread.' });
+}
