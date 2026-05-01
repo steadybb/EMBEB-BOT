@@ -1,4 +1,3 @@
-// handlers/interactionCreate.js
 const {
   ButtonBuilder,
   ButtonStyle,
@@ -19,6 +18,7 @@ const {
   saveTestDriveBooking, 
   upsertLead,
   getGuildConfig,
+  setGuildConfig,
   saveTicket,
   closeTicket,
   getUserOpenTickets 
@@ -82,7 +82,7 @@ module.exports = (client) => {
       return;
     }
 
-    // Modals (Trade‑in)
+    // Modals (Trade‑in + Admin)
     if (interaction.isModalSubmit()) {
       await handleModal(interaction);
       return;
@@ -132,10 +132,22 @@ async function handleButton(interaction, client) {
   if (customId === 'need_city') return recommendCity(interaction);
   if (customId === 'need_fleet') return handleFleet(interaction);
 
-  // Verification & Ticket System
+  // Verification & Ticket System (user-facing)
   if (customId === 'verify_button') return handleVerify(interaction);
   if (customId === 'create_ticket') return createTicket(interaction, client);
   if (customId === 'close_ticket') return closeTicketHandler(interaction, client);
+
+  // ---------- Admin Dashboard buttons ----------
+  if (customId === 'admin_verify_menu') return adminVerifyMenu(interaction);
+  if (customId === 'admin_ticket_menu') return adminTicketMenu(interaction);
+  if (customId === 'admin_refresh') return adminRefresh(interaction);
+  if (customId === 'admin_set_verify_role') return adminSetVerifyRole(interaction);
+  if (customId === 'admin_toggle_verify') return adminToggleVerify(interaction);
+  if (customId === 'admin_post_verify_panel') return adminPostVerifyPanel(interaction);
+  if (customId === 'admin_set_ticket_category') return adminSetTicketCategory(interaction);
+  if (customId === 'admin_set_ticket_staff') return adminSetTicketStaff(interaction);
+  if (customId === 'admin_set_ticket_logs') return adminSetTicketLogs(interaction);
+  if (customId === 'admin_post_ticket_panel') return adminPostTicketPanel(interaction);
 
   logger.warn(`Unknown button customId: ${customId}`);
   await interaction.reply({ content: '❓ Unknown option. Use the buttons provided.', ephemeral: true });
@@ -213,7 +225,7 @@ async function handleSelectMenu(interaction, client) {
   await interaction.reply({ content: '❓ Unknown selection.', ephemeral: true });
 }
 
-// ------------------------- MODAL HANDLERS (Trade‑in) -------------------------
+// ------------------------- MODAL HANDLERS (Trade‑in + Admin) -------------------------
 async function handleModal(interaction) {
   const { customId, fields, user } = interaction;
   const userId = user.id;
@@ -221,10 +233,10 @@ async function handleModal(interaction) {
 
   logger.debug(`Modal submitted: ${customId} by ${user.tag}`);
 
+  // Trade-in modals
   if (customId === 'tradein_make_model') {
     const makeModel = fields.getTextInputValue('make_model');
     await updateUserState(userId, { tempData: { ...state.tempData, makeModel }, step: 'awaiting_odometer' });
-
     const modal = new ModalBuilder()
       .setCustomId('tradein_odometer')
       .setTitle('Trade-in: Odometer reading')
@@ -248,7 +260,6 @@ async function handleModal(interaction) {
       tempData: { ...state.tempData, odometer },
       step: 'awaiting_condition',
     });
-
     const embed = new EmbedBuilder()
       .setTitle('🔧 How would you rate its condition?')
       .setDescription('Select one option below.')
@@ -263,11 +274,49 @@ async function handleModal(interaction) {
     return;
   }
 
+  // ---------- Admin Dashboard modals ----------
+  if (customId === 'admin_modal_verify_role') {
+    const roleId = fields.getTextInputValue('role_id');
+    const config = await getGuildConfig(interaction.guildId);
+    config.verify_role_id = roleId;
+    await setGuildConfig(interaction.guildId, config);
+    await interaction.reply({ content: '✅ Verification role updated.', ephemeral: true });
+    logger.success(`Verification role set to ${roleId} in guild ${interaction.guildId}`);
+    return;
+  }
+
+  if (customId === 'admin_modal_ticket_category') {
+    const categoryId = fields.getTextInputValue('category_id');
+    const config = await getGuildConfig(interaction.guildId);
+    config.ticket_category_id = categoryId;
+    await setGuildConfig(interaction.guildId, config);
+    await interaction.reply({ content: '✅ Ticket category updated.', ephemeral: true });
+    return;
+  }
+
+  if (customId === 'admin_modal_ticket_staff') {
+    const roleId = fields.getTextInputValue('role_id');
+    const config = await getGuildConfig(interaction.guildId);
+    config.staff_role_id = roleId;
+    await setGuildConfig(interaction.guildId, config);
+    await interaction.reply({ content: '✅ Staff role updated.', ephemeral: true });
+    return;
+  }
+
+  if (customId === 'admin_modal_ticket_logs') {
+    const channelId = fields.getTextInputValue('channel_id');
+    const config = await getGuildConfig(interaction.guildId);
+    config.ticket_logs_channel_id = channelId || null;
+    await setGuildConfig(interaction.guildId, config);
+    await interaction.reply({ content: channelId ? '✅ Logs channel set.' : '❌ Logs channel removed.', ephemeral: true });
+    return;
+  }
+
   logger.warn(`Unknown modal customId: ${customId}`);
   await interaction.reply({ content: '❓ Unknown form.', ephemeral: true });
 }
 
-// ------------------------- VERIFICATION & TICKET FUNCTIONS -------------------------
+// ------------------------- VERIFICATION & TICKET FUNCTIONS (user-facing) -------------------------
 async function handleVerify(interaction) {
   const guildId = interaction.guildId;
   const config = await getGuildConfig(guildId);
@@ -388,7 +437,182 @@ async function closeTicketHandler(interaction, client) {
   }, 5000);
 }
 
-// ------------------------- CORE BUSINESS FUNCTIONS (ENHANCED) -------------------------
+// ------------------------- ADMIN DASHBOARD INTERFACE -------------------------
+async function adminVerifyMenu(interaction) {
+  const embed = new EmbedBuilder()
+    .setTitle('✅ Verification Configuration')
+    .setDescription('What would you like to do?')
+    .setColor('#2ECC71');
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('admin_set_verify_role').setLabel('📌 Set Role').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_toggle_verify').setLabel('⏻ Toggle Enable/Disable').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('admin_post_verify_panel').setLabel('📢 Post Panel').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
+  );
+  await interaction.update({ embeds: [embed], components: [row] });
+}
+
+async function adminTicketMenu(interaction) {
+  const embed = new EmbedBuilder()
+    .setTitle('🎫 Ticket System Configuration')
+    .setDescription('What would you like to do?')
+    .setColor('#3498DB');
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('admin_set_ticket_category').setLabel('📂 Set Category').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_set_ticket_staff').setLabel('👥 Set Staff Role').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_set_ticket_logs').setLabel('📝 Set Logs Channel').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_post_ticket_panel').setLabel('📢 Post Panel').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
+  );
+  await interaction.update({ embeds: [embed], components: [row] });
+}
+
+async function adminRefresh(interaction) {
+  const guildId = interaction.guildId;
+  const config = await getGuildConfig(guildId);
+  const verifyRole = config.verify_role_id ? `<@&${config.verify_role_id}>` : '❌ Not set';
+  const ticketCategory = config.ticket_category_id ? `<#${config.ticket_category_id}>` : '❌ Not set';
+  const staffRole = config.staff_role_id ? `<@&${config.staff_role_id}>` : '❌ Not set';
+  const logsChannel = config.ticket_logs_channel_id ? `<#${config.ticket_logs_channel_id}>` : '❌ Not set';
+
+  const embed = new EmbedBuilder()
+    .setTitle('🎛️ BYD Bot Admin Dashboard')
+    .setDescription('Configuration refreshed.')
+    .setColor('#00BFFF')
+    .addFields(
+      { name: '✅ Verification', value: `**Status:** ${config.verify_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Role:** ${verifyRole}`, inline: true },
+      { name: '🎫 Ticket System', value: `**Category:** ${ticketCategory}\n**Staff Role:** ${staffRole}\n**Logs Channel:** ${logsChannel}`, inline: true }
+    )
+    .setTimestamp();
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('admin_verify_menu').setLabel('✅ Verification Settings').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_ticket_menu').setLabel('🎫 Ticket System Settings').setStyle(ButtonStyle.Primary)
+  );
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('admin_refresh').setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary)
+  );
+  await interaction.update({ embeds: [embed], components: [row1, row2] });
+}
+
+async function adminSetVerifyRole(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('admin_modal_verify_role')
+    .setTitle('Set Verification Role')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('role_id')
+          .setLabel('Role ID (right‑click role → Copy ID)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+      )
+    );
+  await interaction.showModal(modal);
+}
+
+async function adminToggleVerify(interaction) {
+  const guildId = interaction.guildId;
+  const config = await getGuildConfig(guildId);
+  config.verify_enabled = !config.verify_enabled;
+  await setGuildConfig(guildId, config);
+  await interaction.reply({ content: `✅ Verification ${config.verify_enabled ? 'enabled' : 'disabled'}.`, ephemeral: true });
+}
+
+async function adminPostVerifyPanel(interaction) {
+  const config = await getGuildConfig(interaction.guildId);
+  if (!config.verify_enabled) {
+    return interaction.reply({ content: '❌ Verification system is disabled. Enable it first.', ephemeral: true });
+  }
+  if (!config.verify_role_id) {
+    return interaction.reply({ content: '❌ No verification role set. Set one first.', ephemeral: true });
+  }
+  const embed = new EmbedBuilder()
+    .setTitle('⚡ Welcome to the BYD Community')
+    .setDescription(
+      `Before you explore test drives, exclusive offers, and owner discussions, we need a quick verification — it helps keep our community safe and spam‑free.\n\n` +
+      `**Click the button below** to get instant access. You’ll also unlock:\n` +
+      `• 🔒 Private test drive booking\n` +
+      `• 💰 Real‑time EV incentives\n` +
+      `• 🎫 Priority support tickets\n\n` +
+      `✨ Verified members get early access to limited‑edition BYD drops.`
+    )
+    .setColor('#00BFFF')
+    .setFooter({ text: '⚡ Blade Battery Technology • Trusted by 15,000+ drivers' });
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('verify_button').setLabel('✅ Verify Me').setStyle(ButtonStyle.Success)
+  );
+  await interaction.reply({ embeds: [embed], components: [row], ephemeral: false });
+}
+
+async function adminSetTicketCategory(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('admin_modal_ticket_category')
+    .setTitle('Set Ticket Category')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('category_id')
+          .setLabel('Category ID (right‑click category → Copy ID)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+      )
+    );
+  await interaction.showModal(modal);
+}
+
+async function adminSetTicketStaff(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('admin_modal_ticket_staff')
+    .setTitle('Set Staff Role')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('role_id')
+          .setLabel('Role ID')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+      )
+    );
+  await interaction.showModal(modal);
+}
+
+async function adminSetTicketLogs(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('admin_modal_ticket_logs')
+    .setTitle('Set Logs Channel')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('channel_id')
+          .setLabel('Channel ID (leave empty to remove)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+      )
+    );
+  await interaction.showModal(modal);
+}
+
+async function adminPostTicketPanel(interaction) {
+  const config = await getGuildConfig(interaction.guildId);
+  if (!config.ticket_category_id || !config.staff_role_id) {
+    return interaction.reply({ content: '❌ Ticket category and staff role must be set first.', ephemeral: true });
+  }
+  const embed = new EmbedBuilder()
+    .setTitle('🎫 BYD Concierge – Priority Support')
+    .setDescription(
+      `Need help? Click the button below to open a private ticket. A specialist will reply within 1 hour.\n\n` +
+      `🔒 Your conversation is only visible to you and our staff.`
+    )
+    .setColor('#00BFFF')
+    .setFooter({ text: '⚡ BYD Blade Battery • Trusted by 15,000+ drivers' });
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('create_ticket').setLabel('📩 Create Ticket').setStyle(ButtonStyle.Primary)
+  );
+  await interaction.reply({ embeds: [embed], components: [row], ephemeral: false });
+}
+
+// ------------------------- CORE BUSINESS FUNCTIONS -------------------------
 async function selectModel(interaction, model) {
   const userId = interaction.user.id;
   await updateUserState(userId, { selectedModel: model, step: 'model_selected' });
@@ -438,7 +662,6 @@ async function handleNotSure(interaction) {
   await interaction.update({ embeds: [embed], components: [row] });
 }
 
-// ---------- FIXED: add null check for model ----------
 async function startQuoteFlow(interaction, model) {
   if (!model) {
     return interaction.reply({
@@ -472,7 +695,6 @@ async function startQuoteFlow(interaction, model) {
   await interaction.reply({ embeds: [embed], components: [row], ephemeral: false });
 }
 
-// ---------- FIXED: add null check for model ----------
 async function startTestDriveFlow(interaction, model) {
   if (!model) {
     return interaction.reply({
@@ -574,7 +796,6 @@ async function confirmTestDrive(interaction, client, date, time, locationType) {
   logger.success(`🚗 Test drive booked: ${username} on ${date} at ${time} (${locationType})`);
 }
 
-// ---------- FIXED: add null check for model ----------
 async function sendBrochure(interaction, model) {
   if (!model) {
     return interaction.reply({
