@@ -1,53 +1,80 @@
 // utils/bydData.js
 const logger = require('./logger');
 
-// Base prices (in Brazilian Reais, as used in your examples)
+// ========== COMPLETE BYD US MODEL LINEUP (Launch Specials + Federal Credits) ==========
 const models = {
-  Dolphin: { basePrice: 189000, name: 'Dolphin', type: 'Hatch' },
-  Seal: { basePrice: 239000, name: 'Seal', type: 'Sedan' },
-  'ATTO 3': { basePrice: 219000, name: 'ATTO 3', type: 'SUV' },
-  Han: { basePrice: 349000, name: 'Han', type: 'Luxury Sedan' },
-  Commercial: { basePrice: 299000, name: 'Commercial', type: 'Van/Truck' },
+  // Hatchbacks & City Cars
+  Seagull: { basePrice: 19990, name: 'Seagull', type: 'City EV' },
+  Dolphin: { basePrice: 29990, name: 'Dolphin', type: 'Hatch' },
+
+  // Sedans & Sports
+  Seal: { basePrice: 39990, name: 'Seal', type: 'Sedan' },
+  SealPerformance: { basePrice: 48990, name: 'Seal Performance', type: 'Sports Sedan' },
+
+  // SUVs
+  'ATTO 3': { basePrice: 34990, name: 'ATTO 3', type: 'Compact SUV' },
+  Tang: { basePrice: 49990, name: 'Tang', type: 'Midsize SUV (3-row)' },
+  SongPlus: { basePrice: 42990, name: 'Song Plus', type: 'Family SUV' },
+  YuanPlus: { basePrice: 37990, name: 'Yuan Plus', type: 'Crossover SUV' },
+
+  // Luxury
+  Han: { basePrice: 59990, name: 'Han', type: 'Luxury Sedan' },
+  HanPerformance: { basePrice: 69990, name: 'Han Performance', type: 'Luxury Sport' },
+  YangwangU8: { basePrice: 129990, name: 'Yangwang U8', type: 'Ultra-Luxury SUV' },
+  YangwangU9: { basePrice: 149990, name: 'Yangwang U9', type: 'Hypercar' },
+
+  // Commercial & Vans
+  Commercial: { basePrice: 49990, name: 'Commercial', type: 'Van/Truck' },
+  eBus: { basePrice: 129990, name: 'eBus', type: 'Electric Bus' },
 };
 
-// Regional incentives (expand as needed)
+// Regional incentives (USD values – same as before)
 const regionIncentives = {
-  'São Paulo': { ipvaExempt: true, savings: 9560, freeCharger: true },
-  'Rio de Janeiro': { ipvaExempt: false, savings: 0, freeCharger: false },
-  'Dubai': { vatExempt: true, savings: 15000, freeCharger: true },
-  'Abu Dhabi': { vatExempt: true, savings: 15000, freeCharger: false },
-  'Bangkok': { evSubsidy: true, savings: 8000, freeCharger: true },
+  California: { evCredit: 7500, freeCharger: true, hovAccess: true },
+  Texas: { evCredit: 2500, freeCharger: false },
+  'New York': { evCredit: 2000, freeCharger: true, tollDiscount: true },
+  Florida: { evCredit: 0, freeCharger: false },
+  Colorado: { evCredit: 5000, freeCharger: true, utilityBonus: 1000 },
+  'New Jersey': { evCredit: 4000, freeCharger: true, noSalesTax: true },
+  Washington: { evCredit: 2500, freeCharger: false, hovAccess: true },
 };
 
-// Fixed fees (can be dynamic)
-const REGISTRATION_FEE = 4800;
-const DELIVERY_FEE = 3200;
-const TAX_RATE = 0.04; // 4% estimated tax
+// Fixed fees (USD)
+const REGISTRATION_FEE = 400;
+const DELIVERY_FEE = 800;
+const TAX_RATE = 0.04; // 4% estimated sales tax
 
 /**
- * Generate an on-road price quote.
- * @param {string} model - one of the keys in `models`
- * @param {string} region - one of the keys in `regionIncentives`
- * @param {string} variant - optional trim level (default 'Premium')
- * @returns {object} { total, monthlyFinance, incentivesSavings, breakdown }
+ * Generate an on-road price quote in USD.
  */
 function generateQuote(model, region, variant = 'Premium') {
-  logger.debug(`Generating quote for ${model} in ${region} (${variant})`);
-  
-  const base = models[model]?.basePrice || 200000;
-  const incentives = regionIncentives[region] || { savings: 0 };
-  const tax = base * TAX_RATE;
-  const total = base + REGISTRATION_FEE + DELIVERY_FEE + tax;
-  const monthlyFinance = Math.round((total * 0.8) / 60); // 80% financed over 60 months
-  const monthlyLease = Math.round(monthlyFinance * 0.91); // ~9% lower for lease
+  logger.debug(`Generating USD quote for ${model} in ${region} (${variant})`);
 
-  logger.debug(`Quote result - Total: R$${total.toLocaleString()}, Monthly: R$${monthlyFinance.toLocaleString()}`);
-  
+  const modelData = models[model];
+  if (!modelData) {
+    logger.warn(`Unknown model: ${model}, using fallback price`);
+  }
+
+  const base = modelData?.basePrice || 35000;
+  const incentives = regionIncentives[region] || { evCredit: 0, freeCharger: false };
+
+  let tax = base * TAX_RATE;
+  // Some states offer no sales tax on EVs (New Jersey example)
+  if (incentives.noSalesTax) tax = 0;
+
+  const totalBeforeCredit = base + REGISTRATION_FEE + DELIVERY_FEE + tax;
+  const total = totalBeforeCredit - (incentives.evCredit || 0);
+
+  const monthlyFinance = Math.round((total * 0.8) / 60); // 80% financed, 60 months
+  const monthlyLease = Math.round(monthlyFinance * 0.88); // attractive lease rate
+
+  logger.debug(`Quote result - Total: $${total.toLocaleString()}, Monthly: $${monthlyFinance.toLocaleString()}`);
+
   return {
-    total,
+    total: Math.max(total, 0),
     monthlyFinance,
     monthlyLease,
-    incentivesSavings: incentives.savings,
+    incentivesSavings: incentives.evCredit || 0,
     breakdown: {
       vehiclePrice: base,
       registration: REGISTRATION_FEE,
@@ -58,31 +85,23 @@ function generateQuote(model, region, variant = 'Premium') {
   };
 }
 
-/**
- * Return a human-readable string of incentives for a region.
- * @param {string} region
- * @returns {string}
- */
 function getIncentivesText(region) {
   const inc = regionIncentives[region];
   if (!inc) return 'None currently';
   const parts = [];
-  if (inc.ipvaExempt) parts.push('IPVA exemption (saves R$9,560/yr)');
-  if (inc.vatExempt) parts.push('VAT exemption');
-  if (inc.evSubsidy) parts.push(`EV subsidy of R$${inc.savings}`);
-  if (inc.freeCharger) parts.push('Free home charger installation');
-  return parts.length ? parts.join(', ') : 'None currently';
+  if (inc.evCredit) parts.push(`💰 $${inc.evCredit} federal/state EV tax credit`);
+  if (inc.freeCharger) parts.push('🔌 Free Level 2 home charger installation');
+  if (inc.hovAccess) parts.push('🛣️ Free HOV lane access');
+  if (inc.tollDiscount) parts.push('🛡️ Toll road discounts');
+  if (inc.utilityBonus) parts.push(`⚡ Utility rebate: $${inc.utilityBonus}`);
+  if (inc.noSalesTax) parts.push('🏷️ 0% sales tax on EVs');
+  return parts.length ? parts.join(' • ') : 'None currently';
 }
 
-/**
- * Get a simple price estimate for a model (for quick replies).
- * @param {string} model
- * @returns {string}
- */
 function getQuickPrice(model) {
   const m = models[model];
   if (!m) return 'Contact us for pricing';
-  return `Starting from R$ ${m.basePrice.toLocaleString()}`;
+  return `Starting from $${m.basePrice.toLocaleString()}`;
 }
 
 module.exports = {
