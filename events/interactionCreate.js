@@ -1,3 +1,4 @@
+// handlers/interactionCreate.js
 const {
   ButtonBuilder,
   ButtonStyle,
@@ -14,31 +15,31 @@ const bydEmbeds = require('../modules/bydEmbeds');
 const { getUserState, updateUserState } = require('../utils/stateManager');
 const { generateQuote, models, regionIncentives } = require('../utils/bydData');
 const { getCalendarPicker, getTimePicker } = require('../utils/calendar');
-const { 
-  saveTestDriveBooking, 
+const {
+  saveTestDriveBooking,
   upsertLead,
   getGuildConfig,
   setGuildConfig,
   saveTicket,
   closeTicket,
-  getUserOpenTickets 
+  getUserOpenTickets
 } = require('../utils/database');
 
 // ========== SOCIAL PROOF & URGENCY LIBRARY ==========
 const testimonials = [
-  "“Saved R$ 9,560/year on IPVA – the Seal pays for itself!” – Marina, SP",
-  "“ATTO 3’s Blade Battery gave my family real peace of mind.” – Carlos, RJ",
-  "“Free home charger? BYD really cares.” – Luisa, BH",
-  "“0‑100 km/h in 3.8s – the Han is pure adrenaline.” – Felipe, SP",
-  "“Best EV decision I ever made.” – Ahmed, Dubai"
+  "“Saved $7,500 with federal credits – the Seal is a steal!” – Marina, CA",
+  "“ATTO 3’s Blade Battery gave my family real peace of mind.” – Carlos, TX",
+  "“Free home charger? BYD really cares.” – Luisa, NY",
+  "“0‑60 in 3.8s – the Han Performance is pure adrenaline.” – Felipe, FL",
+  "“Best EV decision I ever made. And I saved thousands.” – Ahmed, CO"
 ];
 
 const urgencyPhrases = [
-  "⚡ Only 3 test drive slots left this week!",
-  "🔥 Limited edition Dolphin Sport – almost gone!",
-  "⏳ IPVA exemption may change next quarter – lock yours now.",
-  "🎁 Free charger installation ends in 48h for new leads.",
-  "📉 0.99% financing – last 5 cars at this rate."
+  "⚡ Only 5 test drive slots left this week!",
+  "🔥 Launch edition models – limited inventory!",
+  "⏳ EV tax credits may phase out – lock yours now.",
+  "🎁 Free charger installation ends June 30.",
+  "📉 0.99% financing – last 10 cars at this rate."
 ];
 
 const advisorNames = ["Carlos", "Marina", "Rafael", "Luciana", "Ahmed"];
@@ -98,7 +99,7 @@ async function handleButton(interaction, client) {
 
   logger.debug(`Button pressed: ${customId} by ${user.tag}`);
 
-  // BYD Lead Capture buttons
+  // BYD Lead Capture buttons (core models)
   if (customId === 'welcome_model_dolphin') return selectModel(interaction, 'Dolphin');
   if (customId === 'welcome_model_seal') return selectModel(interaction, 'Seal');
   if (customId === 'welcome_model_atto3') return selectModel(interaction, 'ATTO 3');
@@ -137,7 +138,7 @@ async function handleButton(interaction, client) {
   if (customId === 'create_ticket') return createTicket(interaction, client);
   if (customId === 'close_ticket') return closeTicketHandler(interaction, client);
 
-  // ---------- Admin Dashboard buttons ----------
+  // Admin Dashboard buttons
   if (customId === 'admin_verify_menu') return adminVerifyMenu(interaction);
   if (customId === 'admin_ticket_menu') return adminTicketMenu(interaction);
   if (customId === 'admin_refresh') return adminRefresh(interaction);
@@ -171,6 +172,11 @@ async function handleSelectMenu(interaction, client) {
 
     const quoteData = generateQuote(model, region);
     const embedTemplate = bydEmbeds.quote_display.embed;
+    const subtotal = quoteData.breakdown.vehiclePrice +
+                     quoteData.breakdown.registration +
+                     quoteData.breakdown.delivery +
+                     quoteData.breakdown.tax;
+
     const embed = new EmbedBuilder()
       .setTitle(embedTemplate.title.replace('{{model}}', model))
       .setDescription(
@@ -178,14 +184,16 @@ async function handleSelectMenu(interaction, client) {
           .replace('{{model}}', model)
           .replace('{{variant}}', 'Premium Trim')
           .replace('{{color}}', 'Aurora White')
-          .replace('{{vehicle_price}}', `R$ ${(models[model]?.basePrice || 200000).toLocaleString()}`)
-          .replace('{{reg_fee}}', 'R$ 4,800')
-          .replace('{{delivery_fee}}', 'R$ 3,200')
-          .replace('{{tax}}', `R$ ${Math.round((models[model]?.basePrice || 200000) * 0.04).toLocaleString()}`)
-          .replace('{{total_price}}', `R$ ${quoteData.total.toLocaleString()}`)
-          .replace('{{incentives_list}}', regionIncentives[region]?.ipvaExempt ? 'IPVA exemption (saves R$9,560/yr)' : 'No current incentives')
-          .replace('{{monthly_finance}}', `R$ ${quoteData.monthlyFinance.toLocaleString()}`)
-          .replace('{{monthly_lease}}', `R$ ${Math.round(quoteData.monthlyFinance * 0.91).toLocaleString()}`)
+          .replace('{{vehicle_price}}', quoteData.breakdown.vehiclePrice.toLocaleString())
+          .replace('{{reg_fee}}', quoteData.breakdown.registration.toLocaleString())
+          .replace('{{delivery_fee}}', quoteData.breakdown.delivery.toLocaleString())
+          .replace('{{tax}}', quoteData.breakdown.tax.toLocaleString())
+          .replace('{{subtotal}}', subtotal.toLocaleString())
+          .replace('{{incentives_value}}', quoteData.incentivesSavings.toLocaleString())
+          .replace('{{total_price}}', quoteData.total.toLocaleString())
+          .replace('{{incentives_list}}', quoteData.incentivesList)
+          .replace('{{monthly_finance}}', quoteData.monthlyFinance.toLocaleString())
+          .replace('{{monthly_lease}}', quoteData.monthlyLease.toLocaleString())
       )
       .setColor(embedTemplate.color || '#00BFFF')
       .setFooter({ text: `⭐ ${getRandomItem(testimonials)} • ${getRandomItem(urgencyPhrases)}`, iconURL: embedTemplate.footer?.iconURL })
@@ -244,7 +252,7 @@ async function handleModal(interaction) {
         new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('odometer')
-            .setLabel('Kilometers (e.g., 85000)')
+            .setLabel('Miles (e.g., 45000)')
             .setStyle(TextInputStyle.Short)
             .setRequired(true)
         )
@@ -274,7 +282,7 @@ async function handleModal(interaction) {
     return;
   }
 
-  // ---------- Admin Dashboard modals ----------
+  // Admin Dashboard modals
   if (customId === 'admin_modal_verify_role') {
     const roleId = fields.getTextInputValue('role_id');
     const config = await getGuildConfig(interaction.guildId);
@@ -320,26 +328,26 @@ async function handleModal(interaction) {
 async function handleVerify(interaction) {
   const guildId = interaction.guildId;
   const config = await getGuildConfig(guildId);
-  
+
   if (!config.verify_enabled) {
     return interaction.reply({ content: '❌ Verification is disabled on this server.', ephemeral: true });
   }
-  
+
   const roleId = config.verify_role_id;
   if (!roleId) {
     return interaction.reply({ content: '❌ Verification role not configured. Contact an admin.', ephemeral: true });
   }
-  
+
   const member = interaction.member;
   if (member.roles.cache.has(roleId)) {
     return interaction.reply({ content: '✅ You are already verified!', ephemeral: true });
   }
-  
+
   try {
     await member.roles.add(roleId);
     await interaction.reply({ content: '✅ You have been verified! Welcome to the server!', ephemeral: true });
     logger.success(`${member.user.tag} verified in guild ${interaction.guildId}`);
-    
+
     if (config.ticket_logs_channel_id) {
       const logChannel = interaction.guild.channels.cache.get(config.ticket_logs_channel_id);
       if (logChannel) {
@@ -355,21 +363,21 @@ async function handleVerify(interaction) {
 async function createTicket(interaction, client) {
   const guild = interaction.guild;
   const config = await getGuildConfig(guild.id);
-  
+
   if (!config.ticket_category_id || !config.staff_role_id) {
     return interaction.reply({ content: '❌ Ticket system not fully configured. Contact an admin.', ephemeral: true });
   }
-  
+
   const openTickets = await getUserOpenTickets(interaction.user.id);
   if (openTickets.length >= 1) {
     return interaction.reply({ content: '❌ You already have an open ticket. Please close it before creating a new one.', ephemeral: true });
   }
-  
+
   const category = guild.channels.cache.get(config.ticket_category_id);
   if (!category) {
     return interaction.reply({ content: '❌ Ticket category not found. Contact an admin.', ephemeral: true });
   }
-  
+
   const ticketName = `ticket-${interaction.user.username}-${Date.now()}`;
   const ticketChannel = await guild.channels.create({
     name: ticketName,
@@ -382,9 +390,9 @@ async function createTicket(interaction, client) {
       { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
     ],
   });
-  
+
   await saveTicket(guild.id, interaction.user.id, ticketChannel.id);
-  
+
   const embed = new EmbedBuilder()
     .setTitle('🎫 Support Ticket')
     .setDescription(`Hello ${interaction.user}, a staff member will assist you shortly.\nTo close this ticket, use the button below.`)
@@ -395,7 +403,7 @@ async function createTicket(interaction, client) {
   await ticketChannel.send({ content: `<@&${config.staff_role_id}>`, embeds: [embed], components: [closeButton] });
   await interaction.reply({ content: `✅ Ticket created: ${ticketChannel}`, ephemeral: true });
   logger.success(`Ticket created by ${interaction.user.tag}: ${ticketChannel.name}`);
-  
+
   if (config.ticket_logs_channel_id) {
     const logChannel = guild.channels.cache.get(config.ticket_logs_channel_id);
     if (logChannel) {
@@ -409,19 +417,19 @@ async function closeTicketHandler(interaction, client) {
   if (!channel.name.startsWith('ticket-')) {
     return interaction.reply({ content: '❌ This command can only be used inside a ticket channel.', ephemeral: true });
   }
-  
+
   const config = await getGuildConfig(interaction.guildId);
   const staffRoleId = config.staff_role_id;
   const isStaff = staffRoleId && interaction.member.roles.cache.has(staffRoleId);
   const isAdmin = interaction.member.permissions.has('Administrator');
-  
+
   if (!isStaff && !isAdmin) {
     return interaction.reply({ content: '❌ Only staff members or admins can close tickets.', ephemeral: true });
   }
-  
+
   await interaction.reply('🔒 Closing ticket in 5 seconds...');
   logger.info(`Ticket ${channel.name} will be closed by ${interaction.user.tag}`);
-  
+
   setTimeout(async () => {
     try {
       await closeTicket(channel.id);
@@ -630,7 +638,7 @@ async function selectModel(interaction, model) {
       `👉 What would you like to do first?`
     )
     .setColor('#00BFFF')
-    .setFooter({ text: `⚡ BYD Blade Battery • ${advisor} will reply within 1 hour`, iconURL: 'https://cdn.byd.com/bot/byd-logo.png' });
+    .setFooter({ text: `⚡ BYD Blade Battery • ${advisor} will reply within 1 hour`, iconURL: process.env.STATIC_URL ? `${process.env.STATIC_URL}/byd-logo.png` : 'https://cdn.byd.com/bot/byd-logo.png' });
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('action_brochure').setLabel('📄 Brochure & Specs').setStyle(ButtonStyle.Secondary),
@@ -675,7 +683,7 @@ async function startQuoteFlow(interaction, model) {
   const embed = new EmbedBuilder()
     .setTitle('📍 One last step – where do you drive?')
     .setDescription(
-      `I’ll apply your **local EV incentives** (IPVA exemption, VAT breaks, free charger) to give you the most accurate on‑road price.\n\n` +
+      `I’ll apply your **local EV incentives** (federal/state credits, free charger, HOV access) to give you the most accurate on‑road price.\n\n` +
       `_“${getRandomItem(testimonials)}”_\n\n` +
       `Select your region below – it takes 10 seconds.`
     )
@@ -685,11 +693,13 @@ async function startQuoteFlow(interaction, model) {
     .setCustomId('region_select')
     .setPlaceholder('Choose your region')
     .addOptions([
-      { label: 'São Paulo', value: 'São Paulo' },
-      { label: 'Rio de Janeiro', value: 'Rio de Janeiro' },
-      { label: 'Dubai', value: 'Dubai' },
-      { label: 'Abu Dhabi', value: 'Abu Dhabi' },
-      { label: 'Bangkok', value: 'Bangkok' },
+      { label: 'California', value: 'California' },
+      { label: 'Texas', value: 'Texas' },
+      { label: 'New York', value: 'New York' },
+      { label: 'Florida', value: 'Florida' },
+      { label: 'Colorado', value: 'Colorado' },
+      { label: 'New Jersey', value: 'New Jersey' },
+      { label: 'Washington', value: 'Washington' },
     ]);
   const row = new ActionRowBuilder().addComponents(selectMenu);
   await interaction.reply({ embeds: [embed], components: [row], ephemeral: false });
@@ -803,9 +813,9 @@ async function sendBrochure(interaction, model) {
       ephemeral: true
     });
   }
-  await interaction.reply({ 
-    content: `📄 Brochure for BYD ${model}: https://byd.com/brochure/${model.toLowerCase()}`, 
-    ephemeral: false 
+  await interaction.reply({
+    content: `📄 Brochure for BYD ${model}: https://byd.com/brochure/${model.toLowerCase()}`,
+    ephemeral: false
   });
 }
 
@@ -817,7 +827,7 @@ async function setTradeCondition(interaction, condition) {
   const userId = interaction.user.id;
   const state = await getUserState(userId, interaction.user.username);
   const { makeModel, odometer } = state.tempData;
-  await interaction.reply({ content: `✅ Your ${makeModel} with ${odometer} km is rated **${condition}**. Estimated trade‑in: R$ ${Math.floor(Math.random() * 50000 + 50000)}. A formal offer will be sent shortly.`, ephemeral: false });
+  await interaction.reply({ content: `✅ Your ${makeModel} with ${odometer} miles is rated **${condition}**. Estimated trade‑in: $${Math.floor(Math.random() * 50000 + 50000)}. A formal offer will be sent shortly.`, ephemeral: false });
   await updateUserState(userId, { step: null, tempData: {} });
 }
 
