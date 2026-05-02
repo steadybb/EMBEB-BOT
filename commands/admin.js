@@ -24,15 +24,18 @@ module.exports = {
     const logsChannel = config.ticket_logs_channel_id ? `<#${config.ticket_logs_channel_id}>` : '❌ Not set';
     const autoPostEnabled = config.auto_post_enabled ? '🟢 Enabled' : '🔴 Disabled';
     const autoPostChannels = config.auto_post_channels?.length ? config.auto_post_channels.map(id => `<#${id}>`).join(', ') : 'None';
+    const lobbyStatus = config.lobby_chatter_enabled ? '🟢 Enabled' : '🔴 Disabled';
+    const lobbyWebhook = config.lobby_webhook_url ? '✅ Set' : '❌ Not set';
 
     const embed = new EmbedBuilder()
       .setTitle('🎛️ BYD Bot Admin Dashboard')
-      .setDescription('Configure verification, ticket system, and auto poster for your server.')
+      .setDescription('Configure all automated systems for your server.')
       .setColor('#00BFFF')
       .addFields(
         { name: '✅ Verification', value: `**Status:** ${config.verify_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Role:** ${verifyRole}`, inline: true },
         { name: '🎫 Ticket System', value: `**Category:** ${ticketCategory}\n**Staff Role:** ${staffRole}\n**Logs Channel:** ${logsChannel}`, inline: true },
-        { name: '🤖 Auto Poster', value: `**Status:** ${autoPostEnabled}\n**Channels:** ${autoPostChannels}\n**Interval:** Every ${config.auto_post_interval_hours || 2} hours`, inline: true }
+        { name: '🤖 Auto Poster', value: `**Status:** ${autoPostEnabled}\n**Channels:** ${autoPostChannels}\n**Interval:** Every ${config.auto_post_interval_hours || 2} hours`, inline: true },
+        { name: '💬 Lobby Chatter', value: `**Status:** ${lobbyStatus}\n**Webhook:** ${lobbyWebhook}`, inline: true }
       )
       .setFooter({ text: 'Use the buttons below to configure each system.' })
       .setTimestamp();
@@ -43,9 +46,12 @@ module.exports = {
     );
     const row2 = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('admin_autopost_menu').setLabel('🤖 Auto Poster').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('admin_lobby_menu').setLabel('💬 Lobby Chatter').setStyle(ButtonStyle.Primary)
+    );
+    const row3 = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('admin_refresh').setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.reply({ embeds: [embed], components: [row1, row2], ephemeral: true });
+    await interaction.reply({ embeds: [embed], components: [row1, row2, row3], ephemeral: true });
   }
 };
