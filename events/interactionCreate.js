@@ -142,6 +142,7 @@ async function handleButton(interaction, client) {
   if (customId === 'admin_verify_menu') return adminVerifyMenu(interaction);
   if (customId === 'admin_ticket_menu') return adminTicketMenu(interaction);
   if (customId === 'admin_autopost_menu') return adminAutopostMenu(interaction);
+  if (customId === 'admin_lobby_menu') return adminLobbyMenu(interaction);
   if (customId === 'admin_refresh') return adminRefresh(interaction);
   if (customId === 'admin_set_verify_role') return adminSetVerifyRole(interaction);
   if (customId === 'admin_toggle_verify') return adminToggleVerify(interaction);
@@ -153,6 +154,9 @@ async function handleButton(interaction, client) {
   if (customId === 'admin_autopost_toggle') return adminAutopostToggle(interaction);
   if (customId === 'admin_autopost_set_channels') return adminAutopostSetChannels(interaction);
   if (customId === 'admin_autopost_set_interval') return adminAutopostSetInterval(interaction);
+  if (customId === 'admin_lobby_toggle') return adminLobbyToggle(interaction);
+  if (customId === 'admin_lobby_set_webhook') return adminLobbySetWebhook(interaction);
+  if (customId === 'admin_lobby_set_personas') return adminLobbySetPersonas(interaction);
 
   logger.warn(`Unknown button customId: ${customId}`);
   await interaction.reply({ content: '❓ Unknown option. Use the buttons provided.', ephemeral: true });
@@ -346,6 +350,35 @@ async function handleModal(interaction) {
     return;
   }
 
+  // Lobby chatter modals
+  if (customId === 'admin_modal_lobby_webhook') {
+    const url = fields.getTextInputValue('webhook_url');
+    const config = await getGuildConfig(interaction.guildId);
+    config.lobby_webhook_url = url;
+    await setGuildConfig(interaction.guildId, config);
+    await interaction.reply({ content: '✅ Lobby chatter webhook URL saved.', ephemeral: true });
+    return;
+  }
+
+  if (customId === 'admin_modal_lobby_personas') {
+    let personas = fields.getTextInputValue('personas_json');
+    const config = await getGuildConfig(interaction.guildId);
+    if (!personas.trim()) {
+      config.lobby_chatter_personas = [];
+    } else {
+      try {
+        const parsed = JSON.parse(personas);
+        config.lobby_chatter_personas = parsed;
+      } catch (err) {
+        await interaction.reply({ content: '❌ Invalid JSON. Personas not updated.', ephemeral: true });
+        return;
+      }
+    }
+    await setGuildConfig(interaction.guildId, config);
+    await interaction.reply({ content: '✅ Lobby chatter personas updated.', ephemeral: true });
+    return;
+  }
+
   logger.warn(`Unknown modal customId: ${customId}`);
   await interaction.reply({ content: '❓ Unknown form.', ephemeral: true });
 }
@@ -509,6 +542,8 @@ async function adminRefresh(interaction) {
   const staffRole = config.staff_role_id ? `<@&${config.staff_role_id}>` : '❌ Not set';
   const logsChannel = config.ticket_logs_channel_id ? `<#${config.ticket_logs_channel_id}>` : '❌ Not set';
   const autoPostChannels = config.auto_post_channels?.length ? config.auto_post_channels.map(id => `<#${id}>`).join(', ') : 'None';
+  const lobbyStatus = config.lobby_chatter_enabled ? '🟢 Enabled' : '🔴 Disabled';
+  const lobbyWebhook = config.lobby_webhook_url ? '✅ Set' : '❌ Not set';
 
   const embed = new EmbedBuilder()
     .setTitle('🎛️ BYD Bot Admin Dashboard')
@@ -517,7 +552,8 @@ async function adminRefresh(interaction) {
     .addFields(
       { name: '✅ Verification', value: `**Status:** ${config.verify_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Role:** ${verifyRole}`, inline: true },
       { name: '🎫 Ticket System', value: `**Category:** ${ticketCategory}\n**Staff Role:** ${staffRole}\n**Logs Channel:** ${logsChannel}`, inline: true },
-      { name: '🤖 Auto Poster', value: `**Status:** ${config.auto_post_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Channels:** ${autoPostChannels}\n**Interval:** Every ${config.auto_post_interval_hours || 2} hours`, inline: true }
+      { name: '🤖 Auto Poster', value: `**Status:** ${config.auto_post_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Channels:** ${autoPostChannels}\n**Interval:** Every ${config.auto_post_interval_hours || 2} hours`, inline: true },
+      { name: '💬 Lobby Chatter', value: `**Status:** ${lobbyStatus}\n**Webhook:** ${lobbyWebhook}`, inline: true }
     )
     .setTimestamp();
 
@@ -527,9 +563,12 @@ async function adminRefresh(interaction) {
   );
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('admin_autopost_menu').setLabel('🤖 Auto Poster').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_lobby_menu').setLabel('💬 Lobby Chatter').setStyle(ButtonStyle.Primary)
+  );
+  const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary)
   );
-  await interaction.update({ embeds: [embed], components: [row1, row2] });
+  await interaction.update({ embeds: [embed], components: [row1, row2, row3] });
 }
 
 async function adminSetVerifyRole(interaction) {
@@ -707,7 +746,68 @@ async function adminAutopostSetInterval(interaction) {
   await interaction.showModal(modal);
 }
 
-// ------------------------- CORE BUSINESS FUNCTIONS -------------------------
+// ----- LOBBY CHATTER ADMIN FUNCTIONS -----
+async function adminLobbyMenu(interaction) {
+  const config = await getGuildConfig(interaction.guildId);
+  const embed = new EmbedBuilder()
+    .setTitle('💬 Lobby Chatter Configuration')
+    .setDescription(
+      `**Status:** ${config.lobby_chatter_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n` +
+      `**Webhook:** ${config.lobby_webhook_url ? '✅ Set' : '❌ Not set'}\n` +
+      `**Personas:** ${config.lobby_chatter_personas?.length || 9} active`
+    )
+    .setColor('#9B59B6');
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('admin_lobby_toggle').setLabel('⏻ Toggle On/Off').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('admin_lobby_set_webhook').setLabel('🔗 Set Webhook URL').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_lobby_set_personas').setLabel('👥 Set Personas (JSON)').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
+  );
+  await interaction.update({ embeds: [embed], components: [row] });
+}
+
+async function adminLobbyToggle(interaction) {
+  const config = await getGuildConfig(interaction.guildId);
+  config.lobby_chatter_enabled = !config.lobby_chatter_enabled;
+  await setGuildConfig(interaction.guildId, config);
+  await interaction.reply({ content: `✅ Lobby chatter ${config.lobby_chatter_enabled ? 'enabled' : 'disabled'}.`, ephemeral: true });
+}
+
+async function adminLobbySetWebhook(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('admin_modal_lobby_webhook')
+    .setTitle('Set Webhook URL')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('webhook_url')
+          .setLabel('Discord Webhook URL')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setPlaceholder('https://discord.com/api/webhooks/...')
+      )
+    );
+  await interaction.showModal(modal);
+}
+
+async function adminLobbySetPersonas(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('admin_modal_lobby_personas')
+    .setTitle('Set Personas (JSON array)')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('personas_json')
+          .setLabel('JSON array of {name,avatar,role}')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(false)
+          .setPlaceholder('Leave empty to reset to default 9 personas')
+      )
+    );
+  await interaction.showModal(modal);
+}
+
+// ------------------------- CORE BUSINESS FUNCTIONS (unchanged) -------------------------
 async function selectModel(interaction, model) {
   const userId = interaction.user.id;
   await updateUserState(userId, { selectedModel: model, step: 'model_selected' });
