@@ -141,6 +141,7 @@ async function handleButton(interaction, client) {
   // Admin Dashboard buttons
   if (customId === 'admin_verify_menu') return adminVerifyMenu(interaction);
   if (customId === 'admin_ticket_menu') return adminTicketMenu(interaction);
+  if (customId === 'admin_autopost_menu') return adminAutopostMenu(interaction);
   if (customId === 'admin_refresh') return adminRefresh(interaction);
   if (customId === 'admin_set_verify_role') return adminSetVerifyRole(interaction);
   if (customId === 'admin_toggle_verify') return adminToggleVerify(interaction);
@@ -149,6 +150,9 @@ async function handleButton(interaction, client) {
   if (customId === 'admin_set_ticket_staff') return adminSetTicketStaff(interaction);
   if (customId === 'admin_set_ticket_logs') return adminSetTicketLogs(interaction);
   if (customId === 'admin_post_ticket_panel') return adminPostTicketPanel(interaction);
+  if (customId === 'admin_autopost_toggle') return adminAutopostToggle(interaction);
+  if (customId === 'admin_autopost_set_channels') return adminAutopostSetChannels(interaction);
+  if (customId === 'admin_autopost_set_interval') return adminAutopostSetInterval(interaction);
 
   logger.warn(`Unknown button customId: ${customId}`);
   await interaction.reply({ content: '❓ Unknown option. Use the buttons provided.', ephemeral: true });
@@ -320,6 +324,28 @@ async function handleModal(interaction) {
     return;
   }
 
+  // Auto poster modals
+  if (customId === 'admin_modal_autopost_channels') {
+    const channelIds = fields.getTextInputValue('channel_ids').split(',').map(id => id.trim());
+    const config = await getGuildConfig(interaction.guildId);
+    config.auto_post_channels = channelIds;
+    await setGuildConfig(interaction.guildId, config);
+    await interaction.reply({ content: `✅ Auto poster channels set: ${channelIds.map(id => `<#${id}>`).join(', ')}`, ephemeral: true });
+    return;
+  }
+
+  if (customId === 'admin_modal_autopost_interval') {
+    const interval = parseInt(fields.getTextInputValue('interval'), 10);
+    if (isNaN(interval) || interval < 1) {
+      return interaction.reply({ content: '❌ Please enter a valid number of hours (>= 1).', ephemeral: true });
+    }
+    const config = await getGuildConfig(interaction.guildId);
+    config.auto_post_interval_hours = interval;
+    await setGuildConfig(interaction.guildId, config);
+    await interaction.reply({ content: `✅ Auto poster interval set to every ${interval} hour(s).`, ephemeral: true });
+    return;
+  }
+
   logger.warn(`Unknown modal customId: ${customId}`);
   await interaction.reply({ content: '❓ Unknown form.', ephemeral: true });
 }
@@ -482,6 +508,7 @@ async function adminRefresh(interaction) {
   const ticketCategory = config.ticket_category_id ? `<#${config.ticket_category_id}>` : '❌ Not set';
   const staffRole = config.staff_role_id ? `<@&${config.staff_role_id}>` : '❌ Not set';
   const logsChannel = config.ticket_logs_channel_id ? `<#${config.ticket_logs_channel_id}>` : '❌ Not set';
+  const autoPostChannels = config.auto_post_channels?.length ? config.auto_post_channels.map(id => `<#${id}>`).join(', ') : 'None';
 
   const embed = new EmbedBuilder()
     .setTitle('🎛️ BYD Bot Admin Dashboard')
@@ -489,15 +516,17 @@ async function adminRefresh(interaction) {
     .setColor('#00BFFF')
     .addFields(
       { name: '✅ Verification', value: `**Status:** ${config.verify_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Role:** ${verifyRole}`, inline: true },
-      { name: '🎫 Ticket System', value: `**Category:** ${ticketCategory}\n**Staff Role:** ${staffRole}\n**Logs Channel:** ${logsChannel}`, inline: true }
+      { name: '🎫 Ticket System', value: `**Category:** ${ticketCategory}\n**Staff Role:** ${staffRole}\n**Logs Channel:** ${logsChannel}`, inline: true },
+      { name: '🤖 Auto Poster', value: `**Status:** ${config.auto_post_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Channels:** ${autoPostChannels}\n**Interval:** Every ${config.auto_post_interval_hours || 2} hours`, inline: true }
     )
     .setTimestamp();
 
   const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('admin_verify_menu').setLabel('✅ Verification Settings').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('admin_ticket_menu').setLabel('🎫 Ticket System Settings').setStyle(ButtonStyle.Primary)
+    new ButtonBuilder().setCustomId('admin_verify_menu').setLabel('✅ Verification').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_ticket_menu').setLabel('🎫 Ticket System').setStyle(ButtonStyle.Primary)
   );
   const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('admin_autopost_menu').setLabel('🤖 Auto Poster').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary)
   );
   await interaction.update({ embeds: [embed], components: [row1, row2] });
@@ -618,6 +647,64 @@ async function adminPostTicketPanel(interaction) {
     new ButtonBuilder().setCustomId('create_ticket').setLabel('📩 Create Ticket').setStyle(ButtonStyle.Primary)
   );
   await interaction.reply({ embeds: [embed], components: [row], ephemeral: false });
+}
+
+// ***** AUTO POSTER ADMIN FUNCTIONS *****
+async function adminAutopostMenu(interaction) {
+  const config = await getGuildConfig(interaction.guildId);
+  const channels = config.auto_post_channels?.length ? config.auto_post_channels.map(id => `<#${id}>`).join(', ') : 'None';
+  const embed = new EmbedBuilder()
+    .setTitle('🤖 Auto Poster Configuration')
+    .setDescription(`**Status:** ${config.auto_post_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Channels:** ${channels}\n**Interval:** Every ${config.auto_post_interval_hours || 2} hours`)
+    .setColor('#9B59B6');
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('admin_autopost_toggle').setLabel('⏻ Toggle On/Off').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('admin_autopost_set_channels').setLabel('📢 Set Channels').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_autopost_set_interval').setLabel('⏱️ Set Interval').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
+  );
+  await interaction.update({ embeds: [embed], components: [row] });
+}
+
+async function adminAutopostToggle(interaction) {
+  const config = await getGuildConfig(interaction.guildId);
+  config.auto_post_enabled = !config.auto_post_enabled;
+  await setGuildConfig(interaction.guildId, config);
+  await interaction.reply({ content: `✅ Auto poster ${config.auto_post_enabled ? 'enabled' : 'disabled'}.`, ephemeral: true });
+}
+
+async function adminAutopostSetChannels(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('admin_modal_autopost_channels')
+    .setTitle('Set Auto Poster Channels')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('channel_ids')
+          .setLabel('Channel IDs (comma‑separated)')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setPlaceholder('123456789,987654321')
+      )
+    );
+  await interaction.showModal(modal);
+}
+
+async function adminAutopostSetInterval(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('admin_modal_autopost_interval')
+    .setTitle('Set Posting Interval (hours)')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('interval')
+          .setLabel('Hours between posts (default 2)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setPlaceholder('2')
+      )
+    );
+  await interaction.showModal(modal);
 }
 
 // ------------------------- CORE BUSINESS FUNCTIONS -------------------------
