@@ -1,4 +1,5 @@
 require('./keepalive');
+const express = require('express');
 const { Client, GatewayIntentBits, Collection, Partials } = require('discord.js');
 const fs = require('fs');
 const config = require('./config');
@@ -10,6 +11,19 @@ const startFollowUpScheduler = require('./schedulers/followUp');
 const { startAutoPostScheduler } = require('./schedulers/autoPost');
 const { startLobbyChatterScheduler } = require('./schedulers/lobbyChatter');
 
+// ========== EXPRESS STATIC SERVER (for images) ==========
+const app = express();
+const port = process.env.PORT || 3000;
+
+// Serve static folder (where your images are)
+app.use('/static', express.static('static'));
+
+app.listen(port, () => {
+  console.log(`📁 Static server running on port ${port}`);
+  console.log(`🖼️  Images available at: https://your-bot.onrender.com/static/`);
+});
+
+// ========== DISCORD BOT ==========
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.DirectMessages],
   partials: [Partials.Channel] // Needed for DMs
