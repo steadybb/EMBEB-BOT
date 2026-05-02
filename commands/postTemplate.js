@@ -5,20 +5,21 @@ const bydTemplates = require('../modules/bydEmbeds');
 const { isAdmin } = require('../utils/permissions');
 const logger = require('../utils/logger');
 
-// Social proof snippets – rotate randomly to feel fresh
+// Social proof snippets – USD version
 const testimonials = [
-  "“I saved R$ 9,560/year on IPVA alone – the Seal pays for itself!” – Marina, SP",
-  "“The ATTO 3’s Blade Battery gave my family peace of mind.” – Carlos, RJ",
-  "“Best decision I ever made. The Dolphin is a beast in the city.” – Luisa, BH",
-  "“Home charger installed for free – BYD really cares.” – Ahmed, Dubai",
-  "“0‑100 km/h in 3.8s? The Han is a silent killer.” – VIP customer"
+  "“Saved $7,500 with federal credits – the Seal is a steal!” – Marina, CA",
+  "“ATTO 3’s Blade Battery gave my family real peace of mind.” – Carlos, TX",
+  "“Free home charger? BYD really cares.” – Luisa, NY",
+  "“0‑60 in 3.8s – the Han Performance is pure adrenaline.” – Felipe, FL",
+  "“Best EV decision I ever made. And I saved thousands.” – Ahmed, CO"
 ];
 
 const urgentPhrases = [
-  "🔥 Limited stock alert!",
-  "⏳ Offer expires in {{expiry_hours}} hours – act fast!",
-  "🎁 Free charger installation ends soon.",
-  "📉 IPVA exemption may change next quarter – lock yours now."
+  "🔥 Launch edition models – limited inventory!",
+  "⏳ EV tax credits may phase out – lock yours now.",
+  "🎁 Free charger installation ends June 30.",
+  "📉 0.99% financing – last 10 cars at this rate.",
+  "⚡ Only 5 test drive slots left this week!"
 ];
 
 function randomItem(arr) {
@@ -44,7 +45,7 @@ function getButtonsForTemplate(templateKey) {
       new ButtonBuilder().setCustomId('welcome_model_commercial').setLabel('🚌 Commercial').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('welcome_model_notsure').setLabel('❓ Not Sure').setStyle(ButtonStyle.Secondary)
     );
-    return [row1, row2];  // return array of rows
+    return [row1, row2];
   }
   if (templateKey === 'quote_display') {
     return [
@@ -91,11 +92,20 @@ module.exports = {
         .setDescription('BYD model to feature (replaces {{model}})')
         .setRequired(false)
         .addChoices(
+          { name: 'Seagull', value: 'Seagull' },
           { name: 'Dolphin', value: 'Dolphin' },
           { name: 'Seal', value: 'Seal' },
+          { name: 'Seal Performance', value: 'SealPerformance' },
           { name: 'ATTO 3', value: 'ATTO 3' },
+          { name: 'Tang', value: 'Tang' },
+          { name: 'Song Plus', value: 'SongPlus' },
+          { name: 'Yuan Plus', value: 'YuanPlus' },
           { name: 'Han', value: 'Han' },
-          { name: 'Commercial', value: 'Commercial' }
+          { name: 'Han Performance', value: 'HanPerformance' },
+          { name: 'Yangwang U8', value: 'YangwangU8' },
+          { name: 'Yangwang U9', value: 'YangwangU9' },
+          { name: 'Commercial', value: 'Commercial' },
+          { name: 'eBus', value: 'eBus' }
         )
     )
     .addIntegerOption(option =>
@@ -107,7 +117,7 @@ module.exports = {
     )
     .addStringOption(option =>
       option.setName('offer')
-        .setDescription('Extra offer (free charger, R$ discount, etc.)')
+        .setDescription('Extra offer (free charger, discount, etc.)')
         .setRequired(false)
     )
     .addStringOption(option =>
@@ -150,9 +160,9 @@ module.exports = {
       model: modelOverride,
       expiry_date: expiryDate || 'soon',
       expiry_hours: expiryHours?.toString() || '48',
-      offer_text: customOffer || '🎁 Free home charger installation (limited units)',
+      offer_text: customOffer || '🎁 Free Level 2 home charger installation (limited units)',
       testimonial: randomItem(testimonials),
-      urgency_phrase: expiryHours ? randomItem(urgentPhrases).replace('{{expiry_hours}}', expiryHours.toString()) : ''
+      urgency_phrase: expiryHours ? randomItem(urgentPhrases) : ''
     };
 
     let builtEmbed = buildEmbed(template.embed, {
@@ -167,7 +177,7 @@ module.exports = {
       builtEmbed.setFooter({ text: footerText, iconURL: template.embed.footer?.iconURL });
     }
 
-    const components = getButtonsForTemplate(key);  // now returns array of rows
+    const components = getButtonsForTemplate(key);
 
     let content = '';
     if (personalNote) content += `📝 *${personalNote}*\n\n`;
