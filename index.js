@@ -7,7 +7,8 @@ const logger = require('./utils/logger');
 // Import database initializer and schedulers
 const { initDatabase } = require('./utils/database');
 const startFollowUpScheduler = require('./schedulers/followUp');
-const { startAutoPostScheduler } = require('./schedulers/autoPost'); // ✅ new auto poster
+const { startAutoPostScheduler } = require('./schedulers/autoPost');
+const { startLobbyChatterScheduler } = require('./schedulers/lobbyChatter');
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.DirectMessages],
@@ -55,11 +56,19 @@ client.once('ready', async () => {
     logger.error('Failed to start follow‑up scheduler:', err);
   }
 
-  // Start the auto poster (every 2 hours) – new feature
+  // Start the auto poster (every 2 hours)
   try {
     startAutoPostScheduler(client);
     logger.ready('Auto poster started (every 2 hours)');
   } catch (err) {
     logger.error('Failed to start auto poster:', err);
+  }
+
+  // Start the lobby chatter (every 2 minutes – simulates human conversations)
+  try {
+    startLobbyChatterScheduler(client);
+    logger.ready('Lobby chatter started (every 2 minutes)');
+  } catch (err) {
+    logger.error('Failed to start lobby chatter:', err);
   }
 });
