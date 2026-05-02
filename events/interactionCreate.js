@@ -929,6 +929,7 @@ async function startTradeInFlow(interaction, model) {
           .setRequired(true)
       )
     );
+  // First response – show modal
   await interaction.showModal(modal);
 }
 
@@ -944,13 +945,10 @@ async function confirmTestDrive(interaction, client, date, time, locationType) {
   const userId = interaction.user.id;
   const username = interaction.user.username;
   let threadChannel = null;
-  let guildId = null;
-  let guild = null;
 
   // Check if interaction is in a guild (server) or DM
   if (interaction.guild) {
-    guild = interaction.guild;
-    guildId = guild.id;
+    const guild = interaction.guild;
     const member = await guild.members.fetch(userId);
     
     // Find or create Sales Threads category
