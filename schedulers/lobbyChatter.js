@@ -4,11 +4,12 @@ const axios = require('axios');
 const logger = require('../utils/logger');
 const { getGuildConfig } = require('../utils/database');
 const { defaultPersonas, generateChatTurn } = require('../utils/lobbyChatter');
+const { getRandomItem } = require('../utils/helpers');
 
-// Store active webhook clients per guild (to reuse)
+// Store active webhook clients to reuse
 const webhookClients = new Map();
 
-async function getWebhookClient(guildId, webhookUrl) {
+async function getWebhookClient(webhookUrl) {
   if (webhookClients.has(webhookUrl)) return webhookClients.get(webhookUrl);
   // Parse webhook URL to get id and token
   const match = webhookUrl.match(/\/webhooks\/(\d+)\/(.+)$/);
@@ -40,25 +41,26 @@ async function runLobbyChatter(client) {
     
     let personas = config.lobby_chatter_personas || defaultPersonas;
     if (typeof personas === 'string') personas = JSON.parse(personas);
+    if (!personas.length) personas = defaultPersonas;
     
     // Pick a random persona
     const persona = getRandomItem(personas);
     const message = generateChatTurn(persona);
     
     try {
-      const webhook = await getWebhookClient(guild.id, config.lobby_webhook_url);
+      const webhook = await getWebhookClient(config.lobby_webhook_url);
       await sendAsPersona(webhook, persona, message);
     } catch (err) {
       logger.error(`Lobby chatter failed for guild ${guild.id}:`, err);
     }
     
-    // Wait random interval between 30 sec and 5 min before next guild
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 30000 + 30000));
+    // Wait random interval between 30 sec and 2 min before next guild
+    await new Promise(resolve => setTimeout(resolve, Math.random() * 90000 + 30000));
   }
 }
 
 function startLobbyChatterScheduler(client) {
-  // Run every 2 minutes (adjustable in future)
+  // Run every 2 minutes
   cron.schedule('*/2 * * * *', async () => {
     logger.info('Lobby chatter: starting round...');
     await runLobbyChatter(client);
