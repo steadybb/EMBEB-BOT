@@ -1,6 +1,4 @@
-Here is a complete professional README.md for your BYD BladeBot GitHub repository:
 
-```markdown
 # 🚗 BYD BladeBot – Discord Sales & Community Bot
 
 [![Discord.js](https://img.shields.io/badge/discord.js-v14-blue.svg)](https://discord.js.org)
