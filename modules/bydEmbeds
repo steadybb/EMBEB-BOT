@@ -4,7 +4,6 @@
 const STATIC_BASE = process.env.STATIC_URL || 'https://your-bot.onrender.com/static';
 
 module.exports = {
-  // 🟢 Triggered when user joins or receives @Lead role
   welcome_greeting: {
     embed: {
       title: '⚡ Welcome to the BYD Sales Hub',
@@ -12,9 +11,7 @@ module.exports = {
         name: 'BladeBot • Your EV Guide',
         iconURL: `${STATIC_BASE}/bladebot-icon.png`,
       },
-      description:
-        `Hi {{username}}! I'm BladeBot, your personal electric vehicle assistant.\n\n` +
-        `Tap a button below to find your perfect BYD, get an instant **USD quote** with federal/state EV credits, or book a test drive – all in under 90 seconds.`,
+      description: 'Hi {{username}}! I\'m BladeBot, your personal electric vehicle assistant.\n\nTap a button below to find your perfect BYD, get an instant **USD quote** with federal/state EV credits, or book a test drive – all in under 90 seconds.',
       image: { url: `${STATIC_BASE}/welcome-banner.jpg` },
       footer: {
         text: '⚡ BYD Official | Blade Battery Safety | Launch Pricing + EV Credits',
@@ -26,7 +23,6 @@ module.exports = {
     expiryMinutes: 60,
   },
 
-  // 🟢 Model selection prompt (expanded lineup)
   model_prompt: {
     embed: {
       title: '🐬 Which BYD catches your eye?',
@@ -34,15 +30,7 @@ module.exports = {
         name: 'BladeBot • Model Selector',
         iconURL: `${STATIC_BASE}/bladebot-icon.png`,
       },
-      description:
-        `Choose one of our most popular models, or tap **Not Sure** to discover the full **14‑vehicle lineup** (Seagull, Dolphin, Seal, ATTO 3, Tang, Song Plus, Yuan Plus, Han, Yangwang U8/U9, Commercial, eBus).\n\n` +
-        `• **Dolphin** – City hatch, $29,990*\n` +
-        `• **Seal** – Sleek sedan, $39,990*\n` +
-        `• **ATTO 3** – Family SUV, $34,990*\n` +
-        `• **Han** – Luxury sedan, $59,990*\n` +
-        `• **Commercial** – Fleet solutions\n` +
-        `• **Not Sure** – I’ll help you decide\n\n` +
-        `_*Before EV credits (up to $7,500)_`,
+      description: 'Choose one of our most popular models, or tap **Not Sure** to discover the full **14‑vehicle lineup** (Seagull, Dolphin, Seal, ATTO 3, Tang, Song Plus, Yuan Plus, Han, Yangwang U8/U9, Commercial, eBus).\n\n• **Dolphin** – City hatch, $29,990*\n• **Seal** – Sleek sedan, $39,990*\n• **ATTO 3** – Family SUV, $34,990*\n• **Han** – Luxury sedan, $59,990*\n• **Commercial** – Fleet solutions\n• **Not Sure** – I’ll help you decide\n\n_*Before EV credits (up to $7,500)_',
       image: { url: `${STATIC_BASE}/models-collage.jpg` },
       footer: {
         text: 'Tap a button below the embed',
@@ -54,7 +42,6 @@ module.exports = {
     expiryMinutes: 30,
   },
 
-  // 🟢 Quote display (USD, with credit breakdown)
   quote_display: {
     embed: {
       title: '💰 Your BYD {{model}} Quote (USD)',
@@ -62,20 +49,7 @@ module.exports = {
         name: 'BladeBot • Instant Price',
         iconURL: `${STATIC_BASE}/bladebot-icon.png`,
       },
-      description:
-        `**{{variant}}** • {{color}}\n\n` +
-        `Vehicle Price:           ${{vehicle_price}}\n` +
-        `Registration & Fees:     ${{reg_fee}}\n` +
-        `Delivery & PDI:          ${{delivery_fee}}\n` +
-        `Sales Tax (est.):        ${{tax}}\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `💰 **Total before credits:** ${{subtotal}}\n` +
-        `⚡ **EV Tax Credits:**       - ${{incentives_value}}\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `🔋 **Final On‑Road Price:**  ${{total_price}}\n\n` +
-        `✨ **Incentives applied:** {{incentives_list}}\n\n` +
-        `💳 **Estimated Monthly (60mo, 0 down):** ${{monthly_finance}}\n` +
-        `🚗 **Lease (36mo, 12k mi/yr):** ${{monthly_lease}}`,
+      description: '**{{variant}}** • {{color}}\n\nVehicle Price:           ${{vehicle_price}}\nRegistration & Fees:     ${{reg_fee}}\nDelivery & PDI:          ${{delivery_fee}}\nSales Tax (est.):        ${{tax}}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💰 **Total before credits:** ${{subtotal}}\n⚡ **EV Tax Credits:**       - ${{incentives_value}}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔋 **Final On‑Road Price:**  ${{total_price}}\n\n✨ **Incentives applied:** {{incentives_list}}\n\n💳 **Estimated Monthly (60mo, 0 down):** ${{monthly_finance}}\n🚗 **Lease (36mo, 12k mi/yr):** ${{monthly_lease}}',
       image: { url: `${STATIC_BASE}/quote-banner.jpg` },
       footer: {
         text: 'Limited‑time launch pricing + EV credits. Valid for 7 days.',
@@ -87,7 +61,6 @@ module.exports = {
     expiryMinutes: 15,
   },
 
-  // 🟢 Test drive confirmation
   test_drive_confirmed: {
     embed: {
       title: '✅ Test Drive Booked!',
@@ -95,12 +68,7 @@ module.exports = {
         name: 'BladeBot • Scheduling',
         iconURL: `${STATIC_BASE}/bladebot-icon.png`,
       },
-      description:
-        `📅 **Date:** {{date}}\n` +
-        `⏰ **Time:** {{time}}\n` +
-        `📍 **Location:** {{location_type}} – {{address}}\n\n` +
-        `A private thread has been created for you and our BYD sales team. We'll confirm all details there within 1 hour.\n\n` +
-        `🚗 We can’t wait to put you behind the wheel.`,
+      description: '📅 **Date:** {{date}}\n⏰ **Time:** {{time}}\n📍 **Location:** {{location_type}} – {{address}}\n\nA private thread has been created for you and our BYD sales team. We\'ll confirm all details there within 1 hour.\n\n🚗 We can’t wait to put you behind the wheel.',
       image: { url: `${STATIC_BASE}/test-drive-confirmed.jpg` },
       footer: {
         text: 'BYD Test Drive | No obligation',
@@ -112,7 +80,6 @@ module.exports = {
     expiryMinutes: 10080,
   },
 
-  // 🟢 Trade-in estimate (USD, miles)
   trade_in_estimate: {
     embed: {
       title: '🔄 Your Trade-in Estimate',
@@ -120,16 +87,7 @@ module.exports = {
         name: 'BladeBot • Value Your Car',
         iconURL: `${STATIC_BASE}/bladebot-icon.png`,
       },
-      description:
-        `**{{user_car_make_model}}** • {{odometer}} miles • Condition: {{condition}}\n\n` +
-        `Market range: **${{market_range_low}} – ${{market_range_high}}**\n` +
-        `🎯 Our offer: **${{trade_offer}}**\n\n` +
-        `Applied to your new BYD **{{new_model}}**:\n` +
-        `Vehicle price: ${{new_price}}\n` +
-        `– Trade credit: ${{trade_offer}}\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `💰 **Balance due:** ${{balance_due}}\n\n` +
-        `⚡ We settle your existing finance and you drive away the same day.`,
+      description: '**{{user_car_make_model}}** • {{odometer}} miles • Condition: {{condition}}\n\nMarket range: **${{market_range_low}} – ${{market_range_high}}**\n🎯 Our offer: **${{trade_offer}}**\n\nApplied to your new BYD **{{new_model}}**:\nVehicle price: ${{new_price}}\n– Trade credit: ${{trade_offer}}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💰 **Balance due:** ${{balance_due}}\n\n⚡ We settle your existing finance and you drive away the same day.',
       image: { url: `${STATIC_BASE}/trade-in-banner.jpg` },
       footer: {
         text: 'Offer valid for 7 days / 500 miles. Final after inspection.',
@@ -141,7 +99,6 @@ module.exports = {
     expiryMinutes: 10080,
   },
 
-  // 🟢 48-hour follow-up for dormant leads
   follow_up_dormant: {
     embed: {
       title: '👋 Still thinking about the {{model}}?',
@@ -149,13 +106,7 @@ module.exports = {
         name: 'BladeBot • No pressure reminder',
         iconURL: `${STATIC_BASE}/bladebot-icon.png`,
       },
-      description:
-        `I'm here if you have questions. Here's a quick recap:\n\n` +
-        `📄 [Download Brochure](https://byd.com/brochure/{{model}})\n` +
-        `💰 [Get Your Quote]({{quote_link}})\n` +
-        `🗓️ [Book a Test Drive]({{test_drive_link}})\n\n` +
-        `Just tap one of the buttons below whenever you're ready.\n\n` +
-        `_*Limited‑time launch pricing – EV credits still available._`,
+      description: 'I\'m here if you have questions. Here\'s a quick recap:\n\n📄 [Download Brochure](https://byd.com/brochure/{{model}})\n💰 [Get Your Quote]({{quote_link}})\n🗓️ [Book a Test Drive]({{test_drive_link}})\n\nJust tap one of the buttons below whenever you\'re ready.\n\n_*Limited‑time launch pricing – EV credits still available._',
       image: { url: `${STATIC_BASE}/follow-up.jpg` },
       footer: {
         text: 'BYD | Sustainable mobility for all',
@@ -167,7 +118,6 @@ module.exports = {
     expiryMinutes: 4320,
   },
 
-  // 🟢 Fleet/commercial handoff
   commercial_transfer: {
     embed: {
       title: '🚛 Fleet & Commercial Inquiry',
@@ -175,14 +125,7 @@ module.exports = {
         name: 'BladeBot • Business Team',
         iconURL: `${STATIC_BASE}/bladebot-icon.png`,
       },
-      description:
-        `You’ve requested a commercial vehicle solution.\n\n` +
-        `A BYD fleet specialist will be assigned to this thread shortly.\n\n` +
-        `In the meantime, please share:\n` +
-        `• Number of vehicles needed\n` +
-        `• Primary use (last-mile delivery, passenger transport, etc.)\n` +
-        `• Preferred delivery timeframe\n\n` +
-        `We’ll prepare a tailored fleet quote within 4 business hours.`,
+      description: 'You’ve requested a commercial vehicle solution.\n\nA BYD fleet specialist will be assigned to this thread shortly.\n\nIn the meantime, please share:\n• Number of vehicles needed\n• Primary use (last-mile delivery, passenger transport, etc.)\n• Preferred delivery timeframe\n\nWe’ll prepare a tailored fleet quote within 4 business hours.',
       image: { url: `${STATIC_BASE}/fleet-banner.jpg` },
       footer: {
         text: 'BYD Commercial | Zero-emission logistics',
