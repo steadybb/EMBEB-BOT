@@ -807,7 +807,7 @@ async function adminLobbySetPersonas(interaction) {
   await interaction.showModal(modal);
 }
 
-// ------------------------- CORE BUSINESS FUNCTIONS (unchanged) -------------------------
+// ------------------------- CORE BUSINESS FUNCTIONS -------------------------
 async function selectModel(interaction, model) {
   const userId = interaction.user.id;
   await updateUserState(userId, { selectedModel: model, step: 'model_selected' });
@@ -939,34 +939,49 @@ async function askForDateTime(interaction, locationType) {
   await interaction.reply({ embeds: [embed], components: [row], ephemeral: false });
 }
 
+// ------------------------- FIXED confirmTestDrive (handles DM gracefully) -------------------------
 async function confirmTestDrive(interaction, client, date, time, locationType) {
   const userId = interaction.user.id;
-  const guild = interaction.guild;
-  const member = await guild.members.fetch(userId);
-  const username = member.user.username;
+  const username = interaction.user.username;
+  let threadChannel = null;
+  let guildId = null;
+  let guild = null;
 
-  let category = guild.channels.cache.find(c => c.name === 'Sales Threads' && c.type === 4);
-  if (!category) {
-    category = await guild.channels.create({
-      name: 'Sales Threads',
-      type: 4,
+  // Check if interaction is in a guild (server) or DM
+  if (interaction.guild) {
+    guild = interaction.guild;
+    guildId = guild.id;
+    const member = await guild.members.fetch(userId);
+    
+    // Find or create Sales Threads category
+    let category = guild.channels.cache.find(c => c.name === 'Sales Threads' && c.type === 4);
+    if (!category) {
+      category = await guild.channels.create({ name: 'Sales Threads', type: 4 });
+    }
+
+    const channelName = `testdrive-${username}-${Date.now()}`;
+    const advisorRole = guild.roles.cache.find(r => r.name === 'Sales Advisor');
+
+    threadChannel = await guild.channels.create({
+      name: channelName,
+      type: 0,
+      parent: category.id,
+      permissionOverwrites: [
+        { id: guild.id, deny: ['ViewChannel'] },
+        { id: member.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
+        { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
+        ...(advisorRole ? [{ id: advisorRole.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] }] : []),
+      ],
     });
+
+    await threadChannel.send({ content: `<@${member.id}>, your test drive has been booked!` });
+    if (advisorRole) {
+      await threadChannel.send(`🔔 <@&${advisorRole.id}> A new test drive request from ${member.user.tag} – please confirm within 1 hour.`);
+    }
+  } else {
+    // DM interaction – cannot create a channel, just confirm via DM
+    logger.info(`Test drive booked via DM for ${username} on ${date} at ${time} (${locationType}) – no guild channel created`);
   }
-
-  const channelName = `testdrive-${username}-${Date.now()}`;
-  const advisorRole = guild.roles.cache.find(r => r.name === 'Sales Advisor');
-
-  const threadChannel = await guild.channels.create({
-    name: channelName,
-    type: 0,
-    parent: category.id,
-    permissionOverwrites: [
-      { id: guild.id, deny: ['ViewChannel'] },
-      { id: member.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
-      { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
-      ...(advisorRole ? [{ id: advisorRole.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] }] : []),
-    ],
-  });
 
   const embedTemplate = bydEmbeds.test_drive_confirmed.embed;
   const embed = new EmbedBuilder()
@@ -983,12 +998,12 @@ async function confirmTestDrive(interaction, client, date, time, locationType) {
     .setTimestamp();
 
   await interaction.update({ embeds: [embed], components: [] });
-  await threadChannel.send({ content: `<@${member.id}>, your test drive has been booked!`, embeds: [embed] });
-  if (advisorRole) {
-    await threadChannel.send(`🔔 <@&${advisorRole.id}> A new test drive request from ${member.user.tag} – please confirm within 1 hour.`);
+  
+  if (threadChannel) {
+    await threadChannel.send({ embeds: [embed] });
   }
 
-  await saveTestDriveBooking(userId, username, date, time, locationType, threadChannel.id);
+  await saveTestDriveBooking(userId, username, date, time, locationType, threadChannel?.id || 'DM_BOOKING');
   await updateUserState(userId, { step: 'test_drive_booked', tempData: {} });
   logger.success(`🚗 Test drive booked: ${username} on ${date} at ${time} (${locationType})`);
 }
