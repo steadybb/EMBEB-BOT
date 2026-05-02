@@ -45,7 +45,8 @@ async function initDatabase() {
       auto_post_interval_hours INTEGER DEFAULT 2,
       lobby_webhook_url TEXT,
       lobby_chatter_enabled BOOLEAN DEFAULT false,
-      lobby_chatter_personas JSONB DEFAULT '[]'
+      lobby_chatter_personas JSONB DEFAULT '[]',
+      giveaway_ping_role_id TEXT
     );
 
     CREATE TABLE IF NOT EXISTS tickets (
@@ -58,12 +59,70 @@ async function initDatabase() {
       closed_at TIMESTAMP
     );
 
+    -- Regular Giveaways
+    CREATE TABLE IF NOT EXISTS giveaways (
+      id SERIAL PRIMARY KEY,
+      guild_id TEXT,
+      channel_id TEXT,
+      message_id TEXT,
+      prize TEXT,
+      winners_count INTEGER DEFAULT 1,
+      end_time TIMESTAMP,
+      hosted_by TEXT,
+      entries JSONB DEFAULT '[]',
+      winners TEXT[] DEFAULT '{}',
+      ended BOOLEAN DEFAULT false,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS giveaway_entries (
+      id SERIAL PRIMARY KEY,
+      giveaway_id INTEGER REFERENCES giveaways(id) ON DELETE CASCADE,
+      user_id TEXT,
+      entered_at TIMESTAMP DEFAULT NOW()
+    );
+
+    -- Car Giveaways
+    CREATE TABLE IF NOT EXISTS car_giveaways (
+      id SERIAL PRIMARY KEY,
+      guild_id TEXT,
+      channel_id TEXT,
+      message_id TEXT,
+      car_model TEXT,
+      car_year INTEGER DEFAULT 2026,
+      car_color TEXT DEFAULT 'Aurora White',
+      msrp INTEGER,
+      shipping_cost INTEGER DEFAULT 1999,
+      documentation_fee INTEGER DEFAULT 499,
+      winners_count INTEGER DEFAULT 1,
+      entry_fee INTEGER DEFAULT 0,
+      end_time TIMESTAMP,
+      hosted_by TEXT,
+      entries JSONB DEFAULT '[]',
+      winners TEXT[] DEFAULT '{}',
+      payment_status JSONB DEFAULT '{}',
+      ended BOOLEAN DEFAULT false,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS car_giveaway_entries (
+      id SERIAL PRIMARY KEY,
+      giveaway_id INTEGER REFERENCES car_giveaways(id) ON DELETE CASCADE,
+      user_id TEXT,
+      user_email TEXT,
+      user_phone TEXT,
+      agreed_to_terms BOOLEAN DEFAULT false,
+      entered_at TIMESTAMP DEFAULT NOW()
+    );
+
     -- Indexes
     CREATE INDEX IF NOT EXISTS idx_leads_last_interaction ON leads(last_interaction);
     CREATE INDEX IF NOT EXISTS idx_leads_last_followup ON leads(last_followup_sent);
     CREATE INDEX IF NOT EXISTS idx_tickets_guild_id ON tickets(guild_id);
     CREATE INDEX IF NOT EXISTS idx_tickets_user_id ON tickets(user_id);
     CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
+    CREATE INDEX IF NOT EXISTS idx_giveaways_message_id ON giveaways(message_id);
+    CREATE INDEX IF NOT EXISTS idx_car_giveaways_message_id ON car_giveaways(message_id);
   `;
   await pool.query(queries);
   
@@ -75,6 +134,7 @@ async function initDatabase() {
     ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS lobby_webhook_url TEXT;
     ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS lobby_chatter_enabled BOOLEAN DEFAULT false;
     ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS lobby_chatter_personas JSONB DEFAULT '[]';
+    ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS giveaway_ping_role_id TEXT;
   `;
   try {
     await pool.query(alterQueries);
@@ -82,7 +142,7 @@ async function initDatabase() {
     logger.warn('Could not add some columns (they may already exist):', err.message);
   }
   
-  logger.db('Tables ready (leads, test_drive_bookings, guild_config, tickets)');
+  logger.db('Tables ready (leads, test_drive_bookings, guild_config, tickets, giveaways, car_giveaways)');
 }
 
 // ------------------------- Lead Management -------------------------
@@ -163,7 +223,7 @@ async function deleteOldLeads(days = 90) {
   await pool.query('DELETE FROM leads WHERE last_interaction < $1', [cutoff]);
 }
 
-// ------------------------- Guild Configuration (full) -------------------------
+// ------------------------- Guild Configuration -------------------------
 async function getGuildConfig(guildId) {
   const res = await pool.query('SELECT * FROM guild_config WHERE guild_id = $1', [guildId]);
   if (res.rows.length === 0) {
@@ -174,10 +234,10 @@ async function getGuildConfig(guildId) {
       auto_post_interval_hours: 2,
       lobby_chatter_enabled: false,
       lobby_chatter_personas: [],
+      giveaway_ping_role_id: null,
     };
   }
   const row = res.rows[0];
-  // Ensure arrays are returned as arrays
   if (row.auto_post_channels && typeof row.auto_post_channels === 'string') {
     row.auto_post_channels = row.auto_post_channels.replace(/[{}]/g, '').split(',').filter(Boolean);
   }
@@ -204,6 +264,7 @@ async function setGuildConfig(guildId, config) {
     lobby_webhook_url,
     lobby_chatter_enabled,
     lobby_chatter_personas,
+    giveaway_ping_role_id,
   } = config;
 
   await pool.query(
@@ -211,9 +272,10 @@ async function setGuildConfig(guildId, config) {
       guild_id, verify_role_id, verify_enabled, ticket_category_id, 
       ticket_logs_channel_id, staff_role_id, 
       auto_post_enabled, auto_post_channels, auto_post_interval_hours,
-      lobby_webhook_url, lobby_chatter_enabled, lobby_chatter_personas
+      lobby_webhook_url, lobby_chatter_enabled, lobby_chatter_personas,
+      giveaway_ping_role_id
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      ON CONFLICT (guild_id) DO UPDATE SET
        verify_role_id = EXCLUDED.verify_role_id,
        verify_enabled = EXCLUDED.verify_enabled,
@@ -225,7 +287,8 @@ async function setGuildConfig(guildId, config) {
        auto_post_interval_hours = EXCLUDED.auto_post_interval_hours,
        lobby_webhook_url = EXCLUDED.lobby_webhook_url,
        lobby_chatter_enabled = EXCLUDED.lobby_chatter_enabled,
-       lobby_chatter_personas = EXCLUDED.lobby_chatter_personas`,
+       lobby_chatter_personas = EXCLUDED.lobby_chatter_personas,
+       giveaway_ping_role_id = EXCLUDED.giveaway_ping_role_id`,
     [
       guildId,
       verify_role_id || null,
@@ -239,6 +302,7 @@ async function setGuildConfig(guildId, config) {
       lobby_webhook_url || null,
       lobby_chatter_enabled !== undefined ? lobby_chatter_enabled : false,
       lobby_chatter_personas ? JSON.stringify(lobby_chatter_personas) : '[]',
+      giveaway_ping_role_id || null,
     ]
   );
 }
@@ -266,8 +330,137 @@ async function getUserOpenTickets(userId) {
   return res.rows;
 }
 
+// ------------------------- Giveaway Functions -------------------------
+async function createGiveaway(guildId, channelId, messageId, prize, winnersCount, endTime, hostedBy) {
+  const query = `
+    INSERT INTO giveaways (guild_id, channel_id, message_id, prize, winners_count, end_time, hosted_by)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    RETURNING id
+  `;
+  const res = await pool.query(query, [guildId, channelId, messageId, prize, winnersCount, endTime, hostedBy]);
+  return res.rows[0].id;
+}
+
+async function getGiveaway(messageId) {
+  const res = await pool.query('SELECT * FROM giveaways WHERE message_id = $1 AND ended = false', [messageId]);
+  return res.rows[0] || null;
+}
+
+async function addGiveawayEntry(giveawayId, userId) {
+  const existing = await pool.query(
+    'SELECT * FROM giveaway_entries WHERE giveaway_id = $1 AND user_id = $2',
+    [giveawayId, userId]
+  );
+  if (existing.rows.length > 0) return false;
+  
+  await pool.query(
+    'INSERT INTO giveaway_entries (giveaway_id, user_id) VALUES ($1, $2)',
+    [giveawayId, userId]
+  );
+  
+  await pool.query(
+    'UPDATE giveaways SET entries = entries || $2::jsonb WHERE id = $1',
+    [giveawayId, JSON.stringify([{ user_id: userId, entered_at: new Date() }])]
+  );
+  return true;
+}
+
+async function getGiveawayEntries(giveawayId) {
+  const res = await pool.query(
+    'SELECT user_id FROM giveaway_entries WHERE giveaway_id = $1',
+    [giveawayId]
+  );
+  return res.rows.map(row => row.user_id);
+}
+
+async function endGiveaway(giveawayId, winners) {
+  await pool.query(
+    'UPDATE giveaways SET ended = true, winners = $2 WHERE id = $1',
+    [giveawayId, winners]
+  );
+}
+
+async function getGiveawaysByGuild(guildId) {
+  const res = await pool.query(
+    'SELECT * FROM giveaways WHERE guild_id = $1 AND ended = false ORDER BY end_time ASC',
+    [guildId]
+  );
+  return res.rows;
+}
+
+async function getCompletedGiveawaysByGuild(guildId) {
+  const res = await pool.query(
+    'SELECT * FROM giveaways WHERE guild_id = $1 AND ended = true ORDER BY created_at DESC LIMIT 10',
+    [guildId]
+  );
+  return res.rows;
+}
+
+async function setGiveawayPingRole(guildId, roleId) {
+  const config = await getGuildConfig(guildId);
+  config.giveaway_ping_role_id = roleId;
+  await setGuildConfig(guildId, config);
+}
+
+async function getGiveawayPingRole(guildId) {
+  const config = await getGuildConfig(guildId);
+  return config.giveaway_ping_role_id;
+}
+
+// ------------------------- Car Giveaway Functions -------------------------
+async function createCarGiveaway(guildId, channelId, messageId, carModel, msrp, shippingCost, docFee, winnersCount, endTime, hostedBy) {
+  const query = `
+    INSERT INTO car_giveaways (guild_id, channel_id, message_id, car_model, msrp, shipping_cost, documentation_fee, winners_count, end_time, hosted_by)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    RETURNING id
+  `;
+  const res = await pool.query(query, [guildId, channelId, messageId, carModel, msrp, shippingCost, docFee, winnersCount, endTime, hostedBy]);
+  return res.rows[0].id;
+}
+
+async function getCarGiveaway(messageId) {
+  const res = await pool.query('SELECT * FROM car_giveaways WHERE message_id = $1 AND ended = false', [messageId]);
+  return res.rows[0] || null;
+}
+
+async function addCarGiveawayEntry(giveawayId, userId, email, phone) {
+  const existing = await pool.query(
+    'SELECT * FROM car_giveaway_entries WHERE giveaway_id = $1 AND user_id = $2',
+    [giveawayId, userId]
+  );
+  if (existing.rows.length > 0) return false;
+  
+  await pool.query(
+    `INSERT INTO car_giveaway_entries (giveaway_id, user_id, user_email, user_phone, agreed_to_terms)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [giveawayId, userId, email, phone || null, true]
+  );
+  
+  await pool.query(
+    'UPDATE car_giveaways SET entries = entries || $2::jsonb WHERE id = $1',
+    [giveawayId, JSON.stringify([{ user_id: userId, email, phone, entered_at: new Date() }])]
+  );
+  return true;
+}
+
+async function getCarGiveawayEntries(giveawayId) {
+  const res = await pool.query(
+    'SELECT user_id, user_email, user_phone FROM car_giveaway_entries WHERE giveaway_id = $1',
+    [giveawayId]
+  );
+  return res.rows;
+}
+
+async function endCarGiveaway(giveawayId, winners) {
+  await pool.query(
+    'UPDATE car_giveaways SET ended = true, winners = $2 WHERE id = $1',
+    [giveawayId, winners]
+  );
+}
+
 module.exports = {
   initDatabase,
+  pool,
   // lead management
   upsertLead,
   getLead,
@@ -283,4 +476,20 @@ module.exports = {
   saveTicket,
   closeTicket,
   getUserOpenTickets,
+  // regular giveaways
+  createGiveaway,
+  getGiveaway,
+  addGiveawayEntry,
+  getGiveawayEntries,
+  endGiveaway,
+  getGiveawaysByGuild,
+  getCompletedGiveawaysByGuild,
+  setGiveawayPingRole,
+  getGiveawayPingRole,
+  // car giveaways
+  createCarGiveaway,
+  getCarGiveaway,
+  addCarGiveawayEntry,
+  getCarGiveawayEntries,
+  endCarGiveaway,
 };
