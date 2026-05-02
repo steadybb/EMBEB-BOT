@@ -32,7 +32,7 @@ async function initDatabase() {
       booked_at TIMESTAMP DEFAULT NOW()
     );
 
-    -- New tables for verification & ticket system
+    -- Guild configuration with all features
     CREATE TABLE IF NOT EXISTS guild_config (
       guild_id TEXT PRIMARY KEY,
       verify_role_id TEXT,
@@ -42,7 +42,10 @@ async function initDatabase() {
       staff_role_id TEXT,
       auto_post_enabled BOOLEAN DEFAULT false,
       auto_post_channels TEXT[] DEFAULT '{}',
-      auto_post_interval_hours INTEGER DEFAULT 2
+      auto_post_interval_hours INTEGER DEFAULT 2,
+      lobby_webhook_url TEXT,
+      lobby_chatter_enabled BOOLEAN DEFAULT false,
+      lobby_chatter_personas JSONB DEFAULT '[]'
     );
 
     CREATE TABLE IF NOT EXISTS tickets (
@@ -64,17 +67,19 @@ async function initDatabase() {
   `;
   await pool.query(queries);
   
-  // For existing databases, ensure the new columns exist (PostgreSQL 9.6+)
+  // For existing databases, ensure all new columns exist
   const alterQueries = `
     ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS auto_post_enabled BOOLEAN DEFAULT false;
     ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS auto_post_channels TEXT[] DEFAULT '{}';
     ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS auto_post_interval_hours INTEGER DEFAULT 2;
+    ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS lobby_webhook_url TEXT;
+    ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS lobby_chatter_enabled BOOLEAN DEFAULT false;
+    ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS lobby_chatter_personas JSONB DEFAULT '[]';
   `;
   try {
     await pool.query(alterQueries);
   } catch (err) {
-    // If ALTER COLUMN fails (e.g., older PostgreSQL), log and continue
-    logger.warn('Could not add auto poster columns (they may already exist):', err.message);
+    logger.warn('Could not add some columns (they may already exist):', err.message);
   }
   
   logger.db('Tables ready (leads, test_drive_bookings, guild_config, tickets)');
@@ -158,7 +163,7 @@ async function deleteOldLeads(days = 90) {
   await pool.query('DELETE FROM leads WHERE last_interaction < $1', [cutoff]);
 }
 
-// ------------------------- Guild Configuration (updated with auto poster) -------------------------
+// ------------------------- Guild Configuration (full) -------------------------
 async function getGuildConfig(guildId) {
   const res = await pool.query('SELECT * FROM guild_config WHERE guild_id = $1', [guildId]);
   if (res.rows.length === 0) {
@@ -167,12 +172,21 @@ async function getGuildConfig(guildId) {
       auto_post_enabled: false,
       auto_post_channels: [],
       auto_post_interval_hours: 2,
+      lobby_chatter_enabled: false,
+      lobby_chatter_personas: [],
     };
   }
   const row = res.rows[0];
   // Ensure arrays are returned as arrays
   if (row.auto_post_channels && typeof row.auto_post_channels === 'string') {
     row.auto_post_channels = row.auto_post_channels.replace(/[{}]/g, '').split(',').filter(Boolean);
+  }
+  if (row.lobby_chatter_personas && typeof row.lobby_chatter_personas === 'string') {
+    try {
+      row.lobby_chatter_personas = JSON.parse(row.lobby_chatter_personas);
+    } catch (e) {
+      row.lobby_chatter_personas = [];
+    }
   }
   return row;
 }
@@ -187,15 +201,19 @@ async function setGuildConfig(guildId, config) {
     auto_post_enabled,
     auto_post_channels,
     auto_post_interval_hours,
+    lobby_webhook_url,
+    lobby_chatter_enabled,
+    lobby_chatter_personas,
   } = config;
 
   await pool.query(
     `INSERT INTO guild_config (
       guild_id, verify_role_id, verify_enabled, ticket_category_id, 
       ticket_logs_channel_id, staff_role_id, 
-      auto_post_enabled, auto_post_channels, auto_post_interval_hours
+      auto_post_enabled, auto_post_channels, auto_post_interval_hours,
+      lobby_webhook_url, lobby_chatter_enabled, lobby_chatter_personas
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      ON CONFLICT (guild_id) DO UPDATE SET
        verify_role_id = EXCLUDED.verify_role_id,
        verify_enabled = EXCLUDED.verify_enabled,
@@ -204,7 +222,10 @@ async function setGuildConfig(guildId, config) {
        staff_role_id = EXCLUDED.staff_role_id,
        auto_post_enabled = EXCLUDED.auto_post_enabled,
        auto_post_channels = EXCLUDED.auto_post_channels,
-       auto_post_interval_hours = EXCLUDED.auto_post_interval_hours`,
+       auto_post_interval_hours = EXCLUDED.auto_post_interval_hours,
+       lobby_webhook_url = EXCLUDED.lobby_webhook_url,
+       lobby_chatter_enabled = EXCLUDED.lobby_chatter_enabled,
+       lobby_chatter_personas = EXCLUDED.lobby_chatter_personas`,
     [
       guildId,
       verify_role_id || null,
@@ -215,11 +236,14 @@ async function setGuildConfig(guildId, config) {
       auto_post_enabled !== undefined ? auto_post_enabled : false,
       auto_post_channels || [],
       auto_post_interval_hours !== undefined ? auto_post_interval_hours : 2,
+      lobby_webhook_url || null,
+      lobby_chatter_enabled !== undefined ? lobby_chatter_enabled : false,
+      lobby_chatter_personas ? JSON.stringify(lobby_chatter_personas) : '[]',
     ]
   );
 }
 
-// ------------------------- Ticket System (unchanged) -------------------------
+// ------------------------- Ticket System -------------------------
 async function saveTicket(guildId, userId, channelId) {
   await pool.query(
     'INSERT INTO tickets (guild_id, user_id, channel_id) VALUES ($1, $2, $3)',
