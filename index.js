@@ -2,11 +2,12 @@ require('./keepalive');
 const { Client, GatewayIntentBits, Collection, Partials } = require('discord.js');
 const fs = require('fs');
 const config = require('./config');
-const logger = require('./utils/logger'); // ✅ Import the logger
+const logger = require('./utils/logger');
 
-// Import database initializer and follow‑up scheduler
+// Import database initializer and schedulers
 const { initDatabase } = require('./utils/database');
 const startFollowUpScheduler = require('./schedulers/followUp');
+const { startAutoPostScheduler } = require('./schedulers/autoPost'); // ✅ new auto poster
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.DirectMessages],
@@ -20,20 +21,19 @@ const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('
 for (const file of commandFiles) {
   const command = require(`./commands/${file}`);
   client.commands.set(command.data.name, command);
-  logger.cmd(`Loaded command: ${command.data.name}`); // ✅ Log each command
+  logger.cmd(`Loaded command: ${command.data.name}`);
 }
 
 // Load events
 const eventFiles = fs.readdirSync('./events');
 for (const file of eventFiles) {
   require(`./events/${file}`)(client);
-  logger.event(`Loaded event: ${file}`); // ✅ Log each event
+  logger.event(`Loaded event: ${file}`);
 }
 
 client.login(config.token);
 
 client.once('ready', async () => {
-  // ✅ Fancy startup banner
   logger.printBanner('BYD BladeBot', '2.0.0');
   logger.ready(`Logged in as ${client.user.tag} (${client.user.id})`);
   
@@ -53,5 +53,13 @@ client.once('ready', async () => {
     logger.ready('Follow‑up scheduler started (runs every hour)');
   } catch (err) {
     logger.error('Failed to start follow‑up scheduler:', err);
+  }
+
+  // Start the auto poster (every 2 hours) – new feature
+  try {
+    startAutoPostScheduler(client);
+    logger.ready('Auto poster started (every 2 hours)');
+  } catch (err) {
+    logger.error('Failed to start auto poster:', err);
   }
 });
