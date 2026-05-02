@@ -101,7 +101,7 @@ async function handleButton(interaction, client) {
 
   logger.debug(`Button pressed: ${customId} by ${user.tag}`);
 
-  // BYD Lead Capture buttons (core models)
+  // BYD Lead Capture buttons
   if (customId === 'welcome_model_dolphin') return selectModel(interaction, 'Dolphin');
   if (customId === 'welcome_model_seal') return selectModel(interaction, 'Seal');
   if (customId === 'welcome_model_atto3') return selectModel(interaction, 'ATTO 3');
@@ -135,7 +135,7 @@ async function handleButton(interaction, client) {
   if (customId === 'need_city') return recommendCity(interaction);
   if (customId === 'need_fleet') return handleFleet(interaction);
 
-  // Verification & Ticket System (user-facing)
+  // Verification & Ticket System
   if (customId === 'verify_button') return handleVerify(interaction);
   if (customId === 'create_ticket') return createTicket(interaction, client);
   if (customId === 'close_ticket') return closeTicketHandler(interaction, client);
@@ -383,11 +383,24 @@ async function handleModal(interaction) {
     return;
   }
 
+  // Giveaway ping role modal
+  if (customId === 'admin_modal_giveaway_pingrole') {
+    const roleId = fields.getTextInputValue('role_id');
+    if (roleId.toLowerCase() === 'none') {
+      await setGiveawayPingRole(interaction.guildId, null);
+      await interaction.reply({ content: '✅ Giveaway ping role disabled.', ephemeral: true });
+    } else {
+      await setGiveawayPingRole(interaction.guildId, roleId);
+      await interaction.reply({ content: `✅ Giveaway ping role set to <@&${roleId}>.`, ephemeral: true });
+    }
+    return;
+  }
+
   logger.warn(`Unknown modal customId: ${customId}`);
   await interaction.reply({ content: '❓ Unknown form.', ephemeral: true });
 }
 
-// ------------------------- VERIFICATION & TICKET FUNCTIONS (user-facing) -------------------------
+// ------------------------- VERIFICATION & TICKET FUNCTIONS -------------------------
 async function handleVerify(interaction) {
   const guildId = interaction.guildId;
   const config = await getGuildConfig(guildId);
@@ -695,7 +708,7 @@ async function adminPostTicketPanel(interaction) {
   await interaction.reply({ embeds: [embed], components: [row], ephemeral: false });
 }
 
-// ***** AUTO POSTER ADMIN FUNCTIONS *****
+// ----- AUTO POSTER ADMIN FUNCTIONS -----
 async function adminAutopostMenu(interaction) {
   const config = await getGuildConfig(interaction.guildId);
   const channels = config.auto_post_channels?.length ? config.auto_post_channels.map(id => `<#${id}>`).join(', ') : 'None';
@@ -853,21 +866,6 @@ async function adminGiveawaySetPingRole(interaction) {
       )
     );
   await interaction.showModal(modal);
-}
-
-// Add this modal handler inside handleModal
-// Add after other modal handlers:
-
-if (customId === 'admin_modal_giveaway_pingrole') {
-  const roleId = fields.getTextInputValue('role_id');
-  if (roleId.toLowerCase() === 'none') {
-    await setGiveawayPingRole(interaction.guildId, null);
-    await interaction.reply({ content: '✅ Giveaway ping role disabled.', ephemeral: true });
-  } else {
-    await setGiveawayPingRole(interaction.guildId, roleId);
-    await interaction.reply({ content: `✅ Giveaway ping role set to <@&${roleId}>.`, ephemeral: true });
-  }
-  return;
 }
 
 // ------------------------- CORE BUSINESS FUNCTIONS -------------------------
