@@ -22,7 +22,9 @@ const {
   setGuildConfig,
   saveTicket,
   closeTicket,
-  getUserOpenTickets
+  getUserOpenTickets,
+  setGiveawayPingRole,
+  getGiveawayPingRole,
 } = require('../utils/database');
 
 // ========== SOCIAL PROOF & URGENCY LIBRARY ==========
@@ -143,6 +145,7 @@ async function handleButton(interaction, client) {
   if (customId === 'admin_ticket_menu') return adminTicketMenu(interaction);
   if (customId === 'admin_autopost_menu') return adminAutopostMenu(interaction);
   if (customId === 'admin_lobby_menu') return adminLobbyMenu(interaction);
+  if (customId === 'admin_giveaway_menu') return adminGiveawayMenu(interaction);
   if (customId === 'admin_refresh') return adminRefresh(interaction);
   if (customId === 'admin_set_verify_role') return adminSetVerifyRole(interaction);
   if (customId === 'admin_toggle_verify') return adminToggleVerify(interaction);
@@ -157,6 +160,7 @@ async function handleButton(interaction, client) {
   if (customId === 'admin_lobby_toggle') return adminLobbyToggle(interaction);
   if (customId === 'admin_lobby_set_webhook') return adminLobbySetWebhook(interaction);
   if (customId === 'admin_lobby_set_personas') return adminLobbySetPersonas(interaction);
+  if (customId === 'admin_giveaway_set_pingrole') return adminGiveawaySetPingRole(interaction);
 
   logger.warn(`Unknown button customId: ${customId}`);
   await interaction.reply({ content: '❓ Unknown option. Use the buttons provided.', ephemeral: true });
@@ -544,6 +548,7 @@ async function adminRefresh(interaction) {
   const autoPostChannels = config.auto_post_channels?.length ? config.auto_post_channels.map(id => `<#${id}>`).join(', ') : 'None';
   const lobbyStatus = config.lobby_chatter_enabled ? '🟢 Enabled' : '🔴 Disabled';
   const lobbyWebhook = config.lobby_webhook_url ? '✅ Set' : '❌ Not set';
+  const giveawayPingRole = config.giveaway_ping_role_id ? `<@&${config.giveaway_ping_role_id}>` : '❌ Not set';
 
   const embed = new EmbedBuilder()
     .setTitle('🎛️ BYD Bot Admin Dashboard')
@@ -553,7 +558,8 @@ async function adminRefresh(interaction) {
       { name: '✅ Verification', value: `**Status:** ${config.verify_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Role:** ${verifyRole}`, inline: true },
       { name: '🎫 Ticket System', value: `**Category:** ${ticketCategory}\n**Staff Role:** ${staffRole}\n**Logs Channel:** ${logsChannel}`, inline: true },
       { name: '🤖 Auto Poster', value: `**Status:** ${config.auto_post_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Channels:** ${autoPostChannels}\n**Interval:** Every ${config.auto_post_interval_hours || 2} hours`, inline: true },
-      { name: '💬 Lobby Chatter', value: `**Status:** ${lobbyStatus}\n**Webhook:** ${lobbyWebhook}`, inline: true }
+      { name: '💬 Lobby Chatter', value: `**Status:** ${lobbyStatus}\n**Webhook:** ${lobbyWebhook}`, inline: true },
+      { name: '🎁 Giveaways', value: `**Ping Role:** ${giveawayPingRole}\n**Commands:** \`/giveaway\` \`/cargiveaway\``, inline: true }
     )
     .setTimestamp();
 
@@ -566,6 +572,7 @@ async function adminRefresh(interaction) {
     new ButtonBuilder().setCustomId('admin_lobby_menu').setLabel('💬 Lobby Chatter').setStyle(ButtonStyle.Primary)
   );
   const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('admin_giveaway_menu').setLabel('🎁 Giveaway Settings').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary)
   );
   await interaction.update({ embeds: [embed], components: [row1, row2, row3] });
@@ -807,6 +814,62 @@ async function adminLobbySetPersonas(interaction) {
   await interaction.showModal(modal);
 }
 
+// ----- GIVEAWAY ADMIN FUNCTIONS -----
+async function adminGiveawayMenu(interaction) {
+  const config = await getGuildConfig(interaction.guildId);
+  const embed = new EmbedBuilder()
+    .setTitle('🎁 Giveaway Configuration')
+    .setDescription(
+      `**Ping Role:** ${config.giveaway_ping_role_id ? `<@&${config.giveaway_ping_role_id}>` : '❌ Not set'}\n\n` +
+      `**Available Commands:**\n` +
+      `• \`/giveaway start prize:"Prize" duration:24 winners:1\`\n` +
+      `• \`/giveaway end message_id:123\`\n` +
+      `• \`/giveaway reroll message_id:123\`\n\n` +
+      `**Car Giveaway Commands:**\n` +
+      `• \`/cargiveaway start model:Seal shipping:1999 duration:168 winners:1\`\n` +
+      `• \`/cargiveaway end message_id:123\`\n` +
+      `• \`/cargiveaway winner message_id:123 user:@winner\``
+    )
+    .setColor('#FFD700');
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('admin_giveaway_set_pingrole').setLabel('📌 Set Ping Role').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
+  );
+  await interaction.update({ embeds: [embed], components: [row] });
+}
+
+async function adminGiveawaySetPingRole(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('admin_modal_giveaway_pingrole')
+    .setTitle('Set Giveaway Ping Role')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('role_id')
+          .setLabel('Role ID (right‑click role → Copy ID)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setPlaceholder('Enter role ID, or "none" to disable')
+      )
+    );
+  await interaction.showModal(modal);
+}
+
+// Add this modal handler inside handleModal
+// Add after other modal handlers:
+
+if (customId === 'admin_modal_giveaway_pingrole') {
+  const roleId = fields.getTextInputValue('role_id');
+  if (roleId.toLowerCase() === 'none') {
+    await setGiveawayPingRole(interaction.guildId, null);
+    await interaction.reply({ content: '✅ Giveaway ping role disabled.', ephemeral: true });
+  } else {
+    await setGiveawayPingRole(interaction.guildId, roleId);
+    await interaction.reply({ content: `✅ Giveaway ping role set to <@&${roleId}>.`, ephemeral: true });
+  }
+  return;
+}
+
 // ------------------------- CORE BUSINESS FUNCTIONS -------------------------
 async function selectModel(interaction, model) {
   const userId = interaction.user.id;
@@ -929,7 +992,6 @@ async function startTradeInFlow(interaction, model) {
           .setRequired(true)
       )
     );
-  // First response – show modal
   await interaction.showModal(modal);
 }
 
@@ -940,18 +1002,15 @@ async function askForDateTime(interaction, locationType) {
   await interaction.reply({ embeds: [embed], components: [row], ephemeral: false });
 }
 
-// ------------------------- FIXED confirmTestDrive (handles DM gracefully) -------------------------
 async function confirmTestDrive(interaction, client, date, time, locationType) {
   const userId = interaction.user.id;
   const username = interaction.user.username;
   let threadChannel = null;
 
-  // Check if interaction is in a guild (server) or DM
   if (interaction.guild) {
     const guild = interaction.guild;
     const member = await guild.members.fetch(userId);
     
-    // Find or create Sales Threads category
     let category = guild.channels.cache.find(c => c.name === 'Sales Threads' && c.type === 4);
     if (!category) {
       category = await guild.channels.create({ name: 'Sales Threads', type: 4 });
@@ -977,7 +1036,6 @@ async function confirmTestDrive(interaction, client, date, time, locationType) {
       await threadChannel.send(`🔔 <@&${advisorRole.id}> A new test drive request from ${member.user.tag} – please confirm within 1 hour.`);
     }
   } else {
-    // DM interaction – cannot create a channel, just confirm via DM
     logger.info(`Test drive booked via DM for ${username} on ${date} at ${time} (${locationType}) – no guild channel created`);
   }
 
@@ -1031,7 +1089,6 @@ async function setTradeCondition(interaction, condition) {
   await updateUserState(userId, { step: null, tempData: {} });
 }
 
-// ----- Expanded recommendations for the full lineup -----
 async function recommendAffordability(interaction) {
   await interaction.reply({ content: '💸 **Best value picks:**\n• **Seagull** – $19,990 (city EV)\n• **Dolphin** – $29,990 (hatch)\n• **Yuan Plus** – $37,990 (crossover)\n\nWant a quote on any of these?' });
 }
