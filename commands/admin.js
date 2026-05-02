@@ -17,28 +17,32 @@ module.exports = {
     const guildId = interaction.guildId;
     const config = await getGuildConfig(guildId);
 
-    // Helper: format configured items
+    // Format configured items
     const verifyRole = config.verify_role_id ? `<@&${config.verify_role_id}>` : '❌ Not set';
     const ticketCategory = config.ticket_category_id ? `<#${config.ticket_category_id}>` : '❌ Not set';
     const staffRole = config.staff_role_id ? `<@&${config.staff_role_id}>` : '❌ Not set';
     const logsChannel = config.ticket_logs_channel_id ? `<#${config.ticket_logs_channel_id}>` : '❌ Not set';
+    const autoPostEnabled = config.auto_post_enabled ? '🟢 Enabled' : '🔴 Disabled';
+    const autoPostChannels = config.auto_post_channels?.length ? config.auto_post_channels.map(id => `<#${id}>`).join(', ') : 'None';
 
     const embed = new EmbedBuilder()
       .setTitle('🎛️ BYD Bot Admin Dashboard')
-      .setDescription('Configure verification and ticket systems for your server.')
+      .setDescription('Configure verification, ticket system, and auto poster for your server.')
       .setColor('#00BFFF')
       .addFields(
         { name: '✅ Verification', value: `**Status:** ${config.verify_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Role:** ${verifyRole}`, inline: true },
-        { name: '🎫 Ticket System', value: `**Category:** ${ticketCategory}\n**Staff Role:** ${staffRole}\n**Logs Channel:** ${logsChannel}`, inline: true }
+        { name: '🎫 Ticket System', value: `**Category:** ${ticketCategory}\n**Staff Role:** ${staffRole}\n**Logs Channel:** ${logsChannel}`, inline: true },
+        { name: '🤖 Auto Poster', value: `**Status:** ${autoPostEnabled}\n**Channels:** ${autoPostChannels}\n**Interval:** Every ${config.auto_post_interval_hours || 2} hours`, inline: true }
       )
       .setFooter({ text: 'Use the buttons below to configure each system.' })
       .setTimestamp();
 
     const row1 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('admin_verify_menu').setLabel('✅ Verification Settings').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('admin_ticket_menu').setLabel('🎫 Ticket System Settings').setStyle(ButtonStyle.Primary)
+      new ButtonBuilder().setCustomId('admin_verify_menu').setLabel('✅ Verification').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('admin_ticket_menu').setLabel('🎫 Ticket System').setStyle(ButtonStyle.Primary)
     );
     const row2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('admin_autopost_menu').setLabel('🤖 Auto Poster').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('admin_refresh').setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary)
     );
 
