@@ -39,7 +39,10 @@ async function initDatabase() {
       verify_enabled BOOLEAN DEFAULT false,
       ticket_category_id TEXT,
       ticket_logs_channel_id TEXT,
-      staff_role_id TEXT
+      staff_role_id TEXT,
+      auto_post_enabled BOOLEAN DEFAULT false,
+      auto_post_channels TEXT[] DEFAULT '{}',
+      auto_post_interval_hours INTEGER DEFAULT 2
     );
 
     CREATE TABLE IF NOT EXISTS tickets (
@@ -60,6 +63,20 @@ async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
   `;
   await pool.query(queries);
+  
+  // For existing databases, ensure the new columns exist (PostgreSQL 9.6+)
+  const alterQueries = `
+    ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS auto_post_enabled BOOLEAN DEFAULT false;
+    ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS auto_post_channels TEXT[] DEFAULT '{}';
+    ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS auto_post_interval_hours INTEGER DEFAULT 2;
+  `;
+  try {
+    await pool.query(alterQueries);
+  } catch (err) {
+    // If ALTER COLUMN fails (e.g., older PostgreSQL), log and continue
+    logger.warn('Could not add auto poster columns (they may already exist):', err.message);
+  }
+  
   logger.db('Tables ready (leads, test_drive_bookings, guild_config, tickets)');
 }
 
@@ -141,13 +158,23 @@ async function deleteOldLeads(days = 90) {
   await pool.query('DELETE FROM leads WHERE last_interaction < $1', [cutoff]);
 }
 
-// ------------------------- Guild Configuration -------------------------
+// ------------------------- Guild Configuration (updated with auto poster) -------------------------
 async function getGuildConfig(guildId) {
   const res = await pool.query('SELECT * FROM guild_config WHERE guild_id = $1', [guildId]);
   if (res.rows.length === 0) {
-    return { verify_enabled: false }; // default
+    return {
+      verify_enabled: false,
+      auto_post_enabled: false,
+      auto_post_channels: [],
+      auto_post_interval_hours: 2,
+    };
   }
-  return res.rows[0];
+  const row = res.rows[0];
+  // Ensure arrays are returned as arrays
+  if (row.auto_post_channels && typeof row.auto_post_channels === 'string') {
+    row.auto_post_channels = row.auto_post_channels.replace(/[{}]/g, '').split(',').filter(Boolean);
+  }
+  return row;
 }
 
 async function setGuildConfig(guildId, config) {
@@ -157,22 +184,42 @@ async function setGuildConfig(guildId, config) {
     ticket_category_id,
     ticket_logs_channel_id,
     staff_role_id,
+    auto_post_enabled,
+    auto_post_channels,
+    auto_post_interval_hours,
   } = config;
 
   await pool.query(
-    `INSERT INTO guild_config (guild_id, verify_role_id, verify_enabled, ticket_category_id, ticket_logs_channel_id, staff_role_id)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO guild_config (
+      guild_id, verify_role_id, verify_enabled, ticket_category_id, 
+      ticket_logs_channel_id, staff_role_id, 
+      auto_post_enabled, auto_post_channels, auto_post_interval_hours
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (guild_id) DO UPDATE SET
        verify_role_id = EXCLUDED.verify_role_id,
        verify_enabled = EXCLUDED.verify_enabled,
        ticket_category_id = EXCLUDED.ticket_category_id,
        ticket_logs_channel_id = EXCLUDED.ticket_logs_channel_id,
-       staff_role_id = EXCLUDED.staff_role_id`,
-    [guildId, verify_role_id, verify_enabled, ticket_category_id, ticket_logs_channel_id, staff_role_id]
+       staff_role_id = EXCLUDED.staff_role_id,
+       auto_post_enabled = EXCLUDED.auto_post_enabled,
+       auto_post_channels = EXCLUDED.auto_post_channels,
+       auto_post_interval_hours = EXCLUDED.auto_post_interval_hours`,
+    [
+      guildId,
+      verify_role_id || null,
+      verify_enabled !== undefined ? verify_enabled : false,
+      ticket_category_id || null,
+      ticket_logs_channel_id || null,
+      staff_role_id || null,
+      auto_post_enabled !== undefined ? auto_post_enabled : false,
+      auto_post_channels || [],
+      auto_post_interval_hours !== undefined ? auto_post_interval_hours : 2,
+    ]
   );
 }
 
-// ------------------------- Ticket System -------------------------
+// ------------------------- Ticket System (unchanged) -------------------------
 async function saveTicket(guildId, userId, channelId) {
   await pool.query(
     'INSERT INTO tickets (guild_id, user_id, channel_id) VALUES ($1, $2, $3)',
