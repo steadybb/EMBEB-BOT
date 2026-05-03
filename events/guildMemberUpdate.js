@@ -86,13 +86,19 @@ module.exports = (client) => {
         // Calculate lead score
         const leadScore = calculateInitialLeadScore(newMember);
 
-        // Save lead to database
+        // Save lead to database - FIXED: pass data as object
         try {
           await upsertLead(
-            newMember.guild.id,
             newMember.user.id,
             newMember.user.username,
-            leadScore
+            {
+              leadScore: leadScore,
+              leadStage: leadScore >= 50 ? 'HOT' : leadScore >= 30 ? 'WARM' : 'INTERESTED',
+              lastInteraction: new Date(),
+              selectedModel: null,
+              step: 'lead_assigned',
+              tempData: { assignedVia: 'role', guildId: newMember.guild.id },
+            }
           );
           logger.debug(`Lead saved to database: ${newMember.user.tag} (Score: ${leadScore})`);
         } catch (dbErr) {
@@ -110,6 +116,7 @@ module.exports = (client) => {
               .addFields(
                 { name: 'User', value: `${newMember.user.tag} (${newMember.user.id})`, inline: true },
                 { name: 'Lead Score', value: `${leadScore} points`, inline: true },
+                { name: 'Lead Stage', value: leadScore >= 50 ? '🔥 HOT' : leadScore >= 30 ? '🟡 WARM' : '🔵 INTERESTED', inline: true },
                 { name: 'Account Created', value: `<t:${Math.floor(newMember.user.createdTimestamp / 1000)}:R>`, inline: true }
               )
               .setColor('#FFD700')
@@ -147,9 +154,9 @@ module.exports = (client) => {
           )
           .setColor('#FFD700')
           .setThumbnail(`${staticBase}/byd-logo.png`)
-          .setImage(`${staticBase}/byd-lineup.jpg`) // Add lineup image if available
+          .setImage(`${staticBase}/byd-lineup.jpg`)
           .setFooter({ 
-            text: '⚡ Blade Battery Technology • Trusted by 15,000+ US drivers • Your Lead Score: ' + leadScore, 
+            text: `⚡ Blade Battery Technology • Trusted by 15,000+ US drivers • Your Lead Score: ${leadScore}`, 
             iconURL: `${staticBase}/byd-logo.png`
           })
           .setTimestamp();
@@ -236,13 +243,11 @@ module.exports = (client) => {
               await newMember.send({ embeds: [followUpEmbed] });
               logger.debug(`Follow-up DM sent to ${newMember.user.tag}`);
             } catch (followUpErr) {
-              // Silently fail if user blocked DMs
               logger.debug(`Follow-up DM failed for ${newMember.user.tag} (likely DMs closed)`);
             }
-          }, 2 * 60 * 1000); // 2 minutes
+          }, 2 * 60 * 1000);
 
         } catch (err) {
-          // User might have DMs disabled
           logger.warn(`⚠️ Could not DM ${newMember.user.tag} (DMs may be closed)`);
           
           // Try to send a welcome message in a public channel
