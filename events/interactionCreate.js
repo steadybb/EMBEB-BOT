@@ -16,6 +16,7 @@ const { getUserState, updateUserState } = require('../utils/stateManager');
 const { generateQuote, models, regionIncentives } = require('../utils/bydData');
 const { getCalendarPicker, getTimePicker } = require('../utils/calendar');
 const { getAutoPostStats } = require('../schedulers/autoPost');
+const { handleCarGiveawayButton, handleCarGiveawayModal } = require('../commands/cargiveaway');
 const { getApiStats } = require('../utils/openai');
 const {
   saveTestDriveBooking,
@@ -77,6 +78,9 @@ module.exports = (client) => {
 
     // Buttons
     if (interaction.isButton()) {
+      if (interaction.customId === 'cargiveaway_enter') {
+        return handleCarGiveawayButton(interaction);
+      }
       await handleButton(interaction, client);
       return;
     }
@@ -87,8 +91,11 @@ module.exports = (client) => {
       return;
     }
 
-    // Modals (Trade‑in + Admin)
+    // Modals (Trade‑in + Admin + Car Giveaway)
     if (interaction.isModalSubmit()) {
+      if (interaction.customId === 'cargiveaway_entry_modal') {
+        return handleCarGiveawayModal(interaction);
+      }
       await handleModal(interaction);
       return;
     }
