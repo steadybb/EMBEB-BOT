@@ -76,6 +76,8 @@ const stats = {
   totalPosts: 0,
   successfulPosts: 0,
   failedPosts: 0,
+  apiPosts: 0,
+  fallbackPosts: 0,
   lastPostTime: null,
   lastError: null,
   contentTypes: {},
@@ -111,6 +113,8 @@ async function saveState() {
         totalPosts: stats.totalPosts,
         successfulPosts: stats.successfulPosts,
         failedPosts: stats.failedPosts,
+        apiPosts: stats.apiPosts,
+        fallbackPosts: stats.fallbackPosts,
         lastPostTime: stats.lastPostTime,
         contentTypes: stats.contentTypes,
       },
@@ -165,7 +169,7 @@ function truncateContent(text) {
   return text.substring(0, MAX_DISCORD_EMBED_DESCRIPTION - 3) + '...';
 }
 
-function updateStats(type, success) {
+function updateStats(type, success, source = 'unknown') {
   stats.totalPosts++;
   
   if (success) {
@@ -174,15 +178,24 @@ function updateStats(type, success) {
     stats.failedPosts++;
   }
   
+  // Track source
+  if (source === 'api') {
+    stats.apiPosts++;
+  } else if (source === 'fallback') {
+    stats.fallbackPosts++;
+  }
+  
   stats.lastPostTime = new Date().toISOString();
   
   if (!stats.contentTypes[type]) {
-    stats.contentTypes[type] = { attempts: 0, successes: 0 };
+    stats.contentTypes[type] = { attempts: 0, successes: 0, api: 0, fallback: 0 };
   }
   stats.contentTypes[type].attempts++;
   
   if (success) {
     stats.contentTypes[type].successes++;
+    if (source === 'api') stats.contentTypes[type].api++;
+    if (source === 'fallback') stats.contentTypes[type].fallback++;
   }
 }
 
@@ -212,45 +225,61 @@ async function postAutoContent(client, specificChannelId = null) {
 
   logger.info(`Auto posting: ${contentType.name}${selectedModel ? ` (${selectedModel})` : ''}`);
   
-  // Generate content
-  let generatedText;
+  // ============================================
+  // GENERATE CONTENT (now returns an object)
+  // ============================================
+  let result;
   try {
-    generatedText = await generateContent(prompt);
+    // Pass contentType.id for better fallback matching
+    result = await generateContent(prompt, 'openai/gpt-3.5-turbo', contentType.id);
   } catch (err) {
     logger.error('Failed to generate auto post content:', err);
     updateStats(contentType.id, false);
     return false;
   }
 
-  if (!generatedText) {
-    logger.error('Generated content is empty, skipping this cycle.');
+  // Check if result is valid (now an object, not a string)
+  if (!result || !result.content) {
+    logger.error('Failed to generate content (all sources exhausted)');
     updateStats(contentType.id, false);
     return false;
   }
+
+  // Log source
+  if (result.source === 'fallback') {
+    logger.warn(`📦 Using fallback content (Post: ${result.postId || 'unknown'})${result.image ? ' 🖼️ with image' : ''}`);
+  } else {
+    logger.success(`✅ AI-generated content (${result.model}, ${result.responseTime}ms)`);
+  }
+
+  let generatedText = result.content;
 
   // Validate content
   if (!isValidDiscordContent(generatedText)) {
     logger.error(`Invalid content generated (length: ${generatedText?.length || 0}), skipping.`);
-    updateStats(contentType.id, false);
+    updateStats(contentType.id, false, result.source);
     return false;
   }
 
-  // Check for duplicates
-  if (isDuplicateContent(generatedText)) {
-    logger.warn('Duplicate content detected, regenerating...');
-    // Try one more time with a different model if applicable
-    const retryModel = useRandomModel ? getRandomModel() : null;
-    let retryPrompt;
-    if (useRandomModel && retryModel !== selectedModel) {
-      retryPrompt = contentType.promptTemplate(retryModel);
+  // Check for duplicates (only for API content, skip for fallback since it's managed differently)
+  if (result.source === 'api' && isDuplicateContent(generatedText)) {
+    logger.warn('Duplicate API content detected, trying fallback...');
+    // Force fallback for this post
+    const { getFallbackPost } = require('../utils/openai');
+    const fallbackPost = getFallbackPost(contentType.id);
+    if (fallbackPost) {
+      result = {
+        content: fallbackPost.content,
+        source: 'fallback',
+        postId: fallbackPost.id,
+        type: fallbackPost.type,
+        image: fallbackPost.image || null,
+      };
+      generatedText = result.content;
+      logger.info('Using fallback post to avoid duplication');
     } else {
-      retryPrompt = prompt + ' (make it different from previous responses)';
-    }
-    
-    generatedText = await generateContent(retryPrompt);
-    if (!generatedText || isDuplicateContent(generatedText) || !isValidDiscordContent(generatedText)) {
-      logger.error('Failed to generate unique content after retry.');
-      updateStats(contentType.id, false);
+      logger.error('No fallback post available for duplicate content');
+      updateStats(contentType.id, false, result.source);
       return false;
     }
   }
@@ -258,19 +287,39 @@ async function postAutoContent(client, specificChannelId = null) {
   // Truncate if necessary
   generatedText = truncateContent(generatedText);
 
-  // Build embed
+  // ============================================
+  // BUILD EMBED WITH IMAGE SUPPORT
+  // ============================================
   const embed = new EmbedBuilder()
     .setTitle(contentType.name)
     .setDescription(generatedText)
-    .setColor(selectedModel ? '#00BFFF' : '#00FF88')
+    .setColor(getEmbedColor(result.source, selectedModel))
     .setFooter({ 
-      text: selectedModel 
-        ? `🚗 BYD ${selectedModel} • 🕒 Automated Update • Powered by AI` 
-        : '🕒 Automated BYD Update • Powered by AI' 
+      text: getFooterText(result, selectedModel)
     })
     .setTimestamp();
 
-  // Determine target channel
+  // Add image if available (from fallback posts)
+  if (result.image) {
+    embed.setImage(result.image);
+    logger.debug(`🖼️ Added image to embed: ${result.image}`);
+  }
+
+  // Add author field for fallback content
+  if (result.source === 'fallback') {
+    embed.setAuthor({
+      name: '📦 Pre-written Content',
+      iconURL: 'https://cdn.discordapp.com/emojis/📦.png', // You can use a custom icon URL
+    });
+  } else {
+    embed.setAuthor({
+      name: `🤖 AI Generated • ${result.model || 'Unknown Model'}`,
+    });
+  }
+
+  // ============================================
+  // DETERMINE TARGET CHANNEL
+  // ============================================
   let targetChannelId;
   if (specificChannelId) {
     targetChannelId = specificChannelId;
@@ -282,16 +331,23 @@ async function postAutoContent(client, specificChannelId = null) {
   const channel = client.channels.cache.get(targetChannelId);
   if (!channel) {
     logger.error(`Auto post channel not found: ${targetChannelId}`);
-    updateStats(contentType.id, false);
+    updateStats(contentType.id, false, result.source);
     return false;
   }
 
-  // Send with retry logic
+  // ============================================
+  // SEND WITH RETRY LOGIC
+  // ============================================
   let sent = false;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       await channel.send({ embeds: [embed] });
-      logger.success(`Auto post sent to #${channel.name} (${contentType.name})${attempt > 1 ? ` after ${attempt} attempts` : ''}`);
+      logger.success(
+        `Auto post sent to #${channel.name} (${contentType.name})` +
+        `${result.source === 'fallback' ? ' 📦' : ' 🤖'}` +
+        `${result.image ? ' 🖼️' : ''}` +
+        `${attempt > 1 ? ` after ${attempt} attempts` : ''}`
+      );
       sent = true;
       break;
     } catch (err) {
@@ -302,6 +358,12 @@ async function postAutoContent(client, specificChannelId = null) {
       } else if (err.code === 50013 && attempt < MAX_RETRIES) {
         logger.warn(`Missing permissions in #${channel.name}, trying again...`);
         await new Promise(resolve => setTimeout(resolve, 2000));
+      } else if (err.code === 400 && err.message?.includes('image') && attempt === 1) {
+        // Image URL might be invalid, retry without image
+        logger.warn(`Image embed failed, retrying without image`);
+        embed.setImage(null);
+        attempt--; // Don't count this as an attempt
+        continue;
       } else {
         throw err;
       }
@@ -310,14 +372,57 @@ async function postAutoContent(client, specificChannelId = null) {
 
   if (!sent) {
     logger.error(`Failed to send auto post to #${channel.name} after ${MAX_RETRIES} attempts`);
-    updateStats(contentType.id, false);
+    updateStats(contentType.id, false, result.source);
     return false;
   }
 
   // Success
-  updateStats(contentType.id, true);
+  updateStats(contentType.id, true, result.source);
   await saveState();
   return true;
+}
+
+// ============================================
+// EMBED HELPER FUNCTIONS
+// ============================================
+
+/**
+ * Get the appropriate embed color based on source and model
+ */
+function getEmbedColor(source, selectedModel) {
+  if (source === 'fallback') {
+    return '#FFA500'; // Orange for fallback
+  }
+  
+  // API generated with specific model colors
+  const modelColors = {
+    'Seal': '#0066CC',
+    'ATTO 3': '#00CC66',
+    'Dolphin': '#00CCCC',
+    'Han': '#CC0000',
+    'Seagull': '#FF6600',
+  };
+  
+  return selectedModel && modelColors[selectedModel] 
+    ? modelColors[selectedModel] 
+    : '#00BFFF'; // Default blue
+}
+
+/**
+ * Get the footer text based on source and model
+ */
+function getFooterText(result, selectedModel) {
+  if (result.source === 'fallback') {
+    const parts = ['📦 Pre-written Content', '🕒 Automated Update'];
+    if (result.postId) parts.push(`ID: ${result.postId}`);
+    return parts.join(' • ');
+  }
+  
+  // AI generated
+  const parts = ['🤖 AI Generated', '🕒 Automated Update'];
+  if (result.model) parts.push(result.model);
+  if (selectedModel) parts.unshift(`🚗 BYD ${selectedModel}`);
+  return parts.join(' • ');
 }
 
 // ============================================
@@ -333,9 +438,13 @@ function getAutoPostStats() {
     successRate: stats.totalPosts > 0 
       ? `${((stats.successfulPosts / stats.totalPosts) * 100).toFixed(1)}%` 
       : 'N/A',
+    apiVsFallback: stats.totalPosts > 0
+      ? `API: ${stats.apiPosts} (${((stats.apiPosts / stats.totalPosts) * 100).toFixed(0)}%) | Fallback: ${stats.fallbackPosts} (${((stats.fallbackPosts / stats.totalPosts) * 100).toFixed(0)}%)`
+      : 'N/A',
     nextPostSchedule: `Cron: ${AUTO_POST_CONFIG.schedule}`,
     channels: AUTO_POST_CONFIG.channels.length,
     currentTypeIndex: lastTypeIndex,
+    currentType: lastTypeIndex >= 0 ? contentTypes[lastTypeIndex]?.name : 'N/A',
     currentChannelIndex: lastChannelIndex,
   };
 }
@@ -344,13 +453,15 @@ function getAutoPostStats() {
 // SCHEDULER STARTUP
 // ============================================
 function startAutoPostScheduler(client) {
-  // Validation
-  if (!process.env.OPENROUTER_API_KEY) {
-    logger.warn('OPENROUTER_API_KEY not set. Auto poster disabled.');
-    return false;
+  // Validation - now allows running without API key if fallback is enabled
+  const hasApiKey = !!process.env.OPENROUTER_API_KEY;
+  const hasChannels = AUTO_POST_CONFIG.channels.length > 0;
+  
+  if (!hasApiKey) {
+    logger.warn('⚠️  OPENROUTER_API_KEY not set. Will use fallback content exclusively.');
   }
   
-  if (!AUTO_POST_CONFIG.channels.length) {
+  if (!hasChannels) {
     logger.warn('AUTO_POST_CHANNELS not set. Auto poster disabled.');
     return false;
   }
@@ -362,7 +473,7 @@ function startAutoPostScheduler(client) {
 
   // Schedule the cron job
   cron.schedule(AUTO_POST_CONFIG.schedule, async () => {
-    logger.info('Auto poster: starting scheduled run...');
+    logger.info('🤖 Auto poster: starting scheduled run...');
     
     if (AUTO_POST_CONFIG.postToAllChannels) {
       // Post to all configured channels
@@ -380,7 +491,7 @@ function startAutoPostScheduler(client) {
       await postAutoContent(client);
     }
     
-    logger.info('Auto poster: scheduled run completed');
+    logger.info('✅ Auto poster: scheduled run completed');
   });
 
   // Optionally run on startup
@@ -392,8 +503,9 @@ function startAutoPostScheduler(client) {
   }
 
   logger.ready(
-    `Auto poster scheduled with cron "${AUTO_POST_CONFIG.schedule}" | ` +
+    `🚀 Auto poster scheduled with cron "${AUTO_POST_CONFIG.schedule}" | ` +
     `Mode: ${AUTO_POST_CONFIG.postToAllChannels ? 'All channels' : 'Round-robin'} | ` +
+    `Source: ${hasApiKey ? 'API + Fallback' : 'Fallback Only'} | ` +
     `Channels: ${AUTO_POST_CONFIG.channels.join(', ')}`
   );
 
