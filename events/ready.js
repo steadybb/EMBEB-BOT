@@ -37,12 +37,12 @@ module.exports = client => {
     
     // Rotate presence every 30 seconds
     const presenceMessages = [
-      { name: '🚗 BYD EVs', type: 3 }, // WATCHING
+      { name: '🚗 BYD EVs', type: 3 },
       { name: '🔋 Blade Battery tech', type: 3 },
       { name: '⚡ The EV revolution', type: 3 },
       { name: '🏎️ BYD Seal 0-100', type: 3 },
       { name: '🌍 Over 3M NEVs sold', type: 3 },
-      { name: '/help for commands', type: 2 }, // LISTENING
+      { name: '/help for commands', type: 2 },
       { name: '/admin dashboard', type: 2 },
     ];
     
@@ -74,7 +74,6 @@ module.exports = client => {
     // ============================================
     const { getGuildConfig } = require('../utils/database');
     
-    // Check each guild's configuration
     for (const [guildId, guild] of client.guilds.cache) {
       try {
         const config = await getGuildConfig(guildId);
@@ -103,11 +102,9 @@ module.exports = client => {
     // ============================================
     const envChecks = [];
     
-    // Critical
     if (process.env.DISCORD_TOKEN) envChecks.push('🟢 DISCORD_TOKEN');
     else envChecks.push('🔴 DISCORD_TOKEN');
     
-    // Optional but important
     if (process.env.OPENROUTER_API_KEY) envChecks.push('🟢 OPENROUTER_API_KEY');
     else envChecks.push('🟡 OPENROUTER_API_KEY (using fallback)');
     
@@ -117,8 +114,8 @@ module.exports = client => {
     if (process.env.STATIC_BASE_URL) envChecks.push('🟢 STATIC_BASE_URL');
     else envChecks.push('🟡 STATIC_BASE_URL (not set)');
     
-    if (process.env.DATABASE_URL || process.env.MONGODB_URI) envChecks.push('🟢 Database URL');
-    else envChecks.push('🟡 Database URL (using local)');
+    if (process.env.DATABASE_URL) envChecks.push('🟢 Database URL');
+    else envChecks.push('🔴 Database URL (CRITICAL)');
     
     logger.info('🔧 Environment Variables:');
     envChecks.forEach(check => logger.info(`  ${check}`));
@@ -141,57 +138,8 @@ module.exports = client => {
     
     console.log(summary.join('\n'));
     
-    // ============================================
-    // OPTIONAL: WEB SERVER FOR UPTIME MONITORING
-    // ============================================
-    if (process.env.PORT || process.env.WEB_SERVER === 'true') {
-      try {
-        const express = require('express');
-        const path = require('path');
-        const app = express();
-        const PORT = process.env.PORT || 3000;
-        
-        // Serve static files
-        if (process.env.STATIC_BASE_URL) {
-          app.use('/static', express.static(path.join(__dirname, '..', 'static')));
-          logger.ready(`🖼️  Static files served at /static`);
-        }
-        
-        // Health check endpoint
-        app.get('/', (req, res) => {
-          res.json({
-            status: 'online',
-            bot: client.user.tag,
-            guilds: client.guilds.cache.size,
-            users: client.users.cache.size,
-            uptime: process.uptime(),
-            timestamp: new Date().toISOString(),
-          });
-        });
-        
-        // Stats endpoint
-        app.get('/stats', (req, res) => {
-          try {
-            const { getAutoPostStats } = require('../schedulers/autoPost');
-            const { getApiStats } = require('../utils/openai');
-            res.json({
-              bot: client.user.tag,
-              autopost: getAutoPostStats(),
-              api: getApiStats(),
-              uptime: process.uptime(),
-            });
-          } catch (err) {
-            res.json({ error: 'Stats not available yet' });
-          }
-        });
-        
-        app.listen(PORT, () => {
-          logger.ready(`🌐 Web server running on port ${PORT}`);
-        });
-      } catch (err) {
-        logger.warn('Web server not started:', err.message);
-      }
-    }
+    // NOTE: Express web server is started in index.js
+    // This prevents EADDRINUSE port conflicts on Render
     
     logger.ready('🚀 BYD BladeBot is fully ready!');
   });
