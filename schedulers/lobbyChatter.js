@@ -3,7 +3,6 @@ const cron = require('node-cron');
 const axios = require('axios');
 const logger = require('../utils/logger');
 const { getGuildConfig } = require('../utils/database');
-const { defaultPersonas } = require('../utils/lobbyChatter');
 const { getRandomItem } = require('../utils/helpers');
 
 // ============================================
@@ -21,59 +20,10 @@ const CONFIG = {
 // CONVERSATION TOPICS
 // ============================================
 const conversationTopics = [
-  {
-    category: 'ev_tech',
-    topics: [
-      'Blade Battery safety',
-      'Fast charging speeds',
-      'Battery range in winter',
-      'Regenerative braking efficiency',
-      'BYD e-Platform 3.0',
-      'Cell-to-Body technology',
-      'Heat pump efficiency',
-      '800V architecture benefits',
-    ],
-    keywords: ['battery', 'charge', 'range', 'tech', 'platform', 'efficiency'],
-  },
-  {
-    category: 'model_discussion',
-    topics: [
-      'Seal vs Tesla Model 3 comparison',
-      'ATTO 3 interior design',
-      'Dolphin affordability',
-      'Han luxury features',
-      'Seagull city driving',
-      'Tang family space',
-      'Yangwang performance',
-    ],
-    keywords: ['model', 'compare', 'design', 'price', 'features', 'space'],
-  },
-  {
-    category: 'ownership',
-    topics: [
-      'Home charging setup',
-      'Maintenance costs',
-      'Insurance rates for EVs',
-      'Road trip experiences',
-      'Cold weather performance',
-      'Software updates',
-      'Community meetups',
-    ],
-    keywords: ['home', 'cost', 'insurance', 'trip', 'weather', 'update', 'community'],
-  },
-  {
-    category: 'buying_advice',
-    topics: [
-      'EV tax credits 2026',
-      'Financing vs leasing',
-      'Trade-in values',
-      'First-time EV buyer tips',
-      'Charging infrastructure',
-      'Total cost of ownership',
-      'Best time to buy',
-    ],
-    keywords: ['tax', 'finance', 'lease', 'trade', 'buy', 'cost', 'infrastructure'],
-  },
+  { category: 'ev_tech', topics: ['Blade Battery safety', 'Fast charging speeds', 'Battery range in winter', 'Regenerative braking efficiency', 'BYD e-Platform 3.0', 'Cell-to-Body technology', 'Heat pump efficiency', '800V architecture benefits'] },
+  { category: 'model_discussion', topics: ['Seal vs Tesla Model 3', 'ATTO 3 interior design', 'Dolphin affordability', 'Han luxury features', 'Seagull city driving', 'Tang family space', 'Yangwang performance'] },
+  { category: 'ownership', topics: ['Home charging setup', 'Maintenance costs', 'Insurance rates', 'Road trip experiences', 'Cold weather performance', 'Software updates', 'Community meetups'] },
+  { category: 'buying_advice', topics: ['EV tax credits 2026', 'Financing vs leasing', 'Trade-in values', 'First-time EV buyer tips', 'Charging infrastructure', 'Total cost of ownership', 'Best time to buy'] },
 ];
 
 // ============================================
@@ -83,461 +33,220 @@ const conversationMemory = new Map();
 
 function getGuildMemory(guildId) {
   if (!conversationMemory.has(guildId)) {
-    conversationMemory.set(guildId, {
-      messages: [],
-      currentTopic: null,
-      lastSpeaker: null,
-      topicStartTime: null,
-      messageCount: 0,
-    });
+    conversationMemory.set(guildId, { messages: [], currentTopic: null, lastSpeaker: null, lastMessageType: null, topicStartTime: null, messageCount: 0, conversationPhase: 'opening' });
   }
   return conversationMemory.get(guildId);
 }
 
-function updateGuildMemory(guildId, persona, message) {
+function updateGuildMemory(guildId, persona, message, messageType) {
   const memory = getGuildMemory(guildId);
-  memory.messages.push({
-    persona: persona.name,
-    message: message,
-    timestamp: Date.now(),
-  });
+  memory.messages.push({ persona: persona.name, message, type: messageType, timestamp: Date.now() });
   memory.lastSpeaker = persona.name;
+  memory.lastMessageType = messageType;
   memory.messageCount++;
-  
-  if (memory.messages.length > CONFIG.maxContextMessages) {
-    memory.messages = memory.messages.slice(-CONFIG.maxContextMessages);
-  }
-  
-  if (memory.messageCount >= 8 + Math.floor(Math.random() * 5)) {
-    memory.currentTopic = null;
-    memory.messageCount = 0;
-  }
+  if (memory.messageCount <= 2) memory.conversationPhase = 'opening';
+  else if (memory.messageCount <= 6) memory.conversationPhase = 'discussion';
+  else memory.conversationPhase = 'closing';
+  if (memory.messages.length > CONFIG.maxContextMessages) memory.messages = memory.messages.slice(-CONFIG.maxContextMessages);
+  if (memory.messageCount >= 10 + Math.floor(Math.random() * 5)) { memory.currentTopic = null; memory.messageCount = 0; memory.conversationPhase = 'opening'; }
 }
 
 // ============================================
-// ENHANCED PERSONAS WITH REALISTIC NAMES & AVATARS
-// Using UI Avatars API for consistent, working avatar URLs
+// PERSONAS
 // ============================================
-const enhancedDefaultPersonas = [
-  {
-    name: 'Tesla2BYD',
-    avatar: 'https://ui-avatars.com/api/?name=Tesla+2+BYD&background=00BFFF&color=fff&size=256&bold=true',
-    role: 'EV Expert',
-    personality: 'technical, helpful, detail-oriented',
-    interests: ['battery tech', 'charging speeds', 'efficiency'],
-  },
-  {
-    name: 'Seal_Driver',
-    avatar: 'https://ui-avatars.com/api/?name=Seal+Driver&background=0066CC&color=fff&size=256&bold=true',
-    role: 'Seal Owner',
-    personality: 'enthusiastic, sporty, proud owner',
-    interests: ['performance', 'design', 'driving experience'],
-  },
-  {
-    name: 'EcoMom',
-    avatar: 'https://ui-avatars.com/api/?name=Eco+Mom&background=FF69B4&color=fff&size=256&bold=true',
-    role: 'Family Driver',
-    personality: 'practical, safety-conscious, budget-aware',
-    interests: ['safety', 'space', 'affordability', 'family'],
-  },
-  {
-    name: 'VoltGeek',
-    avatar: 'https://ui-avatars.com/api/?name=Volt+Geek&background=9B59B6&color=fff&size=256&bold=true',
-    role: 'Tech Reviewer',
-    personality: 'analytical, curious, compares specs',
-    interests: ['specifications', 'comparisons', 'software', 'gadgets'],
-  },
-  {
-    name: 'CityEV',
-    avatar: 'https://ui-avatars.com/api/?name=City+EV&background=2ECC71&color=fff&size=256&bold=true',
-    role: 'City Driver',
-    personality: 'practical, cost-conscious, efficient',
-    interests: ['charging costs', 'parking', 'city range', 'compact cars'],
-  },
-  {
-    name: 'RoadTripper',
-    avatar: 'https://ui-avatars.com/api/?name=Road+Tripper&background=E67E22&color=fff&size=256&bold=true',
-    role: 'Long Distance Driver',
-    personality: 'adventurous, experienced, storyteller',
-    interests: ['road trips', 'charging networks', 'comfort', 'range'],
-  },
-  {
-    name: 'New2EV',
-    avatar: 'https://ui-avatars.com/api/?name=New+2+EV&background=1ABC9C&color=fff&size=256&bold=true',
-    role: 'First Time Buyer',
-    personality: 'curious, slightly anxious, asks questions',
-    interests: ['buying guide', 'incentives', 'charging basics', 'cost'],
-  },
-  {
-    name: 'FleetBoss',
-    avatar: 'https://ui-avatars.com/api/?name=Fleet+Boss&background=34495E&color=fff&size=256&bold=true',
-    role: 'Commercial Buyer',
-    personality: 'business-minded, ROI-focused, practical',
-    interests: ['fleet', 'commercial', 'tax benefits', 'durability'],
-  },
-  {
-    name: 'Gearhead_Al',
-    avatar: 'https://ui-avatars.com/api/?name=Gearhead+Al&background=C0392B&color=fff&size=256&bold=true',
-    role: 'Car Enthusiast',
-    personality: 'hands-on, skeptical but curious, detailed',
-    interests: ['maintenance', 'modifications', 'DIY', 'build quality'],
-  },
+const activePersonas = [
+  { name: 'Tesla2BYD', avatar: 'https://ui-avatars.com/api/?name=Tesla+2+BYD&background=00BFFF&color=fff&size=256&bold=true', role: 'EV Expert' },
+  { name: 'Seal_Driver', avatar: 'https://ui-avatars.com/api/?name=Seal+Driver&background=0066CC&color=fff&size=256&bold=true', role: 'Seal Owner' },
+  { name: 'EcoMom', avatar: 'https://ui-avatars.com/api/?name=Eco+Mom&background=FF69B4&color=fff&size=256&bold=true', role: 'Family Driver' },
+  { name: 'VoltGeek', avatar: 'https://ui-avatars.com/api/?name=Volt+Geek&background=9B59B6&color=fff&size=256&bold=true', role: 'Tech Reviewer' },
+  { name: 'CityEV', avatar: 'https://ui-avatars.com/api/?name=City+EV&background=2ECC71&color=fff&size=256&bold=true', role: 'City Driver' },
+  { name: 'RoadTripper', avatar: 'https://ui-avatars.com/api/?name=Road+Tripper&background=E67E22&color=fff&size=256&bold=true', role: 'Long Distance Driver' },
+  { name: 'New2EV', avatar: 'https://ui-avatars.com/api/?name=New+2+EV&background=1ABC9C&color=fff&size=256&bold=true', role: 'First Time Buyer' },
+  { name: 'FleetBoss', avatar: 'https://ui-avatars.com/api/?name=Fleet+Boss&background=34495E&color=fff&size=256&bold=true', role: 'Commercial Buyer' },
+  { name: 'Gearhead_Al', avatar: 'https://ui-avatars.com/api/?name=Gearhead+Al&background=C0392B&color=fff&size=256&bold=true', role: 'Car Enthusiast' },
 ];
 
-// Alternative: Use DiceBear Avatars for more variety
-const dicebearPersonas = [
-  {
-    name: 'BladeBatt',
-    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=BladeBatt&backgroundColor=00BFFF',
-    role: 'EV Expert',
-    personality: 'technical, helpful, detail-oriented',
-    interests: ['battery tech', 'charging speeds', 'efficiency'],
-  },
-  {
-    name: 'Seal_Main',
-    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=SealMain&backgroundColor=0066CC',
-    role: 'Seal Owner',
-    personality: 'enthusiastic, sporty, proud owner',
-    interests: ['performance', 'design', 'driving experience'],
-  },
-  {
-    name: 'GreenMomma',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=GreenMomma&backgroundColor=FF69B4',
-    role: 'Family Driver',
-    personality: 'practical, safety-conscious, budget-aware',
-    interests: ['safety', 'space', 'affordability', 'family'],
-  },
-  {
-    name: 'WattWizard',
-    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=WattWizard&backgroundColor=9B59B6',
-    role: 'Tech Reviewer',
-    personality: 'analytical, curious, compares specs',
-    interests: ['specifications', 'comparisons', 'software', 'gadgets'],
-  },
-  {
-    name: 'Urban_EV',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=UrbanEV&backgroundColor=2ECC71',
-    role: 'City Driver',
-    personality: 'practical, cost-conscious, efficient',
-    interests: ['charging costs', 'parking', 'city range', 'compact cars'],
-  },
-  {
-    name: 'HighwayHawk',
-    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=HighwayHawk&backgroundColor=E67E22',
-    role: 'Long Distance Driver',
-    personality: 'adventurous, experienced, storyteller',
-    interests: ['road trips', 'charging networks', 'comfort', 'range'],
-  },
-  {
-    name: 'EV_Newbie',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=EVNewbie&backgroundColor=1ABC9C',
-    role: 'First Time Buyer',
-    personality: 'curious, slightly anxious, asks questions',
-    interests: ['buying guide', 'incentives', 'charging basics', 'cost'],
-  },
-  {
-    name: 'FleetKing',
-    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=FleetKing&backgroundColor=34495E',
-    role: 'Commercial Buyer',
-    personality: 'business-minded, ROI-focused, practical',
-    interests: ['fleet', 'commercial', 'tax benefits', 'durability'],
-  },
-  {
-    name: 'WrenchIt',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=WrenchIt&backgroundColor=C0392B',
-    role: 'Car Enthusiast',
-    personality: 'hands-on, skeptical but curious, detailed',
-    interests: ['maintenance', 'modifications', 'DIY', 'build quality'],
-  },
-];
+// ============================================
+// SMART MESSAGE BANK (10 types × 9 personas × 3+ messages each)
+// ============================================
+function getMessageType(phase, lastType) {
+  const phaseTypes = {
+    'opening': ['question', 'question', 'statement', 'fact'],
+    'discussion': ['answer', 'answer', 'debate', 'testimonial', 'comparison', 'reaction', 'statement'],
+    'closing': ['testimonial', 'fact', 'humor', 'tip', 'reaction', 'statement'],
+  };
+  const types = phaseTypes[phase] || phaseTypes['discussion'];
+  const filtered = types.filter(t => t !== lastType);
+  return getRandomItem(filtered.length > 0 ? filtered : types);
+}
 
-// Choose which persona set to use
-const activePersonas = process.env.LOBBY_AVATAR_STYLE === 'dicebear' ? dicebearPersonas : enhancedDefaultPersonas;
+function generateSmartMessage(persona, topic, phase, messageType, memory) {
+  const topicName = topic.topic;
+  const lastMessages = memory.messages.slice(-3);
+  
+  const M = {
+    question: {
+      'EV Expert': [`Anyone looked into the new ${topicName} developments? Curious what you all think 🤔`, `What's the latest on ${topicName}? Seen some interesting data lately 📊`, `Question for the group: how important is ${topicName} in your buying decision?`],
+      'Seal Owner': [`Quick question on ${topicName} - anyone have real-world experience? 🚗`, `For those with hands-on time: how does ${topicName} perform daily?`, `Curious about ${topicName} on the Seal specifically. Anyone?`],
+      'Family Driver': [`Wondering about ${topicName}. Is it worth it for families? 👨‍👩‍👧‍👦`, `Safety question: how does ${topicName} hold up with kids? 🛡️`, `Mom question: is ${topicName} easy to use with car seats?`],
+      'Tech Reviewer': [`What's the latest on ${topicName}? Seen some interesting specs 📊`, `Anyone done independent testing on ${topicName}? I'd love to compare 🔍`, `Tech deep dive on ${topicName} - anyone have benchmark data?`],
+      'City Driver': [`For city driving, how much does ${topicName} matter day-to-day? 🏙️`, `Parking question: does ${topicName} help with tight urban spots?`, `City EV owners: is ${topicName} worth prioritizing?`],
+      'Long Distance Driver': [`Anyone tested ${topicName} on long road trips? Planning cross-country 🗺️`, `How does ${topicName} affect range on extended highway drives? 🛣️`, `Road warriors: is ${topicName} reliable for 500+ mile days?`],
+      'First Time Buyer': [`New here! Can someone explain ${topicName} in simple terms? 🙋‍♂️`, `Still learning about ${topicName}. Should a first-timer prioritize this? 📝`, `Total newbie question about ${topicName} - please be kind! 🥹`],
+      'Commercial Buyer': [`Business perspective: anyone seeing ROI from ${topicName}? 💼`, `Fleet managers: how does ${topicName} impact operational costs? 📊`, `Scaling question: how does ${topicName} perform across multiple vehicles?`],
+      'Car Enthusiast': [`Technical question about ${topicName} - know the detailed specs? 🔧`, `DIY question: how accessible is ${topicName} for home mechanics? 🛠️`, `Under the hood: what makes ${topicName} tick? Anyone torn one apart?`],
+    },
+    answer: {
+      'EV Expert': [`From my research, ${topicName} is ahead of the curve. Numbers speak for themselves 📈`, `Great question! ${topicName} has improved significantly this year 🔍`, `I've tracked ${topicName} for 2 years. The progress is remarkable 🎯`],
+      'Seal Owner': [`Can confirm ${topicName} works great. 15k miles, no complaints ✅`, `${topicName} exceeded my expectations. Way better than my old BMW 🏎️`, `Real talk: ${topicName} is why I love my Seal 💙`],
+      'Family Driver': [`6 months in: ${topicName} makes family trips so much easier 👨‍👩‍👧‍👦`, `As a mom of 3, ${topicName} has been a lifesaver ⭐`, `Honest review: ${topicName} is the feature I use most daily`],
+      'Tech Reviewer': [`Benchmarked this. ${topicName} scores above average in tests 📊`, `Tested 5 EVs head-to-head. BYD's ${topicName} came out on top 🏆`, `Numbers time: ${topicName} outperforms by 25-30% in independent testing`],
+      'City Driver': [`For city use, ${topicName} is a game-changer. Parking is simpler 🅿️`, `6 months downtown: ${topicName} saves me $150/month easily 💰`],
+      'Long Distance Driver': [`50k miles in, ${topicName} holds up perfectly on long hauls 🛣️`, `20+ road trips. ${topicName} makes long drives effortless ⚡`],
+      'Commercial Buyer': [`Fleet data shows 40% improvement with ${topicName}. Numbers don't lie 💯`, `ROI analysis: ${topicName} paid for itself in 14 months 📈`],
+      'Car Enthusiast': [`Done maintenance myself. ${topicName} is well-engineered 🛠️`, `${topicName} uses quality parts. No corners cut here 🔧`],
+    },
+    statement: {
+      'EV Expert': [`The industry is moving toward ${topicName}. Smart money follows 🎯`, `${topicName} adoption is growing 3x faster than predicted 📊`],
+      'Seal Owner': [`${topicName} was a main reason I chose BYD. No regrets 💯`, `Every drive, I appreciate ${topicName} more. It just works ✨`],
+      'Family Driver': [`${topicName} gives me real peace of mind with the kids ⭐`, `My husband was skeptical but ${topicName} won him over 😂`],
+      'Tech Reviewer': [`BYD's ${topicName} implementation is among the best I've seen 🏆`],
+      'First Time Buyer': [`Learning about ${topicName} makes me confident about going EV ✨`],
+      'Long Distance Driver': [`${topicName} is the reason I can do 800-mile days comfortably`],
+      'Commercial Buyer': [`${topicName} is now a requirement for all our future fleet purchases`],
+    },
+    testimonial: {
+      'Seal Owner': [`Best decision ever. ${topicName} saves me $200/month 💰`, `${topicName} makes every drive enjoyable. Never going back 🚗⚡`, `1 year later: ${topicName} is still my favorite thing about this car`],
+      'Family Driver': [`${topicName} made our road trips stress-free. Zero complaints 👨‍👩‍👧‍👦`, `Never going back to gas. ${topicName} is superior in every way 💚`],
+      'City Driver': [`3 months, saved $600 on fuel. ${topicName} pays for itself 💸`, `My commute used to be stressful. ${topicName} made it the best part ☀️`],
+      'Long Distance Driver': [`800 miles last weekend. ${topicName} made it effortless 🚗⚡`, `Road trips are fun again thanks to ${topicName} 🗺️`],
+      'Commercial Buyer': [`Best business decision this year. ${topicName} transformed our fleet 📈`],
+      'First Time Buyer': [`Was nervous but ${topicName} made switching seamless. So happy! 🎉`],
+    },
+    fact: {
+      'EV Expert': [`Fun fact: ${topicName} reduces operating costs up to 60% 📊`, `BYD's ${topicName} tech is used by Tesla and Toyota 🤯`, `${topicName} tested for 1M+ miles with zero failures 🔬`],
+      'Tech Reviewer': [`${topicName} outperforms competitors by 30% in independent tests 📈`, `Tests confirm: ${topicName} is most efficient in its class 🏆`],
+      'Car Enthusiast': [`${topicName} uses military-grade materials. Over-engineered 🔧`, `${topicName} has fewer moving parts. Less to break 🛠️`],
+      'Seal Owner': [`Did you know? ${topicName} was developed entirely in-house by BYD engineers`],
+      'Family Driver': [`Safety stat: vehicles with ${topicName} have 40% fewer accidents in testing`],
+    },
+    debate: {
+      'EV Expert': [`Hot take: ${topicName} > horsepower for daily driving. Change my mind 🤔`, `Unpopular: ${topicName} matters more than 0-60 for 95% of drivers 😤`],
+      'Seal Owner': [`I'll say it: ${topicName} on the Seal beats anything in its price range 🏎️`],
+      'Tech Reviewer': [`Controversial: BYD's ${topicName} approach beats Tesla. Here's why 📊`, `Fight me: ${topicName} is more innovative than anything coming from Germany right now`],
+      'Car Enthusiast': [`I'll die on this hill: ${topicName} is the most underrated EV feature 💪`],
+      'Long Distance Driver': [`Argument: ${topicName} matters more than charging speed for road trips`],
+    },
+    comparison: {
+      'EV Expert': [`Comparing ${topicName} across brands: BYD leads in 4 of 5 categories 📊`, `Deep dive: ${topicName} on BYD vs competitors. Significant difference 🔍`],
+      'Tech Reviewer': [`Side-by-side test: BYD's ${topicName} is the most polished implementation 🏆`, `Tested 3 EVs with ${topicName}. BYD wins on efficiency and cost`],
+      'Seal Owner': [`Traded my old car. The ${topicName} alone was worth the switch 🏎️`],
+      'Commercial Buyer': [`Compared 5 fleet options. BYD's ${topicName} had lowest TCO by far`],
+    },
+    humor: {
+      'Seal Owner': [`My neighbor asked about ${topicName}. Now he's at the dealership 😂`, `Gas station guy misses me. Haven't been there in 6 months ⛽❌`, `I've become a ${topicName} evangelist. My friends are tired of me 🤷‍♂️`],
+      'City Driver': [`Hardest part about ${topicName}? Remembering what gas stations look like 😂`, `Coworkers are tired of hearing about ${topicName}. I can't stop!`],
+      'Family Driver': [`Kids think ${topicName} is magic. I'm not correcting them ✨`, `Explained ${topicName} to my mom. She thinks I joined a cult 😂`],
+      'First Time Buyer': [`Told friends about ${topicName}. They think I'm obsessed. Maybe I am 🤷‍♂️`, `I've become THAT person at parties talking about ${topicName} 💁‍♂️`],
+      'Long Distance Driver': [`Pulled up to a charger next to a Tesla. He asked about ${topicName}. Converted! 😎`],
+      'Car Enthusiast': [`My garage is now a ${topicName} shrine. Wife is not amused 😂`],
+    },
+    tip: {
+      'EV Expert': [`Pro tip: Maximize ${topicName} by scheduling during off-peak hours 💡`, `Insider: ${topicName} works best when preconditioned before driving 🔋`],
+      'Seal Owner': [`The app has ${topicName} settings most people never discover 📱`, `After a year, I found ${topicName}'s hidden efficiency mode. Game changer! 🔍`],
+      'City Driver': [`Life hack: ${topicName} + planning ahead = maximum savings 🗓️`, `${topicName} tip: Keep tires at 42 PSI for max efficiency 🛞`],
+      'Long Distance Driver': [`Road trip tip: ${topicName} adds 50+ miles if you precondition 🛣️`, `${topicName} + ABRP app = perfect route planning 📱`],
+      'Car Enthusiast': [`DIY tip: ${topicName} maintenance is easier than you think. YouTube it! 🛠️`],
+      'Family Driver': [`Mom tip: Use ${topicName}'s scheduling feature around school runs. Saves so much ⏰`],
+    },
+    reaction: {
+      default: [`This is exactly what I've been saying! 💯`, `Couldn't agree more. Well said! 👏`, `This thread is gold. Learning so much 📚`, `BYD community is the best. So helpful 🤝`, `Adding this to my notes. Great discussion 📝`, `Preach! 🙌`, `Facts! 💪`, `This right here 🔥`, `Finally someone said it 🎯`, `Saving this for later 💾`],
+    },
+  };
+
+  const typeMessages = M[messageType] || {};
+  let messages = typeMessages[persona.role] || typeMessages['EV Expert'] || [];
+  if (messages.length === 0 && messageType === 'reaction') messages = M['reaction']['default'];
+  if (messages.length === 0) messages = [`Great discussion about ${topicName}. Love this community! 🤝`, `Really enjoying the ${topicName} conversation. So much knowledge here 💯`, `${topicName} is fascinating. Everyone's perspectives are super valuable 🌟`];
+  
+  const recentTexts = lastMessages.map(m => m.message);
+  const fresh = messages.filter(m => !recentTexts.includes(m));
+  return getRandomItem(fresh.length > 0 ? fresh : messages);
+}
 
 // ============================================
 // WEBHOOK MANAGEMENT
 // ============================================
 const webhookClients = new Map();
 
-async function getWebhookClient(webhookUrl) {
-  if (webhookClients.has(webhookUrl)) return webhookClients.get(webhookUrl);
-  
-  const match = webhookUrl.match(/\/webhooks\/(\d+)\/(.+)$/);
+async function getWebhookClient(url) {
+  if (webhookClients.has(url)) return webhookClients.get(url);
+  const match = url.match(/\/webhooks\/(\d+)\/(.+)$/);
   if (!match) throw new Error('Invalid webhook URL');
-  
-  const [, id, token] = match;
-  const client = { id, token, url: webhookUrl };
-  webhookClients.set(webhookUrl, client);
+  const client = { id: match[1], token: match[2], url };
+  webhookClients.set(url, client);
   return client;
 }
 
-async function sendAsPersona(webhookClient, persona, message, retryCount = 0) {
+async function sendAsPersona(wc, persona, message, retry = 0) {
   try {
-    await axios.post(webhookClient.url, {
-      username: persona.name,
-      avatar_url: persona.avatar,
-      content: message,
-    });
+    await axios.post(wc.url, { username: persona.name, avatar_url: persona.avatar, content: message });
     logger.debug(`💬 ${persona.name}: "${message.substring(0, 80)}${message.length > 80 ? '...' : ''}"`);
     return true;
   } catch (err) {
-    if (retryCount < CONFIG.maxRetries) {
-      logger.warn(`Webhook send failed, retrying (${retryCount + 1}/${CONFIG.maxRetries})`);
-      await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
-      return sendAsPersona(webhookClient, persona, message, retryCount + 1);
+    if (retry < CONFIG.maxRetries) {
+      await new Promise(r => setTimeout(r, 1000 * (retry + 1)));
+      return sendAsPersona(wc, persona, message, retry + 1);
     }
-    logger.error(`Failed to send webhook message after ${CONFIG.maxRetries} retries:`, err.message);
+    logger.error(`Webhook failed:`, err.message);
     return false;
   }
 }
 
 // ============================================
-// MESSAGE GENERATION
+// MAIN FUNCTION
 // ============================================
-
-function generateChatTurn(persona, guildMemory, config) {
-  const personas = config?.lobby_chatter_personas || activePersonas;
-  const currentTopic = guildMemory.currentTopic;
-  const lastMessages = guildMemory.messages.slice(-5);
-  
-  if (!currentTopic) {
-    const topicCategory = getRandomItem(conversationTopics);
-    const topic = getRandomItem(topicCategory.topics);
-    guildMemory.currentTopic = {
-      category: topicCategory.category,
-      topic: topic,
-      keywords: topicCategory.keywords,
-    };
-    guildMemory.topicStartTime = Date.now();
-    guildMemory.messageCount = 0;
-  }
-  
-  return generateThemedMessage(persona, guildMemory.currentTopic, lastMessages);
-}
-
-function generateThemedMessage(persona, topic, lastMessages) {
-  const topicMessages = {
-    'ev_tech': {
-      'EV Expert': [
-        `The Blade Battery's LFP chemistry is revolutionary. Anyone know the max charge cycles? 🔋`,
-        `Just read about BYD's new 800V platform. Charging speeds are going to be insane! ⚡`,
-        `The heat pump in newer BYDs can extend winter range by up to 20%. Game changer for cold climates! ❄️`,
-        `LFP batteries don't use cobalt at all. More ethical AND cheaper to produce. Win-win 🌍`,
-        `Anyone else nerding out over the CTB tech in the Seal? Structural battery packs are the future 🏗️`,
-      ],
-      'Tech Reviewer': [
-        `Comparing specs: BYD's energy density is now competitive with NMC batteries, but way safer. 📊`,
-        `The CTB (Cell-to-Body) tech in the Seal is fascinating - it increases structural rigidity by 40%! 🏗️`,
-        `Anyone else impressed by BYD's vertical integration? They make their own batteries AND chips! 🤯`,
-        `Just benchmarked the Seal's infotainment. The Snapdragon chip is snappy! No lag at all 💻`,
-      ],
-      'Car Enthusiast': [
-        `The regen braking on my ATTO 3 is so smooth. One-pedal driving ftw! 🦶`,
-        `Anyone know the exact kWh capacity of the Blade Battery pack? Trying to calculate efficiency 📐`,
-        `Just checked my battery health after 30k miles. Still at 98%! Blade Battery is no joke 📊`,
-      ],
-    },
-    'model_discussion': {
-      'Seal Owner': [
-        `The Seal's 0-100 in 3.8s never gets old! Best purchase ever 🏎️`,
-        `Just took my Seal on a 500km trip. Used only 65% battery. Range anxiety? What's that? 😎`,
-        `The Seal's drag coefficient is 0.219 - more aerodynamic than a Porsche Taycan! 🎯`,
-        `That Ocean X design language hits different at night. The LED light bar is 🔥`,
-      ],
-      'Family Driver': [
-        `We fit 3 car seats in the ATTO 3. So much space for a compact SUV! 👨‍👩‍👧‍👦`,
-        `Safety rating on BYDs is no joke - 5 stars across the board. Peace of mind for the family ⭐`,
-        `The Dolphin's price point is perfect for a second family car. Thinking of getting one... 🤔`,
-        `Kids love the rotating screen in our Tang. Keeps them entertained on long drives! 📱`,
-      ],
-      'City Driver': [
-        `The Seagull is perfect for city parking. Fits in spots my old SUV couldn't dream of 🅿️`,
-        `Dolphin hatchback is so practical. Fold the seats down and it's basically a mini van! 🚗`,
-      ],
-    },
-    'ownership': {
-      'City Driver': [
-        `Home charging costs me about $30/month vs $200+ for gas. The savings are real! 💰`,
-        `Anyone installed a Level 2 charger at home? Looking for recommendations 🔌`,
-        `Parking assist in the ATTO 3 is a lifesaver in tight city spots! 🅿️`,
-        `No more gas stations! Charging at home while I sleep is the dream 😴⚡`,
-      ],
-      'Long Distance Driver': [
-        `Drove coast to coast in my BYD. Charging infrastructure has improved so much! 🗺️`,
-        `Pro tip: Use ABRP app for route planning. Takes the stress out of long trips 📱`,
-        `Best road trip car ever. The seats are so comfortable for long drives! 🛣️`,
-        `Did 800km in a day. Only stopped twice to charge. This is the future of road trips! ⚡`,
-      ],
-      'Seal Owner': [
-        `Just hit 20k miles. Zero issues. Maintenance costs? Basically just tire rotations 😂`,
-        `The over-the-air updates are clutch. Got new features without visiting the dealer 📡`,
-      ],
-    },
-    'buying_advice': {
-      'First Time Buyer': [
-        `The $7,500 federal credit made my Seal almost $10k cheaper than a Model 3! 💸`,
-        `Was nervous about switching to EV, but BYD made it so easy. No regrets! ✨`,
-        `Any tips for a first-time EV buyer? Test driving the Dolphin this weekend! 🐬`,
-        `Dealer gave me a free home charger install. Ask about it when you buy! 🎁`,
-      ],
-      'Commercial Buyer': [
-        `Our delivery fleet switched to BYD vans. 60% reduction in fuel costs! 📊`,
-        `The tax benefits for commercial EVs this year are incredible. Talk to your accountant! 💼`,
-        `BYD's commercial warranty is one of the best in the industry. 8 years/500,000km! 🚛`,
-        `ROI on our fleet conversion hit in just 18 months. The numbers don't lie 💯`,
-      ],
-      'Tech Reviewer': [
-        `Leasing vs buying: With BYD's residuals, buying actually makes more sense rn 📈`,
-        `If you're on the fence, just test drive one. The instant torque will sell you ⚡`,
-      ],
-    },
-  };
-
-  const categoryMessages = topicMessages[topic.category] || {};
-  let personaMessages = categoryMessages[persona.role] || [];
-  
-  if (personaMessages.length === 0) {
-    personaMessages = [
-      `Really interested in learning more about ${topic.topic.toLowerCase()}. Anyone have experience? 🤔`,
-      `${topic.topic} is such an important topic for EV adoption. Thoughts? 💭`,
-      `Just read an article about ${topic.topic.toLowerCase()}. BYD is really leading here! 📰`,
-      `Can we talk about ${topic.topic.toLowerCase()}? I have questions! 🙋‍♂️`,
-    ];
-  }
-  
-  const filteredMessages = personaMessages.filter(msg => {
-    const lastFromPersona = lastMessages.find(m => m.persona === persona.name);
-    return !lastFromPersona || msg !== lastFromPersona.message;
-  });
-  
-  return getRandomItem(filteredMessages.length > 0 ? filteredMessages : personaMessages);
-}
-
-// ============================================
-// MAIN LOBBY CHATTER FUNCTION
-// ============================================
-
 async function runLobbyChatter(client) {
   const guilds = client.guilds.cache;
-  let messagesSent = 0;
-  
+  let sent = 0;
   for (const guild of guilds.values()) {
     try {
       const config = await getGuildConfig(guild.id);
-      
-      if (!config?.lobby_chatter_enabled || !config?.lobby_webhook_url) {
-        continue;
-      }
-      
+      if (!config?.lobby_chatter_enabled || !config?.lobby_webhook_url) continue;
       let personas = config.lobby_chatter_personas || activePersonas;
-      if (typeof personas === 'string') {
-        try {
-          personas = JSON.parse(personas);
-        } catch {
-          personas = activePersonas;
-        }
-      }
+      if (typeof personas === 'string') { try { personas = JSON.parse(personas); } catch { personas = activePersonas; } }
       if (!personas?.length) personas = activePersonas;
-      
-      const guildMemory = getGuildMemory(guild.id);
-      
-      let persona;
-      const availablePersonas = personas.filter(p => p.name !== guildMemory.lastSpeaker);
-      persona = getRandomItem(availablePersonas.length > 0 ? availablePersonas : personas);
-      
-      const message = generateChatTurn(persona, guildMemory, config);
-      
-      const webhook = await getWebhookClient(config.lobby_webhook_url);
-      const success = await sendAsPersona(webhook, persona, message);
-      
-      if (success) {
-        updateGuildMemory(guild.id, persona, message);
-        messagesSent++;
+      const mem = getGuildMemory(guild.id);
+      if (!mem.currentTopic) {
+        const cat = getRandomItem(conversationTopics);
+        mem.currentTopic = { category: cat.category, topic: getRandomItem(cat.topics) };
+        mem.messageCount = 0; mem.conversationPhase = 'opening';
       }
-      
-      const delay = Math.random() * (CONFIG.maxDelay - CONFIG.minDelay) + CONFIG.minDelay;
-      await new Promise(resolve => setTimeout(resolve, delay));
-      
-    } catch (err) {
-      logger.error(`Lobby chatter failed for guild ${guild.id}:`, err.message);
-    }
+      const avail = personas.filter(p => p.name !== mem.lastSpeaker);
+      const persona = getRandomItem(avail.length > 0 ? avail : personas);
+      const msgType = getMessageType(mem.conversationPhase, mem.lastMessageType);
+      const message = generateSmartMessage(persona, mem.currentTopic, mem.conversationPhase, msgType, mem);
+      const wc = await getWebhookClient(config.lobby_webhook_url);
+      const ok = await sendAsPersona(wc, persona, message);
+      if (ok) { updateGuildMemory(guild.id, persona, message, msgType); sent++; }
+      await new Promise(r => setTimeout(r, Math.random() * (CONFIG.maxDelay - CONFIG.minDelay) + CONFIG.minDelay));
+    } catch (err) { logger.error(`Lobby failed for ${guild.id}:`, err.message); }
   }
-  
-  if (messagesSent > 0) {
-    logger.info(`💬 Lobby chatter: ${messagesSent} messages sent across ${guilds.size} guilds`);
-  }
+  if (sent > 0) logger.info(`💬 Lobby: ${sent} messages sent`);
 }
 
 // ============================================
-// SCHEDULER STARTUP
+// SCHEDULER
 // ============================================
-
 function startLobbyChatterScheduler(client) {
-  let enabledGuilds = 0;
-  client.guilds.cache.forEach(async (guild) => {
-    try {
-      const config = await getGuildConfig(guild.id);
-      if (config?.lobby_chatter_enabled && config?.lobby_webhook_url) {
-        enabledGuilds++;
-      }
-    } catch {}
-  });
-  
-  setTimeout(() => {
-    if (enabledGuilds === 0) {
-      logger.warn('⚠️ No guilds have lobby chatter enabled. Scheduler will run but do nothing.');
-    }
-  }, 5000);
-  
-  cron.schedule(CONFIG.schedule, async () => {
-    logger.debug('💬 Lobby chatter: starting round...');
-    await runLobbyChatter(client);
-  });
-  
+  cron.schedule(CONFIG.schedule, async () => { await runLobbyChatter(client); });
   logger.ready(`💬 Lobby chatter scheduler started (${CONFIG.schedule})`);
-  logger.info(`👥 Personas loaded: ${activePersonas.map(p => p.name).join(', ')}`);
 }
-
-// ============================================
-// UTILITY FUNCTIONS
-// ============================================
 
 function getLobbyStats(guildId) {
-  const memory = getGuildMemory(guildId);
-  return {
-    totalMessages: memory.messages.length,
-    currentTopic: memory.currentTopic?.topic || 'None',
-    lastSpeaker: memory.lastSpeaker || 'None',
-    topicAge: memory.topicStartTime 
-      ? Math.floor((Date.now() - memory.topicStartTime) / 1000) 
-      : 0,
-  };
+  const m = getGuildMemory(guildId);
+  return { totalMessages: m.messages.length, currentTopic: m.currentTopic?.topic || 'None', phase: m.conversationPhase, lastSpeaker: m.lastSpeaker || 'None' };
 }
+function resetLobbyMemory(guildId) { conversationMemory.delete(guildId); }
 
-function resetLobbyMemory(guildId) {
-  conversationMemory.delete(guildId);
-  logger.info(`Lobby memory reset for guild ${guildId}`);
-}
-
-function setLobbyTopic(guildId, category, topic) {
-  const memory = getGuildMemory(guildId);
-  const topicCategory = conversationTopics.find(t => t.category === category);
-  if (topicCategory) {
-    memory.currentTopic = {
-      category: category,
-      topic: topic || getRandomItem(topicCategory.topics),
-      keywords: topicCategory.keywords,
-    };
-    memory.topicStartTime = Date.now();
-    memory.messageCount = 0;
-    logger.info(`Lobby topic set for guild ${guildId}: ${memory.currentTopic.topic}`);
-  }
-}
-
-module.exports = { 
-  startLobbyChatterScheduler,
-  getLobbyStats,
-  resetLobbyMemory,
-  setLobbyTopic,
-  activePersonas,
-};
+module.exports = { startLobbyChatterScheduler, getLobbyStats, resetLobbyMemory, activePersonas };
