@@ -2,20 +2,7 @@
 const { REST, Routes } = require('discord.js');
 const fs = require('fs');
 const config = require('./config');
-
-// Optional: use the same logger as the bot (if available, else fallback to console)
-let logger;
-try {
-  logger = require('./utils/logger');
-} catch (e) {
-  // Fallback if logger isn't available during deployment
-  logger = {
-    info: (msg) => console.log(`📘 ${msg}`),
-    success: (msg) => console.log(`✅ ${msg}`),
-    error: (msg) => console.error(`❌ ${msg}`),
-    warn: (msg) => console.warn(`⚠️ ${msg}`),
-  };
-}
+const logger = require('./utils/logger');
 
 // Load all command files
 const commands = [];
@@ -47,8 +34,16 @@ const rest = new REST({ version: '10' }).setToken(config.token);
     const duration = Date.now() - startTime;
     
     logger.success(`✅ Successfully reloaded ${commands.length} commands in ${duration}ms.`);
+    process.exit(0);
   } catch (error) {
     logger.error('❌ Error reloading commands:');
     console.error(error);
+    process.exit(1);
   }
 })();
+
+// Force exit after 10 seconds (safety net)
+setTimeout(() => {
+  console.log('⏰ Deploy timed out, exiting...');
+  process.exit(0);
+}, 10000);
