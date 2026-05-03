@@ -128,9 +128,9 @@ module.exports = {
   },
 
   // ============================================
-  // BUTTON HANDLER
+  // BUTTON HANDLER (called from interactionCreate.js)
   // ============================================
-  async handleAdminButtons(interaction) {
+  async handleButton(interaction) {
     if (!interaction.isButton()) return false;
     if (!interaction.customId.startsWith('admin_')) return false;
 
@@ -138,36 +138,51 @@ module.exports = {
       return interaction.reply({ content: '❌ Only admins can use these controls.', ephemeral: true });
     }
 
-    const guildId = interaction.guildId;
-
     switch (interaction.customId) {
-      // ============================================
-      // REFRESH DASHBOARD
-      // ============================================
+      // Refresh
       case 'admin_refresh':
         await interaction.deferUpdate();
         await this.execute(interaction);
         break;
 
-      // ============================================
-      // DETAILED STATS
-      // ============================================
+      // Detailed Stats
       case 'admin_stats_detail':
         await showDetailedStats(interaction);
         break;
 
-      // ============================================
-      // TEST AUTO POST
-      // ============================================
+      // Test Auto Post
       case 'admin_test_autopost':
         await testAutoPost(interaction);
         break;
 
-      // ============================================
-      // AUTO POST MENU
-      // ============================================
+      // Auto Post Menu
       case 'admin_autopost_menu':
         await showAutoPostMenu(interaction);
+        break;
+
+      // Verification Menu
+      case 'admin_verify_menu':
+        await showVerifyMenu(interaction);
+        break;
+
+      // Ticket Menu
+      case 'admin_ticket_menu':
+        await showTicketMenu(interaction);
+        break;
+
+      // Lobby Menu
+      case 'admin_lobby_menu':
+        await showLobbyMenu(interaction);
+        break;
+
+      // Giveaway Menu
+      case 'admin_giveaway_menu':
+        await showGiveawayMenu(interaction);
+        break;
+
+      // Auto Post Toggle
+      case 'admin_autopost_toggle':
+        await toggleAutoPost(interaction);
         break;
 
       default:
@@ -182,9 +197,6 @@ module.exports = {
 // HELPER FUNCTIONS
 // ============================================
 
-/**
- * Get the auto-post field value with stats
- */
 function getAutoPostFieldValue(config, autoPostChannels, autoPostStats) {
   let value = `**Status:** ${config.auto_post_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n`;
   value += `**Channels:** ${autoPostChannels}\n`;
@@ -200,9 +212,6 @@ function getAutoPostFieldValue(config, autoPostChannels, autoPostStats) {
   return value;
 }
 
-/**
- * Get detailed stats field value
- */
 function getStatsFieldValue(autoPostStats, apiStats) {
   let value = '';
   
@@ -239,13 +248,9 @@ function getStatsFieldValue(autoPostStats, apiStats) {
   return value || 'No stats available yet';
 }
 
-/**
- * Get system health status
- */
 function getHealthStatus(apiStats) {
   let status = '';
   
-  // API Health
   if (!process.env.OPENROUTER_API_KEY) {
     status += '⚠️ **API Key:** Not set (using fallback only)\n';
   } else {
@@ -271,14 +276,12 @@ function getHealthStatus(apiStats) {
     }
   }
   
-  // Fallback Health
   if (apiStats.fallbackPostsAvailable > 0) {
     status += `🟢 **Fallback Content:** ${apiStats.fallbackPostsAvailable} posts ready\n`;
   } else {
     status += '🔴 **Fallback Content:** No posts available\n';
   }
   
-  // Auto-poster Health
   if (apiStats.fallbackPostsWithImages) {
     status += `🖼️ **Image Assets:** ${apiStats.fallbackPostsWithImages} posts have images`;
   }
@@ -286,9 +289,10 @@ function getHealthStatus(apiStats) {
   return status;
 }
 
-/**
- * Show detailed stats in a separate embed
- */
+// ============================================
+// MENU & ACTION FUNCTIONS
+// ============================================
+
 async function showDetailedStats(interaction) {
   const autoPostStats = getAutoPostStats();
   const apiStats = getApiStats();
@@ -298,7 +302,6 @@ async function showDetailedStats(interaction) {
     .setColor('#00BFFF')
     .setTimestamp();
 
-  // Auto Poster Stats
   if (autoPostStats) {
     let autoPostValue = '```yaml\n';
     autoPostValue += `Uptime: ${autoPostStats.uptime}\n`;
@@ -322,7 +325,6 @@ async function showDetailedStats(interaction) {
     });
   }
 
-  // API Stats
   if (apiStats) {
     let apiValue = '```yaml\n';
     apiValue += `Total Requests: ${apiStats.totalRequests}\n`;
@@ -341,7 +343,6 @@ async function showDetailedStats(interaction) {
       inline: false
     });
 
-    // Model breakdown
     if (apiStats.models && apiStats.models.length > 0) {
       let modelInfo = '';
       for (const model of apiStats.models) {
@@ -361,7 +362,6 @@ async function showDetailedStats(interaction) {
     }
   }
 
-  // Content Type Stats
   if (autoPostStats?.contentTypes) {
     let typeInfo = '';
     const typeNames = {
@@ -389,18 +389,19 @@ async function showDetailedStats(interaction) {
     });
   }
 
-  // Add a refresh button
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('admin_stats_detail').setLabel('🔄 Refresh Stats').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('↩️ Back to Dashboard').setStyle(ButtonStyle.Secondary)
   );
 
-  await interaction.reply({ embeds: [statsEmbed], components: [row], ephemeral: true });
+  // Handle both reply and update cases
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({ embeds: [statsEmbed], components: [row] });
+  } else {
+    await interaction.reply({ embeds: [statsEmbed], components: [row], ephemeral: true });
+  }
 }
 
-/**
- * Test auto post functionality
- */
 async function testAutoPost(interaction) {
   await interaction.deferReply({ ephemeral: true });
   
@@ -431,25 +432,23 @@ async function testAutoPost(interaction) {
   }
 }
 
-/**
- * Show auto post configuration menu
- */
 async function showAutoPostMenu(interaction) {
   const config = await getGuildConfig(interaction.guildId);
+  const autoPostStats = getAutoPostStats();
   
   const embed = new EmbedBuilder()
     .setTitle('🤖 Auto Poster Configuration')
     .setDescription('Configure automated BYD content posting')
-    .setColor('#00BFFF')
+    .setColor('#9B59B6')
     .addFields(
       {
         name: 'Current Status',
-        value: `**Enabled:** ${config.auto_post_enabled ? '🟢 Yes' : '🔴 No'}\n**Channels:** ${config.auto_post_channels?.length ? config.auto_post_channels.map(id => `<#${id}>`).join(', ') : 'None'}\n**Interval:** Every ${config.auto_post_interval_hours || 2} hours`,
+        value: `**Enabled:** ${config.auto_post_enabled ? '🟢 Yes' : '🔴 No'}\n**Channels:** ${config.auto_post_channels?.length ? config.auto_post_channels.map(id => `<#${id}>`).join(', ') : 'None'}\n**Interval:** Every ${config.auto_post_interval_hours || 2} hours\n**Mode:** ${process.env.AUTO_POST_ALL_CHANNELS === 'true' ? 'All channels' : 'Round-robin'}`,
         inline: false
       },
       {
-        name: 'Quick Actions',
-        value: 'Use the buttons below to toggle settings or test the auto poster.',
+        name: 'Statistics',
+        value: `**Total Posts:** ${autoPostStats?.totalPosts || 0}\n**Success Rate:** ${autoPostStats?.successRate || 'N/A'}\n**API/Fallback:** ${autoPostStats?.apiPosts || 0}/${autoPostStats?.fallbackPosts || 0}`,
         inline: false
       }
     )
@@ -459,11 +458,11 @@ async function showAutoPostMenu(interaction) {
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('admin_autopost_toggle')
-      .setLabel(config.auto_post_enabled ? '🔴 Disable' : '🟢 Enable')
+      .setLabel(config.auto_post_enabled ? '🔴 Disable Auto Post' : '🟢 Enable Auto Post')
       .setStyle(config.auto_post_enabled ? ButtonStyle.Danger : ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId('admin_test_autopost')
-      .setLabel('🧪 Test Post')
+      .setLabel('🧪 Test Post Now')
       .setStyle(ButtonStyle.Primary)
   );
   
@@ -474,5 +473,122 @@ async function showAutoPostMenu(interaction) {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  await interaction.reply({ embeds: [embed], components: [row1, row2], ephemeral: true });
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({ embeds: [embed], components: [row1, row2] });
+  } else {
+    await interaction.reply({ embeds: [embed], components: [row1, row2], ephemeral: true });
+  }
+}
+
+async function toggleAutoPost(interaction) {
+  const config = await getGuildConfig(interaction.guildId);
+  config.auto_post_enabled = !config.auto_post_enabled;
+  await setGuildConfig(interaction.guildId, config);
+  
+  const status = config.auto_post_enabled ? 'enabled' : 'disabled';
+  await interaction.reply({ 
+    content: `✅ Auto poster has been **${status}**.`, 
+    ephemeral: true 
+  });
+  
+  // Refresh the auto post menu
+  setTimeout(async () => {
+    await showAutoPostMenu(interaction);
+  }, 500);
+}
+
+// Menu display functions
+async function showVerifyMenu(interaction) {
+  const embed = new EmbedBuilder()
+    .setTitle('✅ Verification Configuration')
+    .setDescription('Configure the verification system for your server.')
+    .setColor('#2ECC71');
+  
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('admin_set_verify_role').setLabel('📌 Set Role').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_toggle_verify').setLabel('⏻ Toggle Enable/Disable').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('admin_post_verify_panel').setLabel('📢 Post Panel').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
+  );
+  
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({ embeds: [embed], components: [row] });
+  } else {
+    await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+  }
+}
+
+async function showTicketMenu(interaction) {
+  const embed = new EmbedBuilder()
+    .setTitle('🎫 Ticket System Configuration')
+    .setDescription('Configure the support ticket system.')
+    .setColor('#3498DB');
+  
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('admin_set_ticket_category').setLabel('📂 Set Category').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_set_ticket_staff').setLabel('👥 Set Staff Role').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_set_ticket_logs').setLabel('📝 Set Logs Channel').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_post_ticket_panel').setLabel('📢 Post Panel').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
+  );
+  
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({ embeds: [embed], components: [row] });
+  } else {
+    await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+  }
+}
+
+async function showLobbyMenu(interaction) {
+  const config = await getGuildConfig(interaction.guildId);
+  const embed = new EmbedBuilder()
+    .setTitle('💬 Lobby Chatter Configuration')
+    .setDescription(
+      `**Status:** ${config.lobby_chatter_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n` +
+      `**Webhook:** ${config.lobby_webhook_url ? '✅ Set' : '❌ Not set'}\n` +
+      `**Personas:** ${config.lobby_chatter_personas?.length || 9} active`
+    )
+    .setColor('#9B59B6');
+  
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('admin_lobby_toggle').setLabel('⏻ Toggle On/Off').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('admin_lobby_set_webhook').setLabel('🔗 Set Webhook URL').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_lobby_set_personas').setLabel('👥 Set Personas (JSON)').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
+  );
+  
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({ embeds: [embed], components: [row] });
+  } else {
+    await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+  }
+}
+
+async function showGiveawayMenu(interaction) {
+  const config = await getGuildConfig(interaction.guildId);
+  const embed = new EmbedBuilder()
+    .setTitle('🎁 Giveaway Configuration')
+    .setDescription(
+      `**Ping Role:** ${config.giveaway_ping_role_id ? `<@&${config.giveaway_ping_role_id}>` : '❌ Not set'}\n\n` +
+      `**Available Commands:**\n` +
+      `• \`/giveaway start prize:"Prize" duration:24 winners:1\`\n` +
+      `• \`/giveaway end message_id:123\`\n` +
+      `• \`/giveaway reroll message_id:123\`\n\n` +
+      `**Car Giveaway Commands:**\n` +
+      `• \`/cargiveaway start model:Seal shipping:1999 duration:168 winners:1\`\n` +
+      `• \`/cargiveaway end message_id:123\`\n` +
+      `• \`/cargiveaway winner message_id:123 user:@winner\``
+    )
+    .setColor('#FFD700');
+  
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('admin_giveaway_set_pingrole').setLabel('📌 Set Ping Role').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
+  );
+  
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({ embeds: [embed], components: [row] });
+  } else {
+    await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+  }
 }
