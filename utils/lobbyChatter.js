@@ -1,61 +1,62 @@
 // utils/lobbyChatter.js
 const { getRandomItem } = require('./helpers');
 
-// ========== EXPANDED PERSONAS (30+ characters) ==========
+// ========== PERSONAS WITH REALISTIC NAMES & WORKING AVATARS ==========
+// Using UI Avatars API (free, always works, no auth needed)
 const defaultPersonas = [
   // Enthusiasts & Early Adopters (6)
-  { name: 'EV_Enthusiast_Mike', avatar: 'https://i.imgur.com/avatar1.png', role: 'Early adopter', energy: 'high', favModel: 'Seal' },
-  { name: 'Tech_Guru_Anna', avatar: 'https://i.imgur.com/avatar4.png', role: 'Loves gadgets', energy: 'high', favModel: 'Han' },
-  { name: 'Green_Activist_Clara', avatar: 'https://i.imgur.com/avatar9.png', role: 'Eco warrior', energy: 'high', favModel: 'ATTO 3' },
-  { name: 'EV_Reporter_Jamie', avatar: 'https://i.imgur.com/avatar10.png', role: 'Auto journalist', energy: 'medium', favModel: 'Seal Performance' },
-  { name: 'Tesla_Convert_David', avatar: 'https://i.imgur.com/avatar11.png', role: 'Switched from Tesla', energy: 'high', favModel: 'Seal' },
-  { name: 'EV_Collector_Steve', avatar: 'https://i.imgur.com/avatar31.png', role: 'Owns multiple EVs', energy: 'high', favModel: 'Yangwang U9' },
+  { name: 'EV_Mike', avatar: 'https://ui-avatars.com/api/?name=EV+Mike&background=00BFFF&color=fff&size=256&bold=true', role: 'Early adopter', energy: 'high', favModel: 'Seal' },
+  { name: 'Tech_Anna', avatar: 'https://ui-avatars.com/api/?name=Tech+Anna&background=9B59B6&color=fff&size=256&bold=true', role: 'Loves gadgets', energy: 'high', favModel: 'Han' },
+  { name: 'EcoClara', avatar: 'https://ui-avatars.com/api/?name=Eco+Clara&background=2ECC71&color=fff&size=256&bold=true', role: 'Eco warrior', energy: 'high', favModel: 'ATTO 3' },
+  { name: 'AutoJamie', avatar: 'https://ui-avatars.com/api/?name=Auto+Jamie&background=E67E22&color=fff&size=256&bold=true', role: 'Auto journalist', energy: 'medium', favModel: 'Seal Performance' },
+  { name: 'exTeslaDave', avatar: 'https://ui-avatars.com/api/?name=exTesla+Dave&background=CC0000&color=fff&size=256&bold=true', role: 'Switched from Tesla', energy: 'high', favModel: 'Seal' },
+  { name: 'EV_Steve', avatar: 'https://ui-avatars.com/api/?name=EV+Steve&background=1ABC9C&color=fff&size=256&bold=true', role: 'Owns multiple EVs', energy: 'high', favModel: 'Yangwang U9' },
   
   // Buyers & Owners (12)
-  { name: 'Budget_Buyer_Lisa', avatar: 'https://i.imgur.com/avatar2.png', role: 'Value seeker', energy: 'medium', favModel: 'Dolphin' },
-  { name: 'Family_Dad_Robert', avatar: 'https://i.imgur.com/avatar3.png', role: 'Safety first', energy: 'medium', favModel: 'ATTO 3' },
-  { name: 'Happy_Owner_Sam', avatar: 'https://i.imgur.com/avatar6.png', role: 'Already owns BYD', energy: 'high', favModel: 'Tang' },
-  { name: 'EV_Newbie_Jen', avatar: 'https://i.imgur.com/avatar7.png', role: 'First EV', energy: 'low', favModel: 'Seagull' },
-  { name: 'Luxury_Buyer_Marcus', avatar: 'https://i.imgur.com/avatar12.png', role: 'Premium only', energy: 'medium', favModel: 'Han Performance' },
-  { name: 'First_Time_Driver_Emma', avatar: 'https://i.imgur.com/avatar13.png', role: 'New driver', energy: 'low', favModel: 'Dolphin' },
-  { name: 'Used_EV_Buyer_Tom', avatar: 'https://i.imgur.com/avatar24.png', role: 'Looking for deals', energy: 'medium', favModel: 'ATTO 3' },
-  { name: 'Second_EV_Owner_Sofia', avatar: 'https://i.imgur.com/avatar25.png', role: 'Upgrading', energy: 'high', favModel: 'Tang' },
-  { name: 'Weekend_Roadtripper_Pete', avatar: 'https://i.imgur.com/avatar32.png', role: 'Adventure seeker', energy: 'high', favModel: 'Tang' },
-  { name: 'Empty_Nester_Linda', avatar: 'https://i.imgur.com/avatar33.png', role: 'Downsizing', energy: 'medium', favModel: 'Seal' },
-  { name: 'Young_Professional_Kevin', avatar: 'https://i.imgur.com/avatar34.png', role: 'Style conscious', energy: 'high', favModel: 'Seal' },
-  { name: 'Senior_Citizen_Frank', avatar: 'https://i.imgur.com/avatar35.png', role: 'Easy entry/exit', energy: 'low', favModel: 'ATTO 3' },
+  { name: 'BudgetLisa', avatar: 'https://ui-avatars.com/api/?name=Budget+Lisa&background=FF69B4&color=fff&size=256&bold=true', role: 'Value seeker', energy: 'medium', favModel: 'Dolphin' },
+  { name: 'DadRob', avatar: 'https://ui-avatars.com/api/?name=Dad+Rob&background=3498DB&color=fff&size=256&bold=true', role: 'Safety first', energy: 'medium', favModel: 'ATTO 3' },
+  { name: 'HappySam', avatar: 'https://ui-avatars.com/api/?name=Happy+Sam&background=F1C40F&color=fff&size=256&bold=true', role: 'Already owns BYD', energy: 'high', favModel: 'Tang' },
+  { name: 'New2EV_Jen', avatar: 'https://ui-avatars.com/api/?name=New2EV+Jen&background=1ABC9C&color=fff&size=256&bold=true', role: 'First EV', energy: 'low', favModel: 'Seagull' },
+  { name: 'LuxMarcus', avatar: 'https://ui-avatars.com/api/?name=Lux+Marcus&background=8E44AD&color=fff&size=256&bold=true', role: 'Premium only', energy: 'medium', favModel: 'Han Performance' },
+  { name: 'NewDriverEm', avatar: 'https://ui-avatars.com/api/?name=New+Driver+Em&background=E91E63&color=fff&size=256&bold=true', role: 'New driver', energy: 'low', favModel: 'Dolphin' },
+  { name: 'DealTom', avatar: 'https://ui-avatars.com/api/?name=Deal+Tom&background=607D8B&color=fff&size=256&bold=true', role: 'Looking for deals', energy: 'medium', favModel: 'ATTO 3' },
+  { name: 'SofiaUpgrade', avatar: 'https://ui-avatars.com/api/?name=Sofia+Upgrade&background=FF5722&color=fff&size=256&bold=true', role: 'Upgrading', energy: 'high', favModel: 'Tang' },
+  { name: 'TripPete', avatar: 'https://ui-avatars.com/api/?name=Trip+Pete&background=795548&color=fff&size=256&bold=true', role: 'Adventure seeker', energy: 'high', favModel: 'Tang' },
+  { name: 'Linda_Nester', avatar: 'https://ui-avatars.com/api/?name=Linda+Nester&background=009688&color=fff&size=256&bold=true', role: 'Downsizing', energy: 'medium', favModel: 'Seal' },
+  { name: 'ProKevin', avatar: 'https://ui-avatars.com/api/?name=Pro+Kevin&background=3F51B5&color=fff&size=256&bold=true', role: 'Style conscious', energy: 'high', favModel: 'Seal' },
+  { name: 'FrankSenior', avatar: 'https://ui-avatars.com/api/?name=Frank+Senior&background=455A64&color=fff&size=256&bold=true', role: 'Easy entry/exit', energy: 'low', favModel: 'ATTO 3' },
   
   // Skeptics & Questioners (6)
-  { name: 'Skeptical_Tom', avatar: 'https://i.imgur.com/avatar5.png', role: 'Needs convincing', energy: 'medium', favModel: null },
-  { name: 'Range_Anxiety_Ryan', avatar: 'https://i.imgur.com/avatar14.png', role: 'Worried about range', energy: 'low', favModel: 'Seal' },
-  { name: 'Charging_Concerned_Pat', avatar: 'https://i.imgur.com/avatar15.png', role: 'Charging skeptic', energy: 'medium', favModel: null },
-  { name: 'Cold_Weather_Worrier', avatar: 'https://i.imgur.com/avatar26.png', role: 'Northern driver', energy: 'low', favModel: 'ATTO 3' },
-  { name: 'Infrastructure_Doubter', avatar: 'https://i.imgur.com/avatar36.png', role: 'Rural driver', energy: 'medium', favModel: null },
-  { name: 'Resale_Value_Rachel', avatar: 'https://i.imgur.com/avatar37.png', role: 'Worried about depreciation', energy: 'medium', favModel: null },
+  { name: 'SkepticTom', avatar: 'https://ui-avatars.com/api/?name=Skeptic+Tom&background=95A5A6&color=fff&size=256&bold=true', role: 'Needs convincing', energy: 'medium', favModel: null },
+  { name: 'RangeRyan', avatar: 'https://ui-avatars.com/api/?name=Range+Ryan&background=E74C3C&color=fff&size=256&bold=true', role: 'Worried about range', energy: 'low', favModel: 'Seal' },
+  { name: 'ChargePat', avatar: 'https://ui-avatars.com/api/?name=Charge+Pat&background=F39C12&color=fff&size=256&bold=true', role: 'Charging skeptic', energy: 'medium', favModel: null },
+  { name: 'ColdWorrier', avatar: 'https://ui-avatars.com/api/?name=Cold+Worrier&background=2980B9&color=fff&size=256&bold=true', role: 'Northern driver', energy: 'low', favModel: 'ATTO 3' },
+  { name: 'RuralDoubter', avatar: 'https://ui-avatars.com/api/?name=Rural+Doubter&background=27AE60&color=fff&size=256&bold=true', role: 'Rural driver', energy: 'medium', favModel: null },
+  { name: 'ResaleRach', avatar: 'https://ui-avatars.com/api/?name=Resale+Rach&background=C0392B&color=fff&size=256&bold=true', role: 'Worried about depreciation', energy: 'medium', favModel: null },
   
   // Commercial & Fleet (4)
-  { name: 'Fleet_Manager_Omar', avatar: 'https://i.imgur.com/avatar8.png', role: 'Commercial buyer', energy: 'high', favModel: 'Commercial' },
-  { name: 'Small_Biz_Owner_Nina', avatar: 'https://i.imgur.com/avatar16.png', role: 'Delivery fleet', energy: 'medium', favModel: 'Commercial' },
-  { name: 'Rideshare_Driver_Carlos', avatar: 'https://i.imgur.com/avatar27.png', role: 'Uber/Lyft driver', energy: 'high', favModel: 'Dolphin' },
-  { name: 'Construction_Fleet_Mike', avatar: 'https://i.imgur.com/avatar38.png', role: 'Work trucks', energy: 'medium', favModel: 'Commercial' },
+  { name: 'FleetOmar', avatar: 'https://ui-avatars.com/api/?name=Fleet+Omar&background=2C3E50&color=fff&size=256&bold=true', role: 'Commercial buyer', energy: 'high', favModel: 'Commercial' },
+  { name: 'BizNina', avatar: 'https://ui-avatars.com/api/?name=Biz+Nina&background=16A085&color=fff&size=256&bold=true', role: 'Delivery fleet', energy: 'medium', favModel: 'Commercial' },
+  { name: 'RideCarlos', avatar: 'https://ui-avatars.com/api/?name=Ride+Carlos&background=D35400&color=fff&size=256&bold=true', role: 'Uber/Lyft driver', energy: 'high', favModel: 'Dolphin' },
+  { name: 'BuildMike', avatar: 'https://ui-avatars.com/api/?name=Build+Mike&background=7F8C8D&color=fff&size=256&bold=true', role: 'Work trucks', energy: 'medium', favModel: 'Commercial' },
   
   // International (4)
-  { name: 'EU_Buyer_Hans', avatar: 'https://i.imgur.com/avatar17.png', role: 'European market', energy: 'medium', favModel: 'Seal' },
-  { name: 'China_EV_Expert_Wei', avatar: 'https://i.imgur.com/avatar18.png', role: 'BYD home market', energy: 'high', favModel: 'Yangwang U8' },
-  { name: 'Australia_Outback_Steve', avatar: 'https://i.imgur.com/avatar28.png', role: 'Remote driving', energy: 'high', favModel: 'Tang' },
-  { name: 'UK_Early_Adopter_Emma', avatar: 'https://i.imgur.com/avatar39.png', role: 'UK market', energy: 'medium', favModel: 'ATTO 3' },
+  { name: 'EU_Hans', avatar: 'https://ui-avatars.com/api/?name=EU+Hans&background=1E88E5&color=fff&size=256&bold=true', role: 'European market', energy: 'medium', favModel: 'Seal' },
+  { name: 'ChinaWei', avatar: 'https://ui-avatars.com/api/?name=China+Wei&background=C62828&color=fff&size=256&bold=true', role: 'BYD home market', energy: 'high', favModel: 'Yangwang U8' },
+  { name: 'OutbackSteve', avatar: 'https://ui-avatars.com/api/?name=Outback+Steve&background=F57C00&color=fff&size=256&bold=true', role: 'Remote driving', energy: 'high', favModel: 'Tang' },
+  { name: 'UK_Emma', avatar: 'https://ui-avatars.com/api/?name=UK+Emma&background=3949AB&color=fff&size=256&bold=true', role: 'UK market', energy: 'medium', favModel: 'ATTO 3' },
   
   // Enthusiasts by model (10)
-  { name: 'Seal_Lover_Alex', avatar: 'https://i.imgur.com/avatar19.png', role: 'Seal owner', energy: 'high', favModel: 'Seal' },
-  { name: 'ATTO3_Adventurer_Sarah', avatar: 'https://i.imgur.com/avatar20.png', role: 'Road tripper', energy: 'high', favModel: 'ATTO 3' },
-  { name: 'Dolphin_Driver_Chris', avatar: 'https://i.imgur.com/avatar21.png', role: 'City commuter', energy: 'medium', favModel: 'Dolphin' },
-  { name: 'Han_Owner_Jasmine', avatar: 'https://i.imgur.com/avatar22.png', role: 'Luxury sedan fan', energy: 'medium', favModel: 'Han' },
-  { name: 'Yangwang_Watcher_Tom', avatar: 'https://i.imgur.com/avatar23.png', role: 'Dreaming big', energy: 'low', favModel: 'Yangwang U9' },
-  { name: 'Seagull_City_Driver', avatar: 'https://i.imgur.com/avatar29.png', role: 'Urban commuter', energy: 'medium', favModel: 'Seagull' },
-  { name: 'Tang_Family_User', avatar: 'https://i.imgur.com/avatar30.png', role: 'Family hauler', energy: 'medium', favModel: 'Tang' },
-  { name: 'Yuan_Plus_Owner', avatar: 'https://i.imgur.com/avatar40.png', role: 'Crossover fan', energy: 'medium', favModel: 'Yuan Plus' },
-  { name: 'Song_Plus_Driver', avatar: 'https://i.imgur.com/avatar41.png', role: 'Practical choice', energy: 'medium', favModel: 'Song Plus' },
-  { name: 'Seal_Performance_Fan', avatar: 'https://i.imgur.com/avatar42.png', role: 'Speed demon', energy: 'high', favModel: 'Seal Performance' },
+  { name: 'SealAlex', avatar: 'https://ui-avatars.com/api/?name=Seal+Alex&background=0066CC&color=fff&size=256&bold=true', role: 'Seal owner', energy: 'high', favModel: 'Seal' },
+  { name: 'ATTO3Sarah', avatar: 'https://ui-avatars.com/api/?name=ATTO+Sarah&background=00CC66&color=fff&size=256&bold=true', role: 'Road tripper', energy: 'high', favModel: 'ATTO 3' },
+  { name: 'DolphChris', avatar: 'https://ui-avatars.com/api/?name=Dolph+Chris&background=00CCCC&color=fff&size=256&bold=true', role: 'City commuter', energy: 'medium', favModel: 'Dolphin' },
+  { name: 'HanJasmine', avatar: 'https://ui-avatars.com/api/?name=Han+Jasmine&background=CC0000&color=fff&size=256&bold=true', role: 'Luxury sedan fan', energy: 'medium', favModel: 'Han' },
+  { name: 'YangDreamer', avatar: 'https://ui-avatars.com/api/?name=Yang+Dreamer&background=FF6600&color=fff&size=256&bold=true', role: 'Dreaming big', energy: 'low', favModel: 'Yangwang U9' },
+  { name: 'GullCity', avatar: 'https://ui-avatars.com/api/?name=Gull+City&background=33CCFF&color=fff&size=256&bold=true', role: 'Urban commuter', energy: 'medium', favModel: 'Seagull' },
+  { name: 'TangFam', avatar: 'https://ui-avatars.com/api/?name=Tang+Fam&background=9933CC&color=fff&size=256&bold=true', role: 'Family hauler', energy: 'medium', favModel: 'Tang' },
+  { name: 'YuanOwner', avatar: 'https://ui-avatars.com/api/?name=Yuan+Owner&background=339933&color=fff&size=256&bold=true', role: 'Crossover fan', energy: 'medium', favModel: 'Yuan Plus' },
+  { name: 'SongDriver', avatar: 'https://ui-avatars.com/api/?name=Song+Driver&background=6666CC&color=fff&size=256&bold=true', role: 'Practical choice', energy: 'medium', favModel: 'Song Plus' },
+  { name: 'SealPerfFan', avatar: 'https://ui-avatars.com/api/?name=Seal+Perf+Fan&background=FF3333&color=fff&size=256&bold=true', role: 'Speed demon', energy: 'high', favModel: 'Seal Performance' },
 ];
 
 // ========== 500+ CONVERSATION SNIPPETS ==========
@@ -96,8 +97,6 @@ const chatterMessages = {
     "Does the Han have a HUD?",
     "How's the night vision in the ATTO 3?",
     "Can you sleep in the back of the Tang?",
-    
-    // Charging questions (25)
     "How long does it take to charge from 10% to 80% on a fast charger?",
     "Can I use Tesla Superchargers with a BYD?",
     "What's the best home charger for BYD?",
@@ -123,8 +122,6 @@ const chatterMessages = {
     "How many miles per hour on Level 2?",
     "What's the cost to install a 240V outlet?",
     "Does BYD have plug-and-charge capability?",
-    
-    // Incentives (15)
     "Does BYD qualify for the full $7,500 federal credit?",
     "Which states have extra EV incentives?",
     "Is there a BYD referral program?",
@@ -140,8 +137,6 @@ const chatterMessages = {
     "Does BYD offer a military discount?",
     "Is there a student discount program?",
     "What's the best time of year to buy?",
-    
-    // Battery (15)
     "Is the Blade Battery really that safe?",
     "How much does battery replacement cost after warranty?",
     "What's the degradation like after 100k miles?",
@@ -321,7 +316,7 @@ const chatterMessages = {
     "ATTO 3 vs Hyundai Kona: ATTO has more interior space and faster charging.",
     "Dolphin vs Nissan Leaf: Dolphin has CCS, better thermal management.",
     "Tang vs Volkswagen ID.Buzz: Tang is cheaper, Buzz has more charm.",
-    "Seal vs Polestar 2: Seat is faster and cheaper. Polestar has Google built-in.",
+    "Seal vs Polestar 2: Seal is faster and cheaper. Polestar has Google built-in.",
   ],
   
   // News (30+)
@@ -493,7 +488,6 @@ function generateChatTurn(persona) {
   let message = getRandomMessage(type);
   
   if (!message) {
-    // Fallback to a basic reaction
     message = getRandomMessage('reactions') || "Nice! 👍";
   }
   
@@ -503,7 +497,7 @@ function generateChatTurn(persona) {
     message = emojis.join(' ');
   }
   
-  // Add persona-specific flavor occasionally
+  // Add persona-specific flavor occasionally (25% chance)
   if (Math.random() < 0.25) {
     const personalNotes = {
       'Early adopter': ' Been following BYD since before they came to the US!',
@@ -517,7 +511,7 @@ function generateChatTurn(persona) {
       'Eco warrior': ' Saving the planet one mile at a time. Feels good.',
       'Switched from Tesla': ' So glad I made the switch. BYD just feels more solid.',
       'Auto journalist': ' I review EVs professionally. BYD is consistently impressive.',
-      'European market': ' BYD is everywhere here in Europe. The ATTO 3 is a common sight.',
+      'European market': ' BYD is everywhere here. The ATTO 3 is a common sight.',
       'BYD home market': ' We have BYDs everywhere in China. They\'re like Toyotas.',
       'Seal owner': ' The Seal is my baby! Best car I\'ve ever owned.',
       'Road tripper': ' Took my ATTO 3 across 12 states. Zero issues.',
@@ -529,19 +523,38 @@ function generateChatTurn(persona) {
       'Speed demon': ' The launch control on the Seal Performance is addictive!',
       'Family hauler': ' My kids love the big screen and space in the Tang.',
       'Practical choice': ' The Song Plus just makes sense. Good value, good space.',
+      'Northern driver': ' Winter range takes a hit but preheating helps a lot.',
+      'Rural driver': ' Charging stations are sparse out here but improving fast.',
+      'Worried about depreciation': ' EVs hold value better than people think.',
+      'Delivery fleet': ' Our delivery times improved with BYD vans. Quiet and efficient.',
+      'Uber/Lyft driver': ' Passengers love the BYD! Tips have gone up since I switched.',
+      'Work trucks': ' These BYD work vans are tough. Handles job sites no problem.',
+      'Remote driving': ' The Tang handles rough roads like a champ. Very impressed.',
+      'UK market': ' BYD is growing fast here. Seeing more on the roads weekly.',
+      'Downsizing': ' The Seal is perfect now that the kids are grown. Fun and practical.',
+      'Style conscious': ' The Seal turns heads everywhere. Best looking EV under $50k.',
+      'Easy entry/exit': ' The ATTO 3 is so easy to get in and out of. Perfect height.',
+      'Upgrading': ' Moving up from my old EV. BYD offers so much more for the money.',
+      'Adventure seeker': ' The Tang has taken me places my old SUV couldn\'t.',
+      'Looking for deals': ' Found a great CPO ATTO 3. Nearly new at used car prices.',
+      'New driver': ' The Dolphin is so easy to drive. Perfect first car for anyone.',
+      'Premium only': ' The Han Performance rivals German luxury at half the price.',
+      'Owns multiple EVs': ' I have a Seal and an ATTO 3. Best of both worlds.',
+      'Urban commuter': ' The Seagull fits in parking spots my old car couldn\'t dream of.',
+      'Crossover fan': ' The Yuan Plus hits the sweet spot between car and SUV.',
     };
-    const note = personalNotes[persona.role] || ` (${persona.role})`;
-    message += note;
+    const note = personalNotes[persona.role] || '';
+    if (note) message += note;
   }
   
-  // Add occasional mention of persona's favorite model
+  // Add occasional mention of persona's favorite model (12% chance)
   if (persona.favModel && Math.random() < 0.12) {
     message += ` The ${persona.favModel} is amazing by the way!`;
   }
   
   // Keep messages reasonably short for Discord
   if (message.length > 350) {
-    message = message.substring(0, 350) + '...';
+    message = message.substring(0, 347) + '...';
   }
   
   return message;
