@@ -105,6 +105,12 @@ module.exports = (client) => {
 
 // ------------------------- BUTTON HANDLERS -------------------------
 async function handleButton(interaction, client) {
+  // ✅ CRITICAL FIX: Defer immediately to prevent 3-second timeout
+  // This gives us up to 15 minutes to process the button
+  await interaction.deferUpdate().catch(err => {
+    logger.warn(`Failed to defer button update: ${err.message}`);
+  });
+  
   const { customId, user } = interaction;
   const userId = user.id;
   let state = await getUserState(userId, user.username);
@@ -178,17 +184,20 @@ async function handleButton(interaction, client) {
   if (customId === 'admin_stats_detail') return adminStatsDetail(interaction);
   if (customId === 'admin_test_autopost') return adminTestAutoPost(interaction);
 
-// Car giveaway entry management buttons
+  // Car giveaway entry management buttons
   if (customId.startsWith('verify_entry_')) return handleVerifyEntry(interaction);
   if (customId.startsWith('contact_entry_')) return handleContactEntry(interaction);
   if (customId.startsWith('disqualify_entry_')) return handleDisqualifyEntry(interaction);
 
   logger.warn(`Unknown button customId: ${customId}`);
-  await interaction.reply({ content: '❓ Unknown option. Use the buttons provided.', ephemeral: true });
+  await interaction.editReply({ content: '❓ Unknown option. Use the buttons provided.', ephemeral: true });
 }
 
 // ------------------------- SELECT MENU HANDLERS -------------------------
 async function handleSelectMenu(interaction, client) {
+  // ✅ Defer select menu interactions too
+  await interaction.deferUpdate().catch(() => {});
+  
   const { customId, values, user } = interaction;
   const userId = user.id;
   const state = await getUserState(userId, user.username);
@@ -199,7 +208,7 @@ async function handleSelectMenu(interaction, client) {
     const region = values[0];
     const model = state.selectedModel;
     if (!model) {
-      await interaction.reply({ content: 'Please select a model first.', ephemeral: true });
+      await interaction.editReply({ content: 'Please select a model first.', ephemeral: true });
       return;
     }
 
@@ -237,7 +246,7 @@ async function handleSelectMenu(interaction, client) {
       new ButtonBuilder().setCustomId('quote_chat_advisors').setLabel('💬 Chat With an Advisor').setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.update({ embeds: [embed], components: [row] });
+    await interaction.editReply({ embeds: [embed], components: [row] });
     await updateUserState(userId, { step: null });
     return;
   }
@@ -248,7 +257,7 @@ async function handleSelectMenu(interaction, client) {
     const tempData = state.tempData || {};
     await updateUserState(userId, { tempData: { ...tempData, date } });
     const { embed, row } = getTimePicker(date);
-    await interaction.update({ embeds: [embed], components: [row] });
+    await interaction.editReply({ embeds: [embed], components: [row] });
     return;
   }
 
@@ -256,11 +265,12 @@ async function handleSelectMenu(interaction, client) {
   if (customId.startsWith('calendar_time_select_')) {
     const time = values[0];
     const date = customId.replace('calendar_time_select_', '');
-    const state = await getUserState(userId, user.username);
-    const { locationType } = state.tempData || {};
+    const currentState = await getUserState(userId, user.username);
+    const { locationType } = currentState.tempData || {};
     await confirmTestDrive(interaction, client, date, time, locationType);
     return;
   }
+  
   // Admin pull leads select menu
   if (customId === 'admin_select_giveaway_leads') {
     const { handleLeadSelect } = require('../commands/admin');
@@ -268,11 +278,12 @@ async function handleSelectMenu(interaction, client) {
   }
 
   logger.warn(`Unknown select menu customId: ${customId}`);
-  await interaction.reply({ content: '❓ Unknown selection.', ephemeral: true });
+  await interaction.editReply({ content: '❓ Unknown selection.', ephemeral: true });
 }
 
 // ------------------------- MODAL HANDLERS (Trade‑in + Admin) -------------------------
 async function handleModal(interaction) {
+  // ✅ Modals don't need deferral (they're already deferred by Discord)
   const { customId, fields, user } = interaction;
   const userId = user.id;
   const state = await getUserState(userId, user.username);
@@ -431,6 +442,7 @@ async function handleModal(interaction) {
 // ============================================
 
 async function adminStatsDetail(interaction) {
+  // Already deferred from handleButton
   const autoPostStats = getAutoPostStats();
   const apiStats = getApiStats();
   
@@ -535,17 +547,11 @@ async function adminStatsDetail(interaction) {
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('↩️ Back to Dashboard').setStyle(ButtonStyle.Secondary)
   );
 
-  // Check if interaction has been replied/deferred
-  if (interaction.deferred || interaction.replied) {
-    await interaction.editReply({ embeds: [statsEmbed], components: [row] });
-  } else {
-    await interaction.reply({ embeds: [statsEmbed], components: [row], ephemeral: true });
-  }
+  await interaction.editReply({ embeds: [statsEmbed], components: [row] });
 }
 
 async function adminTestAutoPost(interaction) {
-  await interaction.deferReply({ ephemeral: true });
-  
+  // Already deferred from handleButton, but we need to make sure we can do a long operation
   const { postAutoContent } = require('../schedulers/autoPost');
   
   try {
@@ -575,26 +581,27 @@ async function adminTestAutoPost(interaction) {
 
 // ------------------------- VERIFICATION & TICKET FUNCTIONS -------------------------
 async function handleVerify(interaction) {
+  // Already deferred from handleButton
   const guildId = interaction.guildId;
   const config = await getGuildConfig(guildId);
 
   if (!config.verify_enabled) {
-    return interaction.reply({ content: '❌ Verification is disabled on this server.', ephemeral: true });
+    return interaction.editReply({ content: '❌ Verification is disabled on this server.', ephemeral: true });
   }
 
   const roleId = config.verify_role_id;
   if (!roleId) {
-    return interaction.reply({ content: '❌ Verification role not configured. Contact an admin.', ephemeral: true });
+    return interaction.editReply({ content: '❌ Verification role not configured. Contact an admin.', ephemeral: true });
   }
 
   const member = interaction.member;
   if (member.roles.cache.has(roleId)) {
-    return interaction.reply({ content: '✅ You are already verified!', ephemeral: true });
+    return interaction.editReply({ content: '✅ You are already verified!', ephemeral: true });
   }
 
   try {
     await member.roles.add(roleId);
-    await interaction.reply({ content: '✅ You have been verified! Welcome to the server!', ephemeral: true });
+    await interaction.editReply({ content: '✅ You have been verified! Welcome to the server!', ephemeral: true });
     logger.success(`${member.user.tag} verified in guild ${interaction.guildId}`);
 
     if (config.ticket_logs_channel_id) {
@@ -605,26 +612,27 @@ async function handleVerify(interaction) {
     }
   } catch (err) {
     logger.error('Verification error:', err);
-    await interaction.reply({ content: '❌ Failed to assign role. Please contact an admin.', ephemeral: true });
+    await interaction.editReply({ content: '❌ Failed to assign role. Please contact an admin.', ephemeral: true });
   }
 }
 
 async function createTicket(interaction, client) {
+  // Already deferred from handleButton
   const guild = interaction.guild;
   const config = await getGuildConfig(guild.id);
 
   if (!config.ticket_category_id || !config.staff_role_id) {
-    return interaction.reply({ content: '❌ Ticket system not fully configured. Contact an admin.', ephemeral: true });
+    return interaction.editReply({ content: '❌ Ticket system not fully configured. Contact an admin.', ephemeral: true });
   }
 
   const openTickets = await getUserOpenTickets(interaction.user.id);
   if (openTickets.length >= 1) {
-    return interaction.reply({ content: '❌ You already have an open ticket. Please close it before creating a new one.', ephemeral: true });
+    return interaction.editReply({ content: '❌ You already have an open ticket. Please close it before creating a new one.', ephemeral: true });
   }
 
   const category = guild.channels.cache.get(config.ticket_category_id);
   if (!category) {
-    return interaction.reply({ content: '❌ Ticket category not found. Contact an admin.', ephemeral: true });
+    return interaction.editReply({ content: '❌ Ticket category not found. Contact an admin.', ephemeral: true });
   }
 
   const ticketName = `ticket-${interaction.user.username}-${Date.now()}`;
@@ -650,7 +658,7 @@ async function createTicket(interaction, client) {
     new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Close Ticket').setStyle(ButtonStyle.Danger)
   );
   await ticketChannel.send({ content: `<@&${config.staff_role_id}>`, embeds: [embed], components: [closeButton] });
-  await interaction.reply({ content: `✅ Ticket created: ${ticketChannel}`, ephemeral: true });
+  await interaction.editReply({ content: `✅ Ticket created: ${ticketChannel}`, ephemeral: true });
   logger.success(`Ticket created by ${interaction.user.tag}: ${ticketChannel.name}`);
 
   if (config.ticket_logs_channel_id) {
@@ -662,9 +670,10 @@ async function createTicket(interaction, client) {
 }
 
 async function closeTicketHandler(interaction, client) {
+  // Already deferred from handleButton
   const channel = interaction.channel;
   if (!channel.name.startsWith('ticket-')) {
-    return interaction.reply({ content: '❌ This command can only be used inside a ticket channel.', ephemeral: true });
+    return interaction.editReply({ content: '❌ This command can only be used inside a ticket channel.', ephemeral: true });
   }
 
   const config = await getGuildConfig(interaction.guildId);
@@ -673,10 +682,10 @@ async function closeTicketHandler(interaction, client) {
   const isAdmin = interaction.member.permissions.has('Administrator');
 
   if (!isStaff && !isAdmin) {
-    return interaction.reply({ content: '❌ Only staff members or admins can close tickets.', ephemeral: true });
+    return interaction.editReply({ content: '❌ Only staff members or admins can close tickets.', ephemeral: true });
   }
 
-  await interaction.reply('🔒 Closing ticket in 5 seconds...');
+  await interaction.editReply('🔒 Closing ticket in 5 seconds...');
   logger.info(`Ticket ${channel.name} will be closed by ${interaction.user.tag}`);
 
   setTimeout(async () => {
@@ -696,6 +705,7 @@ async function closeTicketHandler(interaction, client) {
 
 // ------------------------- ADMIN DASHBOARD INTERFACE -------------------------
 async function adminVerifyMenu(interaction) {
+  // Already deferred from handleButton
   const embed = new EmbedBuilder()
     .setTitle('✅ Verification Configuration')
     .setDescription('What would you like to do?')
@@ -706,10 +716,11 @@ async function adminVerifyMenu(interaction) {
     new ButtonBuilder().setCustomId('admin_post_verify_panel').setLabel('📢 Post Panel').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
   );
-  await interaction.update({ embeds: [embed], components: [row] });
+  await interaction.editReply({ embeds: [embed], components: [row] });
 }
 
 async function adminTicketMenu(interaction) {
+  // Already deferred from handleButton
   const embed = new EmbedBuilder()
     .setTitle('🎫 Ticket System Configuration')
     .setDescription('What would you like to do?')
@@ -721,10 +732,11 @@ async function adminTicketMenu(interaction) {
     new ButtonBuilder().setCustomId('admin_post_ticket_panel').setLabel('📢 Post Panel').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
   );
-  await interaction.update({ embeds: [embed], components: [row] });
+  await interaction.editReply({ embeds: [embed], components: [row] });
 }
 
 async function adminRefresh(interaction) {
+  // Already deferred from handleButton
   const guildId = interaction.guildId;
   const config = await getGuildConfig(guildId);
   
@@ -796,7 +808,7 @@ async function adminRefresh(interaction) {
     new ButtonBuilder().setCustomId('admin_test_autopost').setLabel('🧪 Test Auto Post').setStyle(ButtonStyle.Success)
   );
   
-  await interaction.update({ embeds: [embed], components: [row1, row2, row3, row4] });
+  await interaction.editReply({ embeds: [embed], components: [row1, row2, row3, row4] });
 }
 
 // ============================================
@@ -880,6 +892,7 @@ function getHealthStatus(apiStats) {
 
 // ----- ADMIN SETTING FUNCTIONS -----
 async function adminSetVerifyRole(interaction) {
+  // Already deferred from handleButton
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_verify_role')
     .setTitle('Set Verification Role')
@@ -896,20 +909,22 @@ async function adminSetVerifyRole(interaction) {
 }
 
 async function adminToggleVerify(interaction) {
+  // Already deferred from handleButton
   const guildId = interaction.guildId;
   const config = await getGuildConfig(guildId);
   config.verify_enabled = !config.verify_enabled;
   await setGuildConfig(guildId, config);
-  await interaction.reply({ content: `✅ Verification ${config.verify_enabled ? 'enabled' : 'disabled'}.`, ephemeral: true });
+  await interaction.editReply({ content: `✅ Verification ${config.verify_enabled ? 'enabled' : 'disabled'}.`, ephemeral: true });
 }
 
 async function adminPostVerifyPanel(interaction) {
+  // Already deferred from handleButton but this sends a NEW message, so we need to handle differently
   const config = await getGuildConfig(interaction.guildId);
   if (!config.verify_enabled) {
-    return interaction.reply({ content: '❌ Verification system is disabled. Enable it first.', ephemeral: true });
+    return interaction.editReply({ content: '❌ Verification system is disabled. Enable it first.', ephemeral: true });
   }
   if (!config.verify_role_id) {
-    return interaction.reply({ content: '❌ No verification role set. Set one first.', ephemeral: true });
+    return interaction.editReply({ content: '❌ No verification role set. Set one first.', ephemeral: true });
   }
   const embed = new EmbedBuilder()
     .setTitle('⚡ Welcome to the BYD Community')
@@ -926,10 +941,11 @@ async function adminPostVerifyPanel(interaction) {
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('verify_button').setLabel('✅ Verify Me').setStyle(ButtonStyle.Success)
   );
-  await interaction.reply({ embeds: [embed], components: [row], ephemeral: false });
+  await interaction.editReply({ embeds: [embed], components: [row], ephemeral: false });
 }
 
 async function adminSetTicketCategory(interaction) {
+  // Already deferred from handleButton
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_ticket_category')
     .setTitle('Set Ticket Category')
@@ -946,6 +962,7 @@ async function adminSetTicketCategory(interaction) {
 }
 
 async function adminSetTicketStaff(interaction) {
+  // Already deferred from handleButton
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_ticket_staff')
     .setTitle('Set Staff Role')
@@ -962,6 +979,7 @@ async function adminSetTicketStaff(interaction) {
 }
 
 async function adminSetTicketLogs(interaction) {
+  // Already deferred from handleButton
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_ticket_logs')
     .setTitle('Set Logs Channel')
@@ -978,9 +996,10 @@ async function adminSetTicketLogs(interaction) {
 }
 
 async function adminPostTicketPanel(interaction) {
+  // Already deferred from handleButton
   const config = await getGuildConfig(interaction.guildId);
   if (!config.ticket_category_id || !config.staff_role_id) {
-    return interaction.reply({ content: '❌ Ticket category and staff role must be set first.', ephemeral: true });
+    return interaction.editReply({ content: '❌ Ticket category and staff role must be set first.', ephemeral: true });
   }
   const embed = new EmbedBuilder()
     .setTitle('🎫 BYD Concierge – Priority Support')
@@ -993,11 +1012,12 @@ async function adminPostTicketPanel(interaction) {
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('create_ticket').setLabel('📩 Create Ticket').setStyle(ButtonStyle.Primary)
   );
-  await interaction.reply({ embeds: [embed], components: [row], ephemeral: false });
+  await interaction.editReply({ embeds: [embed], components: [row], ephemeral: false });
 }
 
 // ----- AUTO POSTER ADMIN FUNCTIONS -----
 async function adminAutopostMenu(interaction) {
+  // Already deferred from handleButton
   const config = await getGuildConfig(interaction.guildId);
   const channels = config.auto_post_channels?.length ? config.auto_post_channels.map(id => `<#${id}>`).join(', ') : 'None';
   
@@ -1028,17 +1048,19 @@ async function adminAutopostMenu(interaction) {
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
   );
   
-  await interaction.update({ embeds: [embed], components: [row1, row2] });
+  await interaction.editReply({ embeds: [embed], components: [row1, row2] });
 }
 
 async function adminAutopostToggle(interaction) {
+  // Already deferred from handleButton
   const config = await getGuildConfig(interaction.guildId);
   config.auto_post_enabled = !config.auto_post_enabled;
   await setGuildConfig(interaction.guildId, config);
-  await interaction.reply({ content: `✅ Auto poster ${config.auto_post_enabled ? 'enabled' : 'disabled'}.`, ephemeral: true });
+  await interaction.editReply({ content: `✅ Auto poster ${config.auto_post_enabled ? 'enabled' : 'disabled'}.`, ephemeral: true });
 }
 
 async function adminAutopostSetChannels(interaction) {
+  // Already deferred from handleButton
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_autopost_channels')
     .setTitle('Set Auto Poster Channels')
@@ -1056,6 +1078,7 @@ async function adminAutopostSetChannels(interaction) {
 }
 
 async function adminAutopostSetInterval(interaction) {
+  // Already deferred from handleButton
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_autopost_interval')
     .setTitle('Set Posting Interval (hours)')
@@ -1074,6 +1097,7 @@ async function adminAutopostSetInterval(interaction) {
 
 // ----- LOBBY CHATTER ADMIN FUNCTIONS -----
 async function adminLobbyMenu(interaction) {
+  // Already deferred from handleButton
   const config = await getGuildConfig(interaction.guildId);
   const embed = new EmbedBuilder()
     .setTitle('💬 Lobby Chatter Configuration')
@@ -1089,17 +1113,19 @@ async function adminLobbyMenu(interaction) {
     new ButtonBuilder().setCustomId('admin_lobby_set_personas').setLabel('👥 Set Personas (JSON)').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
   );
-  await interaction.update({ embeds: [embed], components: [row] });
+  await interaction.editReply({ embeds: [embed], components: [row] });
 }
 
 async function adminLobbyToggle(interaction) {
+  // Already deferred from handleButton
   const config = await getGuildConfig(interaction.guildId);
   config.lobby_chatter_enabled = !config.lobby_chatter_enabled;
   await setGuildConfig(interaction.guildId, config);
-  await interaction.reply({ content: `✅ Lobby chatter ${config.lobby_chatter_enabled ? 'enabled' : 'disabled'}.`, ephemeral: true });
+  await interaction.editReply({ content: `✅ Lobby chatter ${config.lobby_chatter_enabled ? 'enabled' : 'disabled'}.`, ephemeral: true });
 }
 
 async function adminLobbySetWebhook(interaction) {
+  // Already deferred from handleButton
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_lobby_webhook')
     .setTitle('Set Webhook URL')
@@ -1117,6 +1143,7 @@ async function adminLobbySetWebhook(interaction) {
 }
 
 async function adminLobbySetPersonas(interaction) {
+  // Already deferred from handleButton
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_lobby_personas')
     .setTitle('Set Personas (JSON array)')
@@ -1135,6 +1162,7 @@ async function adminLobbySetPersonas(interaction) {
 
 // ----- GIVEAWAY ADMIN FUNCTIONS -----
 async function adminGiveawayMenu(interaction) {
+  // Already deferred from handleButton
   const config = await getGuildConfig(interaction.guildId);
   const embed = new EmbedBuilder()
     .setTitle('🎁 Giveaway Configuration')
@@ -1154,10 +1182,11 @@ async function adminGiveawayMenu(interaction) {
     new ButtonBuilder().setCustomId('admin_giveaway_set_pingrole').setLabel('📌 Set Ping Role').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
   );
-  await interaction.update({ embeds: [embed], components: [row] });
+  await interaction.editReply({ embeds: [embed], components: [row] });
 }
 
 async function adminGiveawaySetPingRole(interaction) {
+  // Already deferred from handleButton
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_giveaway_pingrole')
     .setTitle('Set Giveaway Ping Role')
@@ -1179,12 +1208,13 @@ async function adminGiveawaySetPingRole(interaction) {
 // ============================================
 
 async function handleVerifyEntry(interaction) {
+  // Already deferred from handleButton
   const parts = interaction.customId.split('_');
   const giveawayId = parts[2];
   const userId = parts[3];
   
   if (!isAdmin(interaction.member)) {
-    return interaction.reply({ content: '❌ Only admins can verify entries.', flags: 64 });
+    return interaction.editReply({ content: '❌ Only admins can verify entries.', flags: 64 });
   }
   
   const row = new ActionRowBuilder().addComponents(
@@ -1193,28 +1223,30 @@ async function handleVerifyEntry(interaction) {
     new ButtonBuilder().setCustomId(`disqualify_entry_${giveawayId}_${userId}`).setLabel('❌ Disqualify').setStyle(ButtonStyle.Danger)
   );
   
-  await interaction.update({ content: `✅ **Entry verified** by ${interaction.user.tag}`, components: [row] });
+  await interaction.editReply({ content: `✅ **Entry verified** by ${interaction.user.tag}`, components: [row] });
   logger.info(`Entry verified for user ${userId} in giveaway ${giveawayId} by ${interaction.user.tag}`);
 }
 
 async function handleContactEntry(interaction) {
+  // Already deferred from handleButton
   const parts = interaction.customId.split('_');
   const userId = parts[3];
   
   if (!isAdmin(interaction.member)) {
-    return interaction.reply({ content: '❌ Only admins can contact entrants.', flags: 64 });
+    return interaction.editReply({ content: '❌ Only admins can contact entrants.', flags: 64 });
   }
   
-  await interaction.reply({ content: `📩 **Contact <@${userId}>:** Use this channel to communicate with them directly.`, flags: 64 });
+  await interaction.editReply({ content: `📩 **Contact <@${userId}>:** Use this channel to communicate with them directly.`, flags: 64 });
 }
 
 async function handleDisqualifyEntry(interaction) {
+  // Already deferred from handleButton
   const parts = interaction.customId.split('_');
   const giveawayId = parts[2];
   const userId = parts[3];
   
   if (!isAdmin(interaction.member)) {
-    return interaction.reply({ content: '❌ Only admins can disqualify entries.', flags: 64 });
+    return interaction.editReply({ content: '❌ Only admins can disqualify entries.', flags: 64 });
   }
   
   const row = new ActionRowBuilder().addComponents(
@@ -1226,7 +1258,7 @@ async function handleDisqualifyEntry(interaction) {
     await pool.query('DELETE FROM car_giveaway_entries WHERE giveaway_id = $1 AND user_id = $2', [giveawayId, userId]);
   } catch {}
   
-  await interaction.update({ content: `❌ **Entry disqualified** by ${interaction.user.tag}`, components: [row] });
+  await interaction.editReply({ content: `❌ **Entry disqualified** by ${interaction.user.tag}`, components: [row] });
   
   try {
     const user = await interaction.client.users.fetch(userId);
@@ -1235,8 +1267,10 @@ async function handleDisqualifyEntry(interaction) {
   
   logger.info(`Entry disqualified for user ${userId} in giveaway ${giveawayId} by ${interaction.user.tag}`);
 }
+
 // ------------------------- CORE BUSINESS FUNCTIONS -------------------------
 async function selectModel(interaction, model) {
+  // ✅ Already deferred in handleButton
   const userId = interaction.user.id;
   await updateUserState(userId, { selectedModel: model, step: 'model_selected' });
 
@@ -1262,11 +1296,12 @@ async function selectModel(interaction, model) {
     new ButtonBuilder().setCustomId('action_tradein').setLabel('🔄 Value My Trade-In').setStyle(ButtonStyle.Secondary)
   );
 
-  await interaction.update({ embeds: [embed], components: [row] });
+  await interaction.editReply({ embeds: [embed], components: [row] });
   logger.debug(`Model selected: ${model} by ${interaction.user.tag}`);
 }
 
 async function handleNotSure(interaction) {
+  // ✅ Already deferred in handleButton
   const embed = new EmbedBuilder()
     .setTitle('❓ Let\'s find your perfect BYD – together')
     .setDescription(
@@ -1282,12 +1317,13 @@ async function handleNotSure(interaction) {
     new ButtonBuilder().setCustomId('need_city').setLabel('🏙️ City Parking').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('need_fleet').setLabel('💼 Fleet/Commercial').setStyle(ButtonStyle.Secondary)
   );
-  await interaction.update({ embeds: [embed], components: [row] });
+  await interaction.editReply({ embeds: [embed], components: [row] });
 }
 
 async function startQuoteFlow(interaction, model) {
+  // ✅ Already deferred in handleButton
   if (!model) {
-    return interaction.reply({ content: '❓ Please select a BYD model first.', ephemeral: true });
+    return interaction.editReply({ content: '❓ Please select a BYD model first.', ephemeral: true });
   }
   const userId = interaction.user.id;
   await updateUserState(userId, { step: 'awaiting_region' });
@@ -1305,12 +1341,13 @@ async function startQuoteFlow(interaction, model) {
       { label: 'Washington', value: 'Washington' },
     ]);
   const row = new ActionRowBuilder().addComponents(selectMenu);
-  await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+  await interaction.editReply({ embeds: [embed], components: [row], ephemeral: true });
 }
 
 async function startTestDriveFlow(interaction, model) {
+  // ✅ Already deferred in handleButton
   if (!model) {
-    return interaction.reply({ content: '❓ Please select a BYD model first.', ephemeral: true });
+    return interaction.editReply({ content: '❓ Please select a BYD model first.', ephemeral: true });
   }
   const embed = new EmbedBuilder()
     .setTitle('🚗 Let\'s get you behind the wheel – no pressure.')
@@ -1326,10 +1363,11 @@ async function startTestDriveFlow(interaction, model) {
     new ButtonBuilder().setCustomId('td_showroom').setLabel('🏢 Visit Showroom').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('td_home').setLabel('🏠 Home Test Drive').setStyle(ButtonStyle.Success)
   );
-  await interaction.update({ embeds: [embed], components: [row] });
+  await interaction.editReply({ embeds: [embed], components: [row] });
 }
 
 async function startTradeInFlow(interaction, model) {
+  // ✅ Already deferred in handleButton
   const modal = new ModalBuilder()
     .setCustomId('tradein_make_model')
     .setTitle('Trade-in: Your current car')
@@ -1346,7 +1384,7 @@ async function startTradeInFlow(interaction, model) {
 }
 
 async function askForDateTime(interaction, locationType) {
-  await interaction.deferUpdate();
+  // ✅ Already deferred in handleButton, but we need to update the original message
   const userId = interaction.user.id;
   await updateUserState(userId, { tempData: { locationType } });
   const { embed, row } = getCalendarPicker();
@@ -1354,6 +1392,7 @@ async function askForDateTime(interaction, locationType) {
 }
 
 async function confirmTestDrive(interaction, client, date, time, locationType) {
+  // ✅ This is called from select menu which is already deferred
   const userId = interaction.user.id;
   const username = interaction.user.username;
   let threadChannel = null;
@@ -1385,7 +1424,7 @@ async function confirmTestDrive(interaction, client, date, time, locationType) {
     .setFooter({ text: `✨ ${getRandomItem(testimonials)} • Your advisor will reach out shortly` })
     .setTimestamp();
 
-  await interaction.update({ embeds: [embed], components: [] });
+  await interaction.editReply({ embeds: [embed], components: [] });
   if (threadChannel) await threadChannel.send({ embeds: [embed] });
   await saveTestDriveBooking(userId, username, date, time, locationType, threadChannel?.id || 'DM_BOOKING');
   await updateUserState(userId, { step: 'test_drive_booked', tempData: {} });
@@ -1393,34 +1432,46 @@ async function confirmTestDrive(interaction, client, date, time, locationType) {
 }
 
 async function sendBrochure(interaction, model) {
-  if (!model) return interaction.reply({ content: '❓ Please select a BYD model first.', ephemeral: true });
-  await interaction.reply({ content: `📄 Brochure for BYD ${model}: https://byd.com/brochure/${model.toLowerCase()}`, ephemeral: true });
+  // ✅ Already deferred in handleButton
+  if (!model) return interaction.editReply({ content: '❓ Please select a BYD model first.', ephemeral: true });
+  await interaction.editReply({ content: `📄 Brochure for BYD ${model}: https://byd.com/brochure/${model.toLowerCase()}`, ephemeral: true });
 }
 
 async function transferToAdvisor(interaction) {
-  await interaction.reply({ content: '💬 A sales advisor will be with you shortly. Creating a private thread...', ephemeral: true });
+  // ✅ Already deferred in handleButton
+  await interaction.editReply({ content: '💬 A sales advisor will be with you shortly. Creating a private thread...', ephemeral: true });
 }
 
 async function setTradeCondition(interaction, condition) {
+  // ✅ Already deferred in handleButton
   const userId = interaction.user.id;
   const state = await getUserState(userId, interaction.user.username);
   const { makeModel, odometer } = state.tempData || {};
-  await interaction.reply({ content: `✅ Your ${makeModel || 'vehicle'} with ${odometer || 'N/A'} miles is rated **${condition}**. Estimated trade‑in: $${Math.floor(Math.random() * 50000 + 50000).toLocaleString()}. A formal offer will be sent shortly.`, ephemeral: true });
+  await interaction.editReply({ content: `✅ Your ${makeModel || 'vehicle'} with ${odometer || 'N/A'} miles is rated **${condition}**. Estimated trade‑in: $${Math.floor(Math.random() * 50000 + 50000).toLocaleString()}. A formal offer will be sent shortly.`, ephemeral: true });
   await updateUserState(userId, { step: null, tempData: {} });
 }
 
 async function recommendAffordability(interaction) {
-  await interaction.reply({ content: '💸 **Best value picks:**\n• **Seagull** – $19,990 (city EV)\n• **Dolphin** – $29,990 (hatch)\n• **Yuan Plus** – $37,990 (crossover)\n\nWant a quote on any of these?' });
+  // ✅ Already deferred in handleButton
+  await interaction.editReply({ content: '💸 **Best value picks:**\n• **Seagull** – $19,990 (city EV)\n• **Dolphin** – $29,990 (hatch)\n• **Yuan Plus** – $37,990 (crossover)\n\nWant a quote on any of these?' });
 }
+
 async function recommendRange(interaction) {
-  await interaction.reply({ content: '⚡ **Longest range:**\n• **Seal** – 350+ miles\n• **Tang** – 320 miles (3‑row SUV)\n• **Han Performance** – 310 miles\n\nWhich one catches your eye?' });
+  // ✅ Already deferred in handleButton
+  await interaction.editReply({ content: '⚡ **Longest range:**\n• **Seal** – 350+ miles\n• **Tang** – 320 miles (3‑row SUV)\n• **Han Performance** – 310 miles\n\nWhich one catches your eye?' });
 }
+
 async function recommendFamily(interaction) {
-  await interaction.reply({ content: '👨‍👩‍👧‍👦 **Family‑friendly BYDs:**\n• **ATTO 3** – compact SUV, $34,990*\n• **Tang** – 3‑row midsize, $49,990*\n• **Song Plus** – spacious family SUV, $42,990*\n\n_*Before EV credits._ Would you like a safety brochure or a test drive?' });
+  // ✅ Already deferred in handleButton
+  await interaction.editReply({ content: '👨‍👩‍👧‍👦 **Family‑friendly BYDs:**\n• **ATTO 3** – compact SUV, $34,990*\n• **Tang** – 3‑row midsize, $49,990*\n• **Song Plus** – spacious family SUV, $42,990*\n\n_*Before EV credits._ Would you like a safety brochure or a test drive?' });
 }
+
 async function recommendCity(interaction) {
-  await interaction.reply({ content: '🏙️ **Perfect for city driving:**\n• **Seagull** – ultra‑compact, $19,990\n• **Dolphin** – nimble hatch, $29,990\n• **Yuan Plus** – crossover with parking assist, $37,990\n\nAll come with parking sensors and 360° camera. Want to see city range figures?' });
+  // ✅ Already deferred in handleButton
+  await interaction.editReply({ content: '🏙️ **Perfect for city driving:**\n• **Seagull** – ultra‑compact, $19,990\n• **Dolphin** – nimble hatch, $29,990\n• **Yuan Plus** – crossover with parking assist, $37,990\n\nAll come with parking sensors and 360° camera. Want to see city range figures?' });
 }
+
 async function handleFleet(interaction) {
-  await interaction.reply({ content: '🚛 A commercial sales advisor will contact you soon. Please share your fleet size and use case in the thread.' });
+  // ✅ Already deferred in handleButton
+  await interaction.editReply({ content: '🚛 A commercial sales advisor will contact you soon. Please share your fleet size and use case in the thread.' });
 }
