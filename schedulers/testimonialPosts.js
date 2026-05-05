@@ -8,6 +8,8 @@ const { getRandomItem, sleep } = require('../utils/helpers');
 // ============================================
 const STATIC_URL = process.env.STATIC_BASE_URL || 'http://localhost:3000';
 const TESTIMONIAL_CHANNEL_ID = process.env.TESTIMONIAL_CHANNEL_ID;
+const GIVEAWAY_SERVER_ID = process.env.GIVEAWAY_SERVER_ID || '1498758472483999814';
+const GIVEAWAY_URL = `https://discord.com/channels/${GIVEAWAY_SERVER_ID}/${GIVEAWAY_SERVER_ID}`;
 const MIN_INTERVAL = parseInt(process.env.TESTIMONIAL_MIN_INTERVAL, 10) || 5 * 60 * 1000; // 5 minutes
 const MAX_INTERVAL = parseInt(process.env.TESTIMONIAL_MAX_INTERVAL, 10) || 3 * 60 * 60 * 1000; // 3 hours
 
@@ -264,7 +266,7 @@ async function postTestimonial(client, channelId) {
         `**Location:** ${testimonial.location}\n` +
         `**Won:** ${testimonial.daysAgo} days ago\n\n` +
         `### 🚗 Want to be our next winner?\n` +
-        `Check out active giveaways in this server! Use \`/cargiveaway list\` to see what\'s live.\n\n` +
+        `Click the button below to join our giveaway server!\n\n` +
         `*Real winners. Real cars. Real dreams coming true.*`
       )
       .setColor('#FFD700')
@@ -276,11 +278,11 @@ async function postTestimonial(client, channelId) {
       new ButtonBuilder()
         .setLabel('🚗 Enter Giveaway')
         .setStyle(ButtonStyle.Link)
-        .setURL(`https://discord.com/channels/${channel.guild.id}/${channelId}`),
+        .setURL(GIVEAWAY_URL),
       new ButtonBuilder()
-        .setLabel('📋 View All Giveaways')
-        .setStyle(ButtonStyle.Secondary)
-        .setCustomId('cargiveaway_list')
+        .setLabel('📋 View Giveaways')
+        .setStyle(ButtonStyle.Link)
+        .setURL(GIVEAWAY_URL)
     );
 
     const message = await channel.send({ embeds: [embed], components: [row] });
@@ -344,6 +346,7 @@ function startTestimonialScheduler(client) {
   
   logger.ready(`📢 Testimonial scheduler ready`);
   logger.info(`📢 Channel: ${TESTIMONIAL_CHANNEL_ID}`);
+  logger.info(`📢 Giveaway URL: ${GIVEAWAY_URL}`);
   logger.info(`📢 Interval: ${Math.round(MIN_INTERVAL / 60000)} min - ${Math.round(MAX_INTERVAL / 3600000 * 10) / 10} hours (random)`);
   logger.info(`📢 Total testimonials: ${winningTestimonials.length}`);
 }
