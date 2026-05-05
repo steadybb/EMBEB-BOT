@@ -1,5 +1,5 @@
 // utils/stateManager.js
-const { upsertLead, getLead, getCollection } = require('./database');
+const { upsertLead, getLead, pool } = require('./database');
 const logger = require('./logger');
 const crypto = require('crypto');
 
@@ -7,10 +7,10 @@ const crypto = require('crypto');
 // CONFIGURATION
 // ============================================
 const CONFIG = {
-  cacheTTL: parseInt(process.env.STATE_CACHE_TTL, 10) || 60000, // 1 minute default
-  maxCacheSize: parseInt(process.env.STATE_MAX_CACHE, 10) || 1000, // Max cached users
-  sessionTimeout: parseInt(process.env.SESSION_TIMEOUT, 10) || 30 * 60 * 1000, // 30 min session
-  leadScoreDecay: 0.95, // Score decay factor per day (5% decay)
+  cacheTTL: parseInt(process.env.STATE_CACHE_TTL, 10) || 60000,
+  maxCacheSize: parseInt(process.env.STATE_MAX_CACHE, 10) || 1000,
+  sessionTimeout: parseInt(process.env.SESSION_TIMEOUT, 10) || 30 * 60 * 1000,
+  leadScoreDecay: 0.95,
 };
 
 // ============================================
@@ -18,16 +18,11 @@ const CONFIG = {
 // ============================================
 const cache = new Map();
 
-/**
- * LRU-like cache eviction
- */
 function evictCache() {
   if (cache.size > CONFIG.maxCacheSize) {
-    // Remove oldest 10% of entries
     const entries = [...cache.entries()]
       .sort((a, b) => a[1].timestamp - b[1].timestamp);
     const toRemove = Math.ceil(CONFIG.maxCacheSize * 0.1);
-    
     for (let i = 0; i < toRemove && i < entries.length; i++) {
       cache.delete(entries[i][0]);
     }
@@ -35,32 +30,19 @@ function evictCache() {
   }
 }
 
-/**
- * Get from cache if valid
- */
 function getFromCache(userId) {
   const cached = cache.get(userId);
   if (!cached) return null;
-  
   if (Date.now() - cached.timestamp < CONFIG.cacheTTL) {
     cached.hitCount = (cached.hitCount || 0) + 1;
     return cached.data;
   }
-  
-  // Expired
   cache.delete(userId);
   return null;
 }
 
-/**
- * Set cache entry
- */
 function setCache(userId, data) {
-  cache.set(userId, {
-    data,
-    timestamp: Date.now(),
-    hitCount: 0,
-  });
+  cache.set(userId, { data, timestamp: Date.now(), hitCount: 0 });
   evictCache();
 }
 
@@ -82,20 +64,13 @@ const leadScoreActions = {
   'follow_up_responded': 15,
 };
 
-/**
- * Calculate lead score based on actions
- */
 function calculateLeadScore(currentScore, action) {
   const points = leadScoreActions[action] || 0;
   return currentScore + points;
 }
 
-/**
- * Apply score decay for inactivity
- */
 function applyScoreDecay(lastInteraction, currentScore) {
   if (!lastInteraction) return currentScore;
-  
   const daysSinceLastInteraction = (Date.now() - new Date(lastInteraction).getTime()) / (1000 * 60 * 60 * 24);
   if (daysSinceLastInteraction > 1) {
     const decayFactor = Math.pow(CONFIG.leadScoreDecay, daysSinceLastInteraction);
@@ -104,9 +79,6 @@ function applyScoreDecay(lastInteraction, currentScore) {
   return currentScore;
 }
 
-/**
- * Get lead stage based on score
- */
 function getLeadStage(score) {
   if (score >= 100) return 'HOT';
   if (score >= 50) return 'WARM';
@@ -116,63 +88,43 @@ function getLeadStage(score) {
 }
 
 // ============================================
-// ANALYTICS & TRACKING
+// ANALYTICS & TRACKING (PostgreSQL)
 // ============================================
 
-/**
- * Track an interaction event for analytics
- */
 async function trackInteraction(userId, event, metadata = {}) {
   try {
-    const collection = await getCollection('interactions');
-    await collection.insertOne({
-      userId,
-      event,
-      metadata,
-      timestamp: new Date(),
-    });
+    await pool.query(
+      'INSERT INTO interactions (user_id, event, metadata) VALUES ($1, $2, $3)',
+      [userId, event, JSON.stringify(metadata)]
+    );
     logger.debug(`📊 Tracked: ${event} for ${userId}`);
   } catch (err) {
     logger.debug('Analytics tracking failed (non-critical):', err.message);
   }
 }
 
-/**
- * Get user interaction history
- */
 async function getInteractionHistory(userId, limit = 10) {
   try {
-    const collection = await getCollection('interactions');
-    return await collection
-      .find({ userId })
-      .sort({ timestamp: -1 })
-      .limit(limit)
-      .toArray();
+    const res = await pool.query(
+      'SELECT * FROM interactions WHERE user_id = $1 ORDER BY timestamp DESC LIMIT $2',
+      [userId, limit]
+    );
+    return res.rows;
   } catch (err) {
     logger.error('Failed to get interaction history:', err);
     return [];
   }
 }
 
-/**
- * Get interaction statistics
- */
-async function getInteractionStats(guildId = null) {
+async function getInteractionStats(guildId = null, days = 7) {
   try {
-    const collection = await getCollection('interactions');
-    const match = guildId ? { 'metadata.guildId': guildId } : {};
-    
-    const stats = await collection.aggregate([
-      { $match: match },
-      { $group: {
-        _id: '$event',
-        count: { $sum: 1 },
-        lastOccurrence: { $max: '$timestamp' }
-      }},
-      { $sort: { count: -1 } }
-    ]).toArray();
-    
-    return stats;
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    let query = 'SELECT event, COUNT(*) as count FROM interactions WHERE timestamp > $1';
+    const params = [cutoff];
+    if (guildId) { query += ' AND metadata->>\'guildId\' = $2'; params.push(guildId); }
+    query += ' GROUP BY event ORDER BY count DESC';
+    const res = await pool.query(query, params);
+    return res.rows;
   } catch (err) {
     logger.error('Failed to get interaction stats:', err);
     return [];
@@ -183,25 +135,16 @@ async function getInteractionStats(guildId = null) {
 // SESSION MANAGEMENT
 // ============================================
 
-/**
- * Generate a unique session ID
- */
 function generateSessionId() {
   return crypto.randomBytes(16).toString('hex');
 }
 
-/**
- * Check if user has an active session
- */
 function isSessionActive(state) {
   if (!state?.session?.startedAt) return false;
   const sessionAge = Date.now() - new Date(state.session.startedAt).getTime();
   return sessionAge < CONFIG.sessionTimeout;
 }
 
-/**
- * Start or resume a session
- */
 function updateSession(state) {
   if (!state.session) {
     state.session = {
@@ -211,10 +154,8 @@ function updateSession(state) {
       actions: [],
     };
   }
-  
   state.session.lastActive = new Date();
   state.session.pageViews = (state.session.pageViews || 0) + 1;
-  
   return state;
 }
 
@@ -222,18 +163,13 @@ function updateSession(state) {
 // CORE STATE FUNCTIONS
 // ============================================
 
-/**
- * Get the current state object for a user
- */
 async function getUserState(userId, username = null) {
-  // Check cache first
   const cached = getFromCache(userId);
   if (cached) return cached;
 
   let dbState = await getLead(userId);
   
   if (!dbState) {
-    // Create default state
     dbState = {
       selectedModel: null,
       step: null,
@@ -263,13 +199,10 @@ async function getUserState(userId, username = null) {
       }
     }
   } else {
-    // Normalize state
     if (!dbState.tempData) dbState.tempData = {};
     if (!dbState.leadScore) dbState.leadScore = 0;
     if (!dbState.leadStage) dbState.leadStage = 'COLD';
     if (!dbState.interactions) dbState.interactions = 0;
-    
-    // Apply score decay
     dbState.leadScore = applyScoreDecay(dbState.lastInteraction, dbState.leadScore);
     dbState.leadStage = getLeadStage(dbState.leadScore);
   }
@@ -279,9 +212,6 @@ async function getUserState(userId, username = null) {
   return state;
 }
 
-/**
- * Update a user's state
- */
 async function updateUserState(userId, updates, username = null) {
   const current = await getUserState(userId, username);
   
@@ -296,16 +226,13 @@ async function updateUserState(userId, updates, username = null) {
     lastInteraction: new Date(),
   };
 
-  // Update session
   updateSession(newState);
 
-  // Calculate lead score based on step change
   if (updates.step && updates.step !== current.step) {
     newState.leadScore = calculateLeadScore(newState.leadScore, updates.step);
     newState.leadStage = getLeadStage(newState.leadScore);
   }
 
-  // Save to database
   try {
     await upsertLead(userId, username || 'unknown', {
       selectedModel: newState.selectedModel,
@@ -321,55 +248,34 @@ async function updateUserState(userId, updates, username = null) {
     logger.error('Failed to update lead in database:', err);
   }
 
-  // Track interaction
   await trackInteraction(userId, updates.step || 'state_update', {
     model: newState.selectedModel,
     leadScore: newState.leadScore,
     leadStage: newState.leadStage,
   });
 
-  // Update cache
   setCache(userId, newState);
   return newState;
 }
 
-/**
- * Add lead score points for an action
- */
 async function addLeadScore(userId, action, username = null) {
   const current = await getUserState(userId, username);
   const newScore = calculateLeadScore(current.leadScore || 0, action);
   const newStage = getLeadStage(newScore);
-  
-  return updateUserState(userId, {
-    leadScore: newScore,
-    leadStage: newStage,
-  }, username);
+  return updateUserState(userId, { leadScore: newScore, leadStage: newStage }, username);
 }
 
-/**
- * Record a specific interaction event
- */
 async function recordInteraction(userId, event, metadata = {}, username = null) {
   await trackInteraction(userId, event, metadata);
-  
-  // Also update the state interaction count
   const current = await getUserState(userId, username);
-  return updateUserState(userId, {
-    interactions: (current.interactions || 0) + 1,
-  }, username);
+  return updateUserState(userId, { interactions: (current.interactions || 0) + 1 }, username);
 }
 
-/**
- * Delete a user's state
- */
 async function clearUserState(userId, deleteFromDb = false) {
   cache.delete(userId);
-  
   if (deleteFromDb) {
     try {
-      const collection = await getCollection('leads');
-      await collection.deleteOne({ userId });
+      await pool.query('DELETE FROM leads WHERE user_id = $1', [userId]);
       logger.info(`Lead record deleted for ${userId}`);
     } catch (err) {
       logger.error('Failed to delete lead from database:', err);
@@ -378,12 +284,9 @@ async function clearUserState(userId, deleteFromDb = false) {
 }
 
 // ============================================
-// BULK OPERATIONS
+// BULK OPERATIONS (PostgreSQL)
 // ============================================
 
-/**
- * Get all active states from cache
- */
 function getAllStates() {
   const states = {};
   for (const [userId, cached] of cache) {
@@ -394,66 +297,40 @@ function getAllStates() {
   return states;
 }
 
-/**
- * Get all leads by stage
- */
-async function getLeadsByStage(guildId = null, stage = null) {
+async function getLeadsByStage(leadStage, limit = 50) {
   try {
-    const collection = await getCollection('leads');
-    const query = {};
-    if (guildId) query.guildId = guildId;
-    if (stage) query.leadStage = stage;
-    
-    return await collection.find(query).sort({ leadScore: -1 }).toArray();
+    const res = await pool.query(
+      'SELECT * FROM leads WHERE lead_stage = $1 ORDER BY lead_score DESC LIMIT $2',
+      [leadStage, limit]
+    );
+    return res.rows;
   } catch (err) {
     logger.error('Failed to get leads by stage:', err);
     return [];
   }
 }
 
-/**
- * Get top leads (highest scores)
- */
-async function getTopLeads(guildId = null, limit = 10) {
+async function getTopLeads(limit = 10) {
   try {
-    const collection = await getCollection('leads');
-    const query = guildId ? { guildId } : {};
-    
-    return await collection
-      .find(query)
-      .sort({ leadScore: -1 })
-      .limit(limit)
-      .toArray();
+    const res = await pool.query(
+      'SELECT * FROM leads ORDER BY lead_score DESC LIMIT $1',
+      [limit]
+    );
+    return res.rows;
   } catch (err) {
     logger.error('Failed to get top leads:', err);
     return [];
   }
 }
 
-/**
- * Get lead statistics for a guild
- */
-async function getLeadStats(guildId = null) {
+async function getLeadStats() {
   try {
-    const collection = await getCollection('leads');
-    const match = guildId ? { guildId } : {};
-    
-    const stats = await collection.aggregate([
-      { $match: match },
-      { $group: {
-        _id: '$leadStage',
-        count: { $sum: 1 },
-        avgScore: { $avg: '$leadScore' },
-      }}
-    ]).toArray();
-    
-    const total = stats.reduce((sum, s) => sum + s.count, 0);
-    
-    return {
-      total,
-      byStage: stats,
-      topLeads: await getTopLeads(guildId, 5),
-    };
+    const res = await pool.query(
+      `SELECT lead_stage, COUNT(*) as count, AVG(lead_score)::int as avg_score 
+       FROM leads GROUP BY lead_stage ORDER BY count DESC`
+    );
+    const total = res.rows.reduce((sum, r) => sum + parseInt(r.count), 0);
+    return { total, byStage: res.rows, topLeads: await getTopLeads(5) };
   } catch (err) {
     logger.error('Failed to get lead stats:', err);
     return { total: 0, byStage: [], topLeads: [] };
@@ -464,7 +341,6 @@ async function getLeadStats(guildId = null) {
 // CLEANUP
 // ============================================
 
-// Periodic cache cleanup (every 5 minutes)
 setInterval(() => {
   const now = Date.now();
   let cleaned = 0;
@@ -474,9 +350,7 @@ setInterval(() => {
       cleaned++;
     }
   }
-  if (cleaned > 0) {
-    logger.debug(`Cache cleanup: removed ${cleaned} expired entries`);
-  }
+  if (cleaned > 0) logger.debug(`Cache cleanup: removed ${cleaned} expired entries`);
 }, 5 * 60 * 1000);
 
 // ============================================
@@ -484,29 +358,20 @@ setInterval(() => {
 // ============================================
 
 module.exports = {
-  // Core functions
   getUserState,
   updateUserState,
   clearUserState,
   getAllStates,
-  
-  // Lead scoring
   addLeadScore,
   getLeadStage,
   leadScoreActions,
-  
-  // Analytics
   trackInteraction,
   recordInteraction,
   getInteractionHistory,
   getInteractionStats,
-  
-  // Bulk operations
   getLeadsByStage,
   getTopLeads,
   getLeadStats,
-  
-  // Session
   generateSessionId,
   isSessionActive,
 };
