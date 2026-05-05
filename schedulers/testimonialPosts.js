@@ -239,64 +239,132 @@ function getNextTestimonial() {
 }
 
 // ============================================
-// MAIN POST FUNCTION
+// MAIN POST FUNCTION WITH RETRY LOGIC
 // ============================================
 
 async function postTestimonial(client, channelId) {
-  try {
-    const channel = client.channels.cache.get(channelId || TESTIMONIAL_CHANNEL_ID);
-    if (!channel) {
-      logger.warn(`Testimonial channel not found: ${channelId || TESTIMONIAL_CHANNEL_ID}`);
-      return false;
-    }
-
-    const testimonial = getNextTestimonial();
-    
-    const embed = new EmbedBuilder()
-      .setAuthor({ 
-        name: `${testimonial.username} 🏆`, 
-        iconURL: testimonial.avatar 
-      })
-      .setTitle(`🎉 Won a ${testimonial.prize}!`)
-      .setDescription(
-        `> *"${testimonial.testimonial}"*\n\n` +
-        `### 🏆 Prize Details\n` +
-        `**Vehicle:** ${testimonial.prize}\n` +
-        `**Value:** ${testimonial.value}\n` +
-        `**Location:** ${testimonial.location}\n` +
-        `**Won:** ${testimonial.daysAgo} days ago\n\n` +
-        `### 🚗 Want to be our next winner?\n` +
-        `Click the button below to join our giveaway server!\n\n` +
-        `*Real winners. Real cars. Real dreams coming true.*`
-      )
-      .setColor('#FFD700')
-      .setImage(testimonial.image)
-      .setFooter({ text: '⚡ BYD Official Giveaways • Build Your Dreams • Verified Winner', iconURL: 'https://cdn.byd.com/bot/byd-logo.png' })
-      .setTimestamp();
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setLabel('🚗 Enter Giveaway')
-        .setStyle(ButtonStyle.Link)
-        .setURL(GIVEAWAY_URL),
-      new ButtonBuilder()
-        .setLabel('📋 View Giveaways')
-        .setStyle(ButtonStyle.Link)
-        .setURL(GIVEAWAY_URL)
-    );
-
-    const message = await channel.send({ embeds: [embed], components: [row] });
-    
+  let retries = 3;
+  
+  while (retries > 0) {
     try {
-      if (channel.type === 5) await message.crosspost();
-    } catch {}
+      // Check if client is ready
+      if (!client || !client.isReady()) {
+        logger.warn('Client not ready, waiting 2 seconds...');
+        await sleep(2000);
+        retries--;
+        continue;
+      }
+      
+      const channel = client.channels.cache.get(channelId || TESTIMONIAL_CHANNEL_ID);
+      if (!channel) {
+        logger.warn(`Testimonial channel not found: ${channelId || TESTIMONIAL_CHANNEL_ID}`);
+        
+        // Try to fetch the channel if not in cache
+        try {
+          const fetchedChannel = await client.channels.fetch(channelId || TESTIMONIAL_CHANNEL_ID);
+          if (fetchedChannel) {
+            logger.info(`✅ Successfully fetched testimonial channel`);
+            const testimonial = getNextTestimonial();
+            await sendTestimonialMessage(fetchedChannel, testimonial);
+            return true;
+          }
+        } catch (fetchErr) {
+          logger.error(`Could not fetch channel: ${fetchErr.message}`);
+        }
+        
+        return false;
+      }
 
-    logger.info(`📢 Testimonial posted: ${testimonial.username} - ${testimonial.prize}`);
-    return true;
-  } catch (err) {
-    logger.error('Failed to post testimonial:', err.message);
-    return false;
+      const testimonial = getNextTestimonial();
+      await sendTestimonialMessage(channel, testimonial);
+      return true;
+      
+    } catch (err) {
+      retries--;
+      logger.error(`Failed to post testimonial (${retries} retries left):`, err.message);
+      
+      if (retries > 0) {
+        // Exponential backoff
+        const backoffTime = (4 - retries) * 1000;
+        logger.info(`Retrying in ${backoffTime}ms...`);
+        await sleep(backoffTime);
+      }
+    }
   }
+  
+  return false;
+}
+
+async function sendTestimonialMessage(channel, testimonial) {
+  // Validate image URL - if image fails, we'll still send the embed
+  let imageUrl = testimonial.image;
+  let imageValid = true;
+  
+  // Check if image URL is properly formatted
+  if (!imageUrl || imageUrl === `${STATIC_URL}/static/undefined`) {
+    imageValid = false;
+    imageUrl = null;
+    logger.warn(`Invalid image URL for ${testimonial.username}, posting without image`);
+  }
+  
+  const embed = new EmbedBuilder()
+    .setAuthor({ 
+      name: `${testimonial.username} 🏆`, 
+      iconURL: testimonial.avatar,
+      url: GIVEAWAY_URL
+    })
+    .setTitle(`🎉 Won a ${testimonial.prize}!`)
+    .setDescription(
+      `> *"${testimonial.testimonial}"*\n\n` +
+      `## 🏆 Prize Details\n` +
+      `**Vehicle:** ${testimonial.prize}\n` +
+      `**Value:** ${testimonial.value}\n` +
+      `**Location:** ${testimonial.location}\n` +
+      `**Won:** ${testimonial.daysAgo} days ago\n\n` +
+      `## 🚗 Want to be our next winner?\n` +
+      `Click the button below to join our giveaway server!\n\n` +
+      `*Real winners. Real cars. Real dreams coming true.*`
+    )
+    .setColor('#FFD700')
+    .setFooter({ 
+      text: '⚡ BYD Official Giveaways • Build Your Dreams • Verified Winner', 
+      iconURL: 'https://cdn.byd.com/bot/byd-logo.png' 
+    })
+    .setTimestamp();
+
+  // Only add image if it's valid
+  if (imageValid && imageUrl) {
+    embed.setImage(imageUrl);
+  }
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setLabel('🚗 Enter Giveaway Now')
+      .setStyle(ButtonStyle.Link)
+      .setURL(GIVEAWAY_URL),
+    new ButtonBuilder()
+      .setLabel('📋 View All Giveaways')
+      .setStyle(ButtonStyle.Link)
+      .setURL(GIVEAWAY_URL)
+  );
+
+  // Send the message with a timeout
+  const sendPromise = channel.send({ embeds: [embed], components: [row] });
+  const timeoutPromise = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error('Send timeout after 15 seconds')), 15000)
+  );
+  
+  const message = await Promise.race([sendPromise, timeoutPromise]);
+  
+  // Try to crosspost if it's an announcement channel
+  try {
+    if (channel.type === 5 || channel.type === 0) { // Announcement channel or text channel
+      await message.crosspost().catch(() => {});
+    }
+  } catch {}
+
+  logger.info(`📢 Testimonial posted: ${testimonial.username} - ${testimonial.prize}`);
+  return message;
 }
 
 // ============================================
@@ -304,31 +372,61 @@ async function postTestimonial(client, channelId) {
 // ============================================
 
 let isRunning = false;
+let shutdownRequested = false;
 
 async function runTestimonialLoop(client) {
-  if (isRunning) return;
+  if (isRunning) {
+    logger.warn('Testimonial loop already running');
+    return;
+  }
+  
   isRunning = true;
+  shutdownRequested = false;
   
   const minMin = Math.round(MIN_INTERVAL / 60000);
   const maxHr = Math.round(MAX_INTERVAL / 3600000 * 10) / 10;
   logger.ready(`📢 Testimonial scheduler started (every ${minMin} min - ${maxHr} hours randomly)`);
   
-  while (true) {
-    const delay = Math.floor(Math.random() * (MAX_INTERVAL - MIN_INTERVAL + 1)) + MIN_INTERVAL;
-    
-    if (delay < 3600000) {
-      logger.debug(`📢 Next testimonial in ~${Math.round(delay / 60000)} minutes`);
-    } else {
-      logger.debug(`📢 Next testimonial in ~${Math.round(delay / 3600000 * 10) / 10} hours`);
-    }
-    
-    await sleep(delay);
-    
+  while (!shutdownRequested) {
     try {
+      const delay = Math.floor(Math.random() * (MAX_INTERVAL - MIN_INTERVAL + 1)) + MIN_INTERVAL;
+      
+      if (delay < 3600000) {
+        logger.debug(`📢 Next testimonial in ~${Math.round(delay / 60000)} minutes`);
+      } else {
+        logger.debug(`📢 Next testimonial in ~${Math.round(delay / 3600000 * 10) / 10} hours`);
+      }
+      
+      await sleep(delay);
+      
+      // Check if shutdown was requested during sleep
+      if (shutdownRequested) break;
+      
+      // Check if client is still connected
+      if (!client || !client.isReady()) {
+        logger.warn('Client disconnected, waiting for reconnect...');
+        await sleep(30000);
+        continue;
+      }
+      
       await postTestimonial(client);
+      
     } catch (err) {
       logger.error('Testimonial loop error:', err.message);
+      // Wait a bit before retrying on error
+      await sleep(60000);
     }
+  }
+  
+  isRunning = false;
+  logger.info('📢 Testimonial scheduler stopped');
+}
+
+// Graceful shutdown function
+function stopTestimonialScheduler() {
+  if (isRunning) {
+    shutdownRequested = true;
+    logger.info('📢 Stopping testimonial scheduler...');
   }
 }
 
@@ -342,10 +440,25 @@ function startTestimonialScheduler(client) {
     return;
   }
 
+  // Validate channel exists after client is ready
+  setTimeout(async () => {
+    try {
+      const channel = await client.channels.fetch(TESTIMONIAL_CHANNEL_ID);
+      if (!channel) {
+        logger.error(`❌ Testimonial channel ${TESTIMONIAL_CHANNEL_ID} not found! Check your TESTIMONIAL_CHANNEL_ID env var.`);
+        return;
+      }
+      logger.info(`✅ Testimonial channel found: ${channel.name}`);
+    } catch (err) {
+      logger.error(`❌ Cannot access testimonial channel: ${err.message}`);
+    }
+  }, 5000);
+
   runTestimonialLoop(client);
   
   logger.ready(`📢 Testimonial scheduler ready`);
-  logger.info(`📢 Channel: ${TESTIMONIAL_CHANNEL_ID}`);
+  logger.info(`📢 Channel ID: ${TESTIMONIAL_CHANNEL_ID}`);
+  logger.info(`📢 Giveaway Server: ${GIVEAWAY_SERVER_ID}`);
   logger.info(`📢 Giveaway URL: ${GIVEAWAY_URL}`);
   logger.info(`📢 Interval: ${Math.round(MIN_INTERVAL / 60000)} min - ${Math.round(MAX_INTERVAL / 3600000 * 10) / 10} hours (random)`);
   logger.info(`📢 Total testimonials: ${winningTestimonials.length}`);
@@ -356,7 +469,23 @@ function startTestimonialScheduler(client) {
 // ============================================
 
 async function postTestimonialNow(client, channelId) {
+  if (!client || !client.isReady()) {
+    throw new Error('Client is not ready');
+  }
   return postTestimonial(client, channelId);
+}
+
+// ============================================
+// LIST AVAILABLE TESTIMONIALS
+// ============================================
+
+function listTestimonials() {
+  return winningTestimonials.map(t => ({
+    username: t.username,
+    prize: t.prize,
+    value: t.value,
+    image: t.image,
+  }));
 }
 
 // ============================================
@@ -364,7 +493,9 @@ async function postTestimonialNow(client, channelId) {
 // ============================================
 
 module.exports = { 
-  startTestimonialScheduler, 
+  startTestimonialScheduler,
+  stopTestimonialScheduler,
   postTestimonialNow,
   winningTestimonials,
+  listTestimonials,
 };
