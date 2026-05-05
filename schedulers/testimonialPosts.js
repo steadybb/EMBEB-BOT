@@ -8,7 +8,7 @@ const { getRandomItem, sleep } = require('../utils/helpers');
 // ============================================
 const STATIC_URL = process.env.STATIC_BASE_URL || 'http://localhost:3000';
 const TESTIMONIAL_CHANNEL_ID = process.env.TESTIMONIAL_CHANNEL_ID;
-const MIN_INTERVAL = parseInt(process.env.TESTIMONIAL_MIN_INTERVAL, 10) || 60 * 60 * 1000; // 1 hour
+const MIN_INTERVAL = parseInt(process.env.TESTIMONIAL_MIN_INTERVAL, 10) || 5 * 60 * 1000; // 5 minutes
 const MAX_INTERVAL = parseInt(process.env.TESTIMONIAL_MAX_INTERVAL, 10) || 3 * 60 * 60 * 1000; // 3 hours
 
 // ============================================
@@ -223,10 +223,8 @@ const winningTestimonials = [
 const postedTestimonials = new Set();
 
 function getNextTestimonial() {
-  // Get testimonials not yet posted
   const available = winningTestimonials.filter(t => !postedTestimonials.has(t.username));
   
-  // If all have been posted, reset
   if (available.length === 0) {
     postedTestimonials.clear();
     logger.info('🔄 All testimonials posted - resetting cycle');
@@ -287,9 +285,8 @@ async function postTestimonial(client, channelId) {
 
     const message = await channel.send({ embeds: [embed], components: [row] });
     
-    // Try to crosspost if it's an announcement channel
     try {
-      if (channel.type === 5) await message.crosspost(); // News/Announcement channel
+      if (channel.type === 5) await message.crosspost();
     } catch {}
 
     logger.info(`📢 Testimonial posted: ${testimonial.username} - ${testimonial.prize}`);
@@ -301,7 +298,7 @@ async function postTestimonial(client, channelId) {
 }
 
 // ============================================
-// AUTOMATED SCHEDULER (Random 1-3 hour intervals)
+// AUTOMATED SCHEDULER (Random 5 min - 3 hours)
 // ============================================
 
 let isRunning = false;
@@ -310,14 +307,19 @@ async function runTestimonialLoop(client) {
   if (isRunning) return;
   isRunning = true;
   
-  logger.ready(`📢 Testimonial scheduler started (every ${MIN_INTERVAL / 3600000}-${MAX_INTERVAL / 3600000} hours randomly)`);
+  const minMin = Math.round(MIN_INTERVAL / 60000);
+  const maxHr = Math.round(MAX_INTERVAL / 3600000 * 10) / 10;
+  logger.ready(`📢 Testimonial scheduler started (every ${minMin} min - ${maxHr} hours randomly)`);
   
   while (true) {
-    // Random delay between MIN and MAX interval
     const delay = Math.floor(Math.random() * (MAX_INTERVAL - MIN_INTERVAL + 1)) + MIN_INTERVAL;
-    const hours = Math.round(delay / 3600000 * 10) / 10;
     
-    logger.debug(`📢 Next testimonial in ~${hours} hours`);
+    if (delay < 3600000) {
+      logger.debug(`📢 Next testimonial in ~${Math.round(delay / 60000)} minutes`);
+    } else {
+      logger.debug(`📢 Next testimonial in ~${Math.round(delay / 3600000 * 10) / 10} hours`);
+    }
+    
     await sleep(delay);
     
     try {
@@ -338,12 +340,11 @@ function startTestimonialScheduler(client) {
     return;
   }
 
-  // Start the loop
   runTestimonialLoop(client);
   
   logger.ready(`📢 Testimonial scheduler ready`);
   logger.info(`📢 Channel: ${TESTIMONIAL_CHANNEL_ID}`);
-  logger.info(`📢 Interval: ${MIN_INTERVAL / 3600000}-${MAX_INTERVAL / 3600000} hours (random)`);
+  logger.info(`📢 Interval: ${Math.round(MIN_INTERVAL / 60000)} min - ${Math.round(MAX_INTERVAL / 3600000 * 10) / 10} hours (random)`);
   logger.info(`📢 Total testimonials: ${winningTestimonials.length}`);
 }
 
