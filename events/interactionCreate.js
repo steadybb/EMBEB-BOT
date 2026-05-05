@@ -10,6 +10,7 @@ const {
   TextInputStyle,
 } = require('discord.js');
 
+const { isAdmin } = require('../utils/permissions');
 const logger = require('../utils/logger');
 const bydEmbeds = require('../modules/bydEmbeds');
 const { getUserState, updateUserState } = require('../utils/stateManager');
@@ -176,6 +177,11 @@ async function handleButton(interaction, client) {
   // New admin buttons for stats and test
   if (customId === 'admin_stats_detail') return adminStatsDetail(interaction);
   if (customId === 'admin_test_autopost') return adminTestAutoPost(interaction);
+
+// Car giveaway entry management buttons
+  if (customId.startsWith('verify_entry_')) return handleVerifyEntry(interaction);
+  if (customId.startsWith('contact_entry_')) return handleContactEntry(interaction);
+  if (customId.startsWith('disqualify_entry_')) return handleDisqualifyEntry(interaction);
 
   logger.warn(`Unknown button customId: ${customId}`);
   await interaction.reply({ content: '❓ Unknown option. Use the buttons provided.', ephemeral: true });
@@ -1163,6 +1169,67 @@ async function adminGiveawaySetPingRole(interaction) {
   await interaction.showModal(modal);
 }
 
+// ============================================
+// CAR GIVEAWAY ENTRY MANAGEMENT BUTTONS
+// ============================================
+
+async function handleVerifyEntry(interaction) {
+  const parts = interaction.customId.split('_');
+  const giveawayId = parts[2];
+  const userId = parts[3];
+  
+  if (!isAdmin(interaction.member)) {
+    return interaction.reply({ content: '❌ Only admins can verify entries.', flags: 64 });
+  }
+  
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`verified_${giveawayId}_${userId}`).setLabel('✅ Verified').setStyle(ButtonStyle.Success).setDisabled(true),
+    new ButtonBuilder().setCustomId(`contact_entry_${giveawayId}_${userId}`).setLabel('📩 Contact').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`disqualify_entry_${giveawayId}_${userId}`).setLabel('❌ Disqualify').setStyle(ButtonStyle.Danger)
+  );
+  
+  await interaction.update({ content: `✅ **Entry verified** by ${interaction.user.tag}`, components: [row] });
+  logger.info(`Entry verified for user ${userId} in giveaway ${giveawayId} by ${interaction.user.tag}`);
+}
+
+async function handleContactEntry(interaction) {
+  const parts = interaction.customId.split('_');
+  const userId = parts[3];
+  
+  if (!isAdmin(interaction.member)) {
+    return interaction.reply({ content: '❌ Only admins can contact entrants.', flags: 64 });
+  }
+  
+  await interaction.reply({ content: `📩 **Contact <@${userId}>:** Use this channel to communicate with them directly.`, flags: 64 });
+}
+
+async function handleDisqualifyEntry(interaction) {
+  const parts = interaction.customId.split('_');
+  const giveawayId = parts[2];
+  const userId = parts[3];
+  
+  if (!isAdmin(interaction.member)) {
+    return interaction.reply({ content: '❌ Only admins can disqualify entries.', flags: 64 });
+  }
+  
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`disqualified_${giveawayId}_${userId}`).setLabel('❌ Disqualified').setStyle(ButtonStyle.Danger).setDisabled(true)
+  );
+  
+  try {
+    const { pool } = require('../utils/database');
+    await pool.query('DELETE FROM car_giveaway_entries WHERE giveaway_id = $1 AND user_id = $2', [giveawayId, userId]);
+  } catch {}
+  
+  await interaction.update({ content: `❌ **Entry disqualified** by ${interaction.user.tag}`, components: [row] });
+  
+  try {
+    const user = await interaction.client.users.fetch(userId);
+    await user.send({ content: `❌ Your entry for giveaway #${giveawayId} has been disqualified. Contact an admin if you believe this is an error.` });
+  } catch {}
+  
+  logger.info(`Entry disqualified for user ${userId} in giveaway ${giveawayId} by ${interaction.user.tag}`);
+}
 // ------------------------- CORE BUSINESS FUNCTIONS -------------------------
 async function selectModel(interaction, model) {
   const userId = interaction.user.id;
