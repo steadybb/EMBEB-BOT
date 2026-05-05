@@ -261,6 +261,11 @@ async function handleSelectMenu(interaction, client) {
     await confirmTestDrive(interaction, client, date, time, locationType);
     return;
   }
+  // Admin pull leads select menu
+  if (customId === 'admin_select_giveaway_leads') {
+    const { handleLeadSelect } = require('../commands/admin');
+    return handleLeadSelect(interaction);
+  }
 
   logger.warn(`Unknown select menu customId: ${customId}`);
   await interaction.reply({ content: '❓ Unknown selection.', ephemeral: true });
