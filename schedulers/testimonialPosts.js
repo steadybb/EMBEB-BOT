@@ -8,8 +8,7 @@ const { getRandomItem, sleep } = require('../utils/helpers');
 // ============================================
 const STATIC_URL = process.env.STATIC_BASE_URL || 'http://localhost:3000';
 const TESTIMONIAL_CHANNEL_ID = process.env.TESTIMONIAL_CHANNEL_ID;
-const GIVEAWAY_SERVER_ID = process.env.GIVEAWAY_SERVER_ID || '1498758472483999814';
-const GIVEAWAY_URL = `https://discord.com/channels/${GIVEAWAY_SERVER_ID}/${GIVEAWAY_SERVER_ID}`;
+const GIVEAWAY_INVITE_URL = 'https://discord.gg/nyGx2vxWH'; // ✅ YOUR ACTUAL GIVEAWAY SERVER INVITE
 const MIN_INTERVAL = parseInt(process.env.TESTIMONIAL_MIN_INTERVAL, 10) || 5 * 60 * 1000; // 5 minutes
 const MAX_INTERVAL = parseInt(process.env.TESTIMONIAL_MAX_INTERVAL, 10) || 3 * 60 * 60 * 1000; // 3 hours
 
@@ -301,7 +300,7 @@ async function sendTestimonialMessage(channel, testimonial) {
   let imageValid = true;
   
   // Check if image URL is properly formatted
-  if (!imageUrl || imageUrl === `${STATIC_URL}/static/undefined`) {
+  if (!imageUrl || imageUrl === `${STATIC_URL}/static/undefined` || imageUrl.includes('undefined')) {
     imageValid = false;
     imageUrl = null;
     logger.warn(`Invalid image URL for ${testimonial.username}, posting without image`);
@@ -311,7 +310,7 @@ async function sendTestimonialMessage(channel, testimonial) {
     .setAuthor({ 
       name: `${testimonial.username} 🏆`, 
       iconURL: testimonial.avatar,
-      url: GIVEAWAY_URL
+      url: GIVEAWAY_INVITE_URL
     })
     .setTitle(`🎉 Won a ${testimonial.prize}!`)
     .setDescription(
@@ -339,13 +338,13 @@ async function sendTestimonialMessage(channel, testimonial) {
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setLabel('🚗 Enter Giveaway Now')
+      .setLabel('🚗 Join Giveaway Server')
       .setStyle(ButtonStyle.Link)
-      .setURL(GIVEAWAY_URL),
+      .setURL(GIVEAWAY_INVITE_URL),
     new ButtonBuilder()
-      .setLabel('📋 View All Giveaways')
+      .setLabel('🎁 View Active Giveaways')
       .setStyle(ButtonStyle.Link)
-      .setURL(GIVEAWAY_URL)
+      .setURL(GIVEAWAY_INVITE_URL)
   );
 
   // Send the message with a timeout
@@ -386,6 +385,7 @@ async function runTestimonialLoop(client) {
   const minMin = Math.round(MIN_INTERVAL / 60000);
   const maxHr = Math.round(MAX_INTERVAL / 3600000 * 10) / 10;
   logger.ready(`📢 Testimonial scheduler started (every ${minMin} min - ${maxHr} hours randomly)`);
+  logger.info(`📢 Giveaway invite link: ${GIVEAWAY_INVITE_URL}`);
   
   while (!shutdownRequested) {
     try {
@@ -458,8 +458,7 @@ function startTestimonialScheduler(client) {
   
   logger.ready(`📢 Testimonial scheduler ready`);
   logger.info(`📢 Channel ID: ${TESTIMONIAL_CHANNEL_ID}`);
-  logger.info(`📢 Giveaway Server: ${GIVEAWAY_SERVER_ID}`);
-  logger.info(`📢 Giveaway URL: ${GIVEAWAY_URL}`);
+  logger.info(`📢 Giveaway Invite: ${GIVEAWAY_INVITE_URL}`);
   logger.info(`📢 Interval: ${Math.round(MIN_INTERVAL / 60000)} min - ${Math.round(MAX_INTERVAL / 3600000 * 10) / 10} hours (random)`);
   logger.info(`📢 Total testimonials: ${winningTestimonials.length}`);
 }
