@@ -1266,18 +1266,161 @@ async function selectModel(interaction, model) {
   logger.debug(`Model selected: ${model} by ${interaction.user.tag}`);
 }
 
-// ... (rest of the core business functions remain the same)
-async function handleNotSure(interaction) { /* ... */ }
-async function startQuoteFlow(interaction, model) { /* ... */ }
-async function startTestDriveFlow(interaction, model) { /* ... */ }
-async function startTradeInFlow(interaction, model) { /* ... */ }
-async function askForDateTime(interaction, locationType) { /* ... */ }
-async function confirmTestDrive(interaction, client, date, time, locationType) { /* ... */ }
-async function sendBrochure(interaction, model) { /* ... */ }
-async function transferToAdvisor(interaction) { /* ... */ }
-async function setTradeCondition(interaction, condition) { /* ... */ }
-async function recommendAffordability(interaction) { /* ... */ }
-async function recommendRange(interaction) { /* ... */ }
-async function recommendFamily(interaction) { /* ... */ }
-async function recommendCity(interaction) { /* ... */ }
-async function handleFleet(interaction) { /* ... */ }
+async function handleNotSure(interaction) {
+  const embed = new EmbedBuilder()
+    .setTitle('❓ Let\'s find your perfect BYD – together')
+    .setDescription(
+      `Tell me what matters most, and I\'ll match you with the ideal EV.\n\n` +
+      `_"${getRandomItem(testimonials)}"_\n\n` +
+      `👉 Choose your priority below:`
+    )
+    .setColor('#2ECC71');
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('need_affordability').setLabel('💸 Affordability & Value').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('need_range').setLabel('⚡ Max Range').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('need_family').setLabel('👨‍👩‍👧‍👦 Family Space').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('need_city').setLabel('🏙️ City Parking').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('need_fleet').setLabel('💼 Fleet/Commercial').setStyle(ButtonStyle.Secondary)
+  );
+  await interaction.update({ embeds: [embed], components: [row] });
+}
+
+async function startQuoteFlow(interaction, model) {
+  if (!model) {
+    return interaction.reply({ content: '❓ Please select a BYD model first.', ephemeral: true });
+  }
+  const userId = interaction.user.id;
+  await updateUserState(userId, { step: 'awaiting_region' });
+  const embed = new EmbedBuilder()
+    .setTitle('📍 One last step – where do you drive?')
+    .setDescription(`I\'ll apply your **local EV incentives** to give you the most accurate on‑road price.\n\n_"${getRandomItem(testimonials)}"_\n\nSelect your region below – it takes 10 seconds.`)
+    .setColor('#3498DB');
+  const selectMenu = new StringSelectMenuBuilder()
+    .setCustomId('region_select')
+    .setPlaceholder('Choose your region')
+    .addOptions([
+      { label: 'California', value: 'California' }, { label: 'Texas', value: 'Texas' },
+      { label: 'New York', value: 'New York' }, { label: 'Florida', value: 'Florida' },
+      { label: 'Colorado', value: 'Colorado' }, { label: 'New Jersey', value: 'New Jersey' },
+      { label: 'Washington', value: 'Washington' },
+    ]);
+  const row = new ActionRowBuilder().addComponents(selectMenu);
+  await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+}
+
+async function startTestDriveFlow(interaction, model) {
+  if (!model) {
+    return interaction.reply({ content: '❓ Please select a BYD model first.', ephemeral: true });
+  }
+  const embed = new EmbedBuilder()
+    .setTitle('🚗 Let\'s get you behind the wheel – no pressure.')
+    .setDescription(
+      `Choose how you\'d like to experience the BYD ${model}:\n\n` +
+      `🏢 **Showroom visit** – full tour, coffee, and expert talk.\n` +
+      `🏠 **Home test drive** – we bring the car to your door.\n\n` +
+      `_"${getRandomItem(testimonials)}"_\n\n` +
+      `${getRandomItem(urgencyPhrases)}`
+    )
+    .setColor('#2ECC71');
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('td_showroom').setLabel('🏢 Visit Showroom').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('td_home').setLabel('🏠 Home Test Drive').setStyle(ButtonStyle.Success)
+  );
+  await interaction.update({ embeds: [embed], components: [row] });
+}
+
+async function startTradeInFlow(interaction, model) {
+  const modal = new ModalBuilder()
+    .setCustomId('tradein_make_model')
+    .setTitle('Trade-in: Your current car')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('make_model')
+          .setLabel('Make and model (e.g., Honda CR-V 2021)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+      )
+    );
+  await interaction.showModal(modal);
+}
+
+async function askForDateTime(interaction, locationType) {
+  await interaction.deferUpdate();
+  const userId = interaction.user.id;
+  await updateUserState(userId, { tempData: { locationType } });
+  const { embed, row } = getCalendarPicker();
+  await interaction.editReply({ embeds: [embed], components: [row] });
+}
+
+async function confirmTestDrive(interaction, client, date, time, locationType) {
+  const userId = interaction.user.id;
+  const username = interaction.user.username;
+  let threadChannel = null;
+
+  if (interaction.guild) {
+    const guild = interaction.guild;
+    const member = await guild.members.fetch(userId);
+    let category = guild.channels.cache.find(c => c.name === 'Sales Threads' && c.type === 4);
+    if (!category) category = await guild.channels.create({ name: 'Sales Threads', type: 4 });
+    const channelName = `testdrive-${username}-${Date.now()}`;
+    const advisorRole = guild.roles.cache.find(r => r.name === 'Sales Advisor');
+    threadChannel = await guild.channels.create({
+      name: channelName, type: 0, parent: category.id,
+      permissionOverwrites: [
+        { id: guild.id, deny: ['ViewChannel'] },
+        { id: member.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
+        { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
+        ...(advisorRole ? [{ id: advisorRole.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] }] : []),
+      ],
+    });
+    await threadChannel.send({ content: `<@${member.id}>, your test drive has been booked!` });
+    if (advisorRole) await threadChannel.send(`🔔 <@&${advisorRole.id}> New test drive request from ${member.user.tag}.`);
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle('🚗 Test Drive Confirmed!')
+    .setDescription(`Your test drive has been booked:\n\n📅 **Date:** ${date}\n⏰ **Time:** ${time}\n📍 **Location:** ${locationType === 'showroom' ? 'BYD Showroom' : 'Your Home Address'}`)
+    .setColor('#2ECC71')
+    .setFooter({ text: `✨ ${getRandomItem(testimonials)} • Your advisor will reach out shortly` })
+    .setTimestamp();
+
+  await interaction.update({ embeds: [embed], components: [] });
+  if (threadChannel) await threadChannel.send({ embeds: [embed] });
+  await saveTestDriveBooking(userId, username, date, time, locationType, threadChannel?.id || 'DM_BOOKING');
+  await updateUserState(userId, { step: 'test_drive_booked', tempData: {} });
+  logger.success(`🚗 Test drive booked: ${username} on ${date} at ${time} (${locationType})`);
+}
+
+async function sendBrochure(interaction, model) {
+  if (!model) return interaction.reply({ content: '❓ Please select a BYD model first.', ephemeral: true });
+  await interaction.reply({ content: `📄 Brochure for BYD ${model}: https://byd.com/brochure/${model.toLowerCase()}`, ephemeral: true });
+}
+
+async function transferToAdvisor(interaction) {
+  await interaction.reply({ content: '💬 A sales advisor will be with you shortly. Creating a private thread...', ephemeral: true });
+}
+
+async function setTradeCondition(interaction, condition) {
+  const userId = interaction.user.id;
+  const state = await getUserState(userId, interaction.user.username);
+  const { makeModel, odometer } = state.tempData || {};
+  await interaction.reply({ content: `✅ Your ${makeModel || 'vehicle'} with ${odometer || 'N/A'} miles is rated **${condition}**. Estimated trade‑in: $${Math.floor(Math.random() * 50000 + 50000).toLocaleString()}. A formal offer will be sent shortly.`, ephemeral: true });
+  await updateUserState(userId, { step: null, tempData: {} });
+}
+
+async function recommendAffordability(interaction) {
+  await interaction.reply({ content: '💸 **Best value picks:**\n• **Seagull** – $19,990 (city EV)\n• **Dolphin** – $29,990 (hatch)\n• **Yuan Plus** – $37,990 (crossover)\n\nWant a quote on any of these?' });
+}
+async function recommendRange(interaction) {
+  await interaction.reply({ content: '⚡ **Longest range:**\n• **Seal** – 350+ miles\n• **Tang** – 320 miles (3‑row SUV)\n• **Han Performance** – 310 miles\n\nWhich one catches your eye?' });
+}
+async function recommendFamily(interaction) {
+  await interaction.reply({ content: '👨‍👩‍👧‍👦 **Family‑friendly BYDs:**\n• **ATTO 3** – compact SUV, $34,990*\n• **Tang** – 3‑row midsize, $49,990*\n• **Song Plus** – spacious family SUV, $42,990*\n\n_*Before EV credits._ Would you like a safety brochure or a test drive?' });
+}
+async function recommendCity(interaction) {
+  await interaction.reply({ content: '🏙️ **Perfect for city driving:**\n• **Seagull** – ultra‑compact, $19,990\n• **Dolphin** – nimble hatch, $29,990\n• **Yuan Plus** – crossover with parking assist, $37,990\n\nAll come with parking sensors and 360° camera. Want to see city range figures?' });
+}
+async function handleFleet(interaction) {
+  await interaction.reply({ content: '🚛 A commercial sales advisor will contact you soon. Please share your fleet size and use case in the thread.' });
+}
