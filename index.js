@@ -1,4 +1,4 @@
-// index.js (or bot.js)
+// index.js 
 require('./keepalive');
 const express = require('express');
 const path = require('path');
