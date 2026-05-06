@@ -1,18 +1,300 @@
 // utils/lobbyChatter.js
-const { getRandomItem } = require('./helpers');
+const { getRandomItem, weightedRandom } = require('./helpers');
 
-// ========== PERSONAS WITH REALISTIC NAMES & WORKING AVATARS ==========
-// Using UI Avatars API (free, always works, no auth needed)
+// ============================================
+// CONVERSATION CONTEXT TRACKING
+// ============================================
+class ConversationContext {
+  constructor() {
+    this.currentTopic = null;
+    this.lastMessageType = null;
+    this.topicDepth = 0;
+    this.participants = new Set();
+    this.messageCount = 0;
+    this.lastActivityTime = Date.now();
+  }
+
+  shouldDeepenTopic() {
+    return this.topicDepth < 3 && Math.random() < 0.6;
+  }
+
+  shouldChangeTopic() {
+    return this.topicDepth >= 3 || Math.random() < 0.2 || this.messageCount > 12;
+  }
+
+  getNextMessageType() {
+    if (this.lastMessageType === 'questions') {
+      return weightedRandom([
+        { item: 'answers', weight: 0.5 },
+        { item: 'testimonials', weight: 0.3 },
+        { item: 'facts', weight: 0.2 }
+      ]);
+    }
+    if (this.lastMessageType === 'debates') {
+      return weightedRandom([
+        { item: 'comparisons', weight: 0.3 },
+        { item: 'answers', weight: 0.3 },
+        { item: 'facts', weight: 0.2 },
+        { item: 'humor', weight: 0.2 }
+      ]);
+    }
+    return getWeightedMessageType();
+  }
+}
+
+// ============================================
+// MESSAGE HISTORY (Prevent repetition)
+// ============================================
+const messageHistory = new Map();
+const MAX_HISTORY = 50;
+
+function getRandomMessage(type, guildId = null) {
+  const arr = chatterMessages[type];
+  if (!arr || arr.length === 0) return '';
+  
+  if (guildId) {
+    const history = messageHistory.get(guildId) || [];
+    const recentMessages = new Set(history.slice(-20));
+    let available = arr.filter(msg => !recentMessages.has(msg));
+    if (available.length === 0) available = arr;
+    
+    const message = getRandomItem(available);
+    history.push(message);
+    if (history.length > MAX_HISTORY) history.shift();
+    messageHistory.set(guildId, history);
+    return message;
+  }
+  
+  return getRandomItem(arr);
+}
+
+// ============================================
+// ANALYTICS
+// ============================================
+const messageAnalytics = {
+  messagesByType: {},
+  personaUsage: {},
+  topicEngagement: {},
+};
+
+function trackMessageUsage(type, persona, topic = null) {
+  messageAnalytics.messagesByType[type] = (messageAnalytics.messagesByType[type] || 0) + 1;
+  if (persona?.name) {
+    messageAnalytics.personaUsage[persona.name] = (messageAnalytics.personaUsage[persona.name] || 0) + 1;
+  }
+  if (topic) {
+    messageAnalytics.topicEngagement[topic] = (messageAnalytics.topicEngagement[topic] || 0) + 1;
+  }
+}
+
+function getAnalytics() {
+  return { ...messageAnalytics, timestamp: new Date().toISOString() };
+}
+
+// ============================================
+// PERSONA RELATIONSHIPS
+// ============================================
+const personaRelationships = {
+  'SealAlex': {
+    agreesWith: ['EV_Mike', 'exTeslaDave', 'SealPerfFan'],
+    debatesWith: ['SkepticTom', 'RangeRyan'],
+    mentionsFrequently: ['SealPerfFan']
+  },
+  'SkepticTom': {
+    questions: ['EV_Mike', 'HappySam', 'exTeslaDave'],
+    convincedBy: ['DadRob', 'Tech_Anna']
+  },
+  'RangeRyan': {
+    debatesWith: ['ATTO3Sarah', 'TripPete'],
+    convincedBy: ['EV_Steve', 'AutoJamie']
+  },
+  'EV_Mike': {
+    agreesWith: ['Tech_Anna', 'SealAlex', 'exTeslaDave'],
+    educates: ['New2EV_Jen', 'NewDriverEm', 'SkepticTom']
+  },
+  'BudgetLisa': {
+    agreesWith: ['DealTom', 'New2EV_Jen'],
+    debatesWith: ['LuxMarcus']
+  },
+  'DadRob': {
+    agreesWith: ['FrankSenior', 'TangFam'],
+    educates: ['SkepticTom', 'ColdWorrier']
+  }
+};
+
+// ============================================
+// TIME-BASED WEIGHTING
+// ============================================
+function getTimeBasedWeights() {
+  const hour = new Date().getHours();
+  const isWeekend = [0, 6].includes(new Date().getDay());
+  const month = new Date().getMonth();
+
+  const weights = {
+    questions: 3, answers: 3, testimonials: 2, facts: 2, tips: 2,
+    debates: 1.5, comparisons: 1.5, news: 1.5, humor: 1, reactions: 0.5,
+    regrets: 0.5, upgrades: 1, maintenance: 0.5, financing: 1,
+    road_trips: 1, winter_driving: 0.5
+  };
+
+  if (hour >= 6 && hour < 10) { weights.questions += 2; weights.tips += 1; weights.facts += 1; }
+  if (hour >= 10 && hour < 14) { weights.comparisons += 1.5; weights.financing += 1; }
+  if (hour >= 18 && hour < 22) { weights.humor += 2; weights.debates += 1.5; weights.testimonials += 1; }
+  if (hour >= 22 || hour < 6) { weights.questions += 1; weights.facts += 1; weights.humor -= 0.5; weights.debates -= 1; }
+  if (isWeekend) { weights.road_trips += 2; weights.testimonials += 1; weights.humor += 1; weights.upgrades += 1; }
+  if (month >= 10 || month <= 1) { weights.winter_driving += 3; weights.questions += 1; }
+  if (month >= 5 && month <= 7) { weights.road_trips += 2; weights.testimonials += 1; }
+
+  return weights;
+}
+
+function getWeightedMessageType() {
+  const weights = getTimeBasedWeights();
+  const types = Object.entries(weights).filter(([, w]) => w > 0);
+  const totalWeight = types.reduce((sum, [, weight]) => sum + weight, 0);
+  let random = Math.random() * totalWeight;
+  for (const [type, weight] of types) {
+    random -= weight;
+    if (random <= 0) return type;
+  }
+  return 'answers';
+}
+
+// ============================================
+// MESSAGE QUALITY SCORING
+// ============================================
+function scoreMessageQuality(message, context) {
+  let score = 0;
+  if (message.length > 20 && message.length < 300) score += 1;
+  if (message.length > 50 && message.length < 250) score += 0.5;
+  if (message.includes('?') && context.includes('question')) score += 1;
+  if (message.includes('!!!') || message.includes('???') || message.includes('!!!!')) score -= 1;
+  if (/\d+/.test(message)) score += 0.5;
+  if (/[.!?]$/.test(message)) score += 0.3;
+  if (/Seal|ATTO|Dolphin|Han|Tang|Yangwang|Seagull|Yuan|Song/i.test(message)) score += 0.3;
+  return score;
+}
+
+function generateQualityMessage(persona, options = {}) {
+  let attempts = 0;
+  let bestMessage = null;
+  let bestScore = -Infinity;
+  while (attempts < 5) {
+    const message = generateChatTurn(persona, options);
+    const score = scoreMessageQuality(message, options.forceType || '');
+    if (score > bestScore) { bestScore = score; bestMessage = message; }
+    if (score >= 2) break;
+    attempts++;
+  }
+  return bestMessage || generateChatTurn(persona, options);
+}
+
+// ============================================
+// CONTEXTUAL RESPONSE
+// ============================================
+function generateContextualResponse(persona, previousSpeaker = null, guildId = null) {
+  let message = generateChatTurn(persona, { guildId });
+  if (previousSpeaker && personaRelationships[persona.name]) {
+    const rels = personaRelationships[persona.name];
+    if (rels.agreesWith?.includes(previousSpeaker.name)) {
+      const prefixes = [`@${previousSpeaker.name} completely agree! `, `What ${previousSpeaker.name} said! `, `Nailed it ${previousSpeaker.name}. `, `@${previousSpeaker.name} spot on. `];
+      message = getRandomItem(prefixes) + message.toLowerCase();
+    }
+    if (rels.debatesWith?.includes(previousSpeaker.name)) {
+      const prefixes = [`@${previousSpeaker.name} I respectfully disagree. `, `Interesting take ${previousSpeaker.name}, but... `, `@${previousSpeaker.name} have you considered... `, `I see it differently ${previousSpeaker.name}. `];
+      message = getRandomItem(prefixes) + message;
+    }
+    if (rels.mentionsFrequently?.includes(previousSpeaker.name) && Math.random() < 0.3) {
+      message = `@${previousSpeaker.name} ` + message;
+    }
+  }
+  return message;
+}
+
+// ============================================
+// DAILY CONTENT ROTATION
+// ============================================
+function getDailyContentRotation() {
+  const dayOfWeek = new Date().getDay();
+  const rotations = {
+    0: { primary: ['testimonials', 'road_trips', 'humor'], secondary: ['tips', 'facts', 'upgrades'] },
+    1: { primary: ['facts', 'tips', 'comparisons'], secondary: ['questions', 'answers', 'maintenance'] },
+    2: { primary: ['facts', 'answers', 'tips'], secondary: ['comparisons', 'debates', 'news'] },
+    3: { primary: ['questions', 'testimonials', 'answers'], secondary: ['humor', 'upgrades', 'road_trips'] },
+    4: { primary: ['financing', 'comparisons', 'testimonials'], secondary: ['questions', 'answers', 'news'] },
+    5: { primary: ['news', 'debates', 'testimonials'], secondary: ['humor', 'reactions', 'comparisons'] },
+    6: { primary: ['road_trips', 'testimonials', 'upgrades'], secondary: ['humor', 'tips', 'facts'] }
+  };
+  return rotations[dayOfWeek] || { primary: ['questions', 'answers', 'testimonials'], secondary: ['facts', 'tips', 'comparisons'] };
+}
+
+// ============================================
+// ENERGY MATCHING
+// ============================================
+const energyLevels = { high: 0.8, medium: 0.5, low: 0.3 };
+
+function matchPersonaEnergy(persona, conversationEnergy) {
+  const personaEnergy = energyLevels[persona.energy] || 0.5;
+  if (conversationEnergy === 'heated' && personaEnergy > 0.6) {
+    return weightedRandom([{ item: 'debates', weight: 0.4 }, { item: 'comparisons', weight: 0.3 }, { item: 'testimonials', weight: 0.3 }]);
+  }
+  if (conversationEnergy === 'quiet' && personaEnergy < 0.4) {
+    return weightedRandom([{ item: 'questions', weight: 0.4 }, { item: 'tips', weight: 0.3 }, { item: 'facts', weight: 0.3 }]);
+  }
+  return null;
+}
+
+// ============================================
+// DYNAMIC TEMPLATES
+// ============================================
+const messageTemplates = {
+  question_patterns: [
+    "Has anyone {action} the {model} yet? How's the {feature}?",
+    "I'm curious about {feature} on the {model}. Any {owners} here?",
+    "What's the real {metric} of {model} in {condition}?",
+    "Thinking about the {model}. How does it handle {condition}?",
+  ],
+  answer_patterns: [
+    "I've {action} my {model} for {time}. The {feature} is {opinion}.",
+    "Just {action} the {model} and the {feature} {impression}.",
+    "In my {experience}, the {model} {detail}.",
+    "As a {model} owner, I can confirm the {feature} is {opinion}.",
+  ]
+};
+
+function fillTemplate(template, persona) {
+  const fillers = {
+    '{action}': ['test-driven', 'researched', 'looked into', 'experienced', 'owned'],
+    '{model}': [persona.favModel || 'ATTO 3', 'Seal', 'Dolphin', 'Han', 'Tang'],
+    '{feature}': ['range', 'acceleration', 'comfort', 'tech', 'charging speed', 'build quality'],
+    '{owners}': ['owners', 'drivers', 'enthusiasts', 'experts', 'fans'],
+    '{metric}': ['range', 'efficiency', 'performance', 'reliability'],
+    '{condition}': ['winter', 'highway driving', 'city traffic', 'daily commute'],
+    '{time}': ['6 months', 'a year', '15k miles', 'two winters'],
+    '{opinion}': ['impressive', 'better than expected', 'solid', 'fantastic'],
+    '{impression}': ['blew me away', 'exceeded expectations', 'really surprised me'],
+    '{experience}': ['experience', 'ownership', 'testing', 'review'],
+    '{detail}': ['handles beautifully', 'is surprisingly roomy', 'charges fast', 'turns heads']
+  };
+  return template.replace(/\{(\w+)\}/g, (_, key) => {
+    const options = fillers[`{${key}}`];
+    return options ? getRandomItem(options) : '';
+  });
+}
+
+function generateTemplateMessage(persona, templateType = 'answer_patterns') {
+  const templates = messageTemplates[templateType] || messageTemplates.answer_patterns;
+  return fillTemplate(getRandomItem(templates), persona);
+}
+
+// ========== PERSONAS ==========
 const defaultPersonas = [
-  // Enthusiasts & Early Adopters (6)
   { name: 'EV_Mike', avatar: 'https://ui-avatars.com/api/?name=EV+Mike&background=00BFFF&color=fff&size=256&bold=true', role: 'Early adopter', energy: 'high', favModel: 'Seal' },
   { name: 'Tech_Anna', avatar: 'https://ui-avatars.com/api/?name=Tech+Anna&background=9B59B6&color=fff&size=256&bold=true', role: 'Loves gadgets', energy: 'high', favModel: 'Han' },
   { name: 'EcoClara', avatar: 'https://ui-avatars.com/api/?name=Eco+Clara&background=2ECC71&color=fff&size=256&bold=true', role: 'Eco warrior', energy: 'high', favModel: 'ATTO 3' },
   { name: 'AutoJamie', avatar: 'https://ui-avatars.com/api/?name=Auto+Jamie&background=E67E22&color=fff&size=256&bold=true', role: 'Auto journalist', energy: 'medium', favModel: 'Seal Performance' },
   { name: 'exTeslaDave', avatar: 'https://ui-avatars.com/api/?name=exTesla+Dave&background=CC0000&color=fff&size=256&bold=true', role: 'Switched from Tesla', energy: 'high', favModel: 'Seal' },
   { name: 'EV_Steve', avatar: 'https://ui-avatars.com/api/?name=EV+Steve&background=1ABC9C&color=fff&size=256&bold=true', role: 'Owns multiple EVs', energy: 'high', favModel: 'Yangwang U9' },
-  
-  // Buyers & Owners (12)
   { name: 'BudgetLisa', avatar: 'https://ui-avatars.com/api/?name=Budget+Lisa&background=FF69B4&color=fff&size=256&bold=true', role: 'Value seeker', energy: 'high', favModel: 'Dolphin' },
   { name: 'DadRob', avatar: 'https://ui-avatars.com/api/?name=Dad+Rob&background=3498DB&color=fff&size=256&bold=true', role: 'Safety first', energy: 'medium', favModel: 'ATTO 3' },
   { name: 'HappySam', avatar: 'https://ui-avatars.com/api/?name=Happy+Sam&background=F1C40F&color=fff&size=256&bold=true', role: 'Already owns BYD', energy: 'high', favModel: 'Tang' },
@@ -25,28 +307,20 @@ const defaultPersonas = [
   { name: 'Linda_Nester', avatar: 'https://ui-avatars.com/api/?name=Linda+Nester&background=009688&color=fff&size=256&bold=true', role: 'Downsizing', energy: 'medium', favModel: 'Seal' },
   { name: 'ProKevin', avatar: 'https://ui-avatars.com/api/?name=Pro+Kevin&background=3F51B5&color=fff&size=256&bold=true', role: 'Style conscious', energy: 'high', favModel: 'Seal' },
   { name: 'FrankSenior', avatar: 'https://ui-avatars.com/api/?name=Frank+Senior&background=455A64&color=fff&size=256&bold=true', role: 'Easy entry/exit', energy: 'low', favModel: 'ATTO 3' },
-  
-  // Skeptics & Questioners (6)
   { name: 'SkepticTom', avatar: 'https://ui-avatars.com/api/?name=Skeptic+Tom&background=95A5A6&color=fff&size=256&bold=true', role: 'Needs convincing', energy: 'medium', favModel: null },
   { name: 'RangeRyan', avatar: 'https://ui-avatars.com/api/?name=Range+Ryan&background=E74C3C&color=fff&size=256&bold=true', role: 'Worried about range', energy: 'low', favModel: 'Seal' },
   { name: 'ChargePat', avatar: 'https://ui-avatars.com/api/?name=Charge+Pat&background=F39C12&color=fff&size=256&bold=true', role: 'Charging skeptic', energy: 'medium', favModel: null },
   { name: 'ColdWorrier', avatar: 'https://ui-avatars.com/api/?name=Cold+Worrier&background=2980B9&color=fff&size=256&bold=true', role: 'Northern driver', energy: 'low', favModel: 'ATTO 3' },
   { name: 'RuralDoubter', avatar: 'https://ui-avatars.com/api/?name=Rural+Doubter&background=27AE60&color=fff&size=256&bold=true', role: 'Rural driver', energy: 'medium', favModel: null },
   { name: 'ResaleRach', avatar: 'https://ui-avatars.com/api/?name=Resale+Rach&background=C0392B&color=fff&size=256&bold=true', role: 'Worried about depreciation', energy: 'medium', favModel: null },
-  
-  // Commercial & Fleet (4)
   { name: 'FleetOmar', avatar: 'https://ui-avatars.com/api/?name=Fleet+Omar&background=2C3E50&color=fff&size=256&bold=true', role: 'Commercial buyer', energy: 'high', favModel: 'Commercial' },
   { name: 'BizNina', avatar: 'https://ui-avatars.com/api/?name=Biz+Nina&background=16A085&color=fff&size=256&bold=true', role: 'Delivery fleet', energy: 'medium', favModel: 'Commercial' },
   { name: 'RideCarlos', avatar: 'https://ui-avatars.com/api/?name=Ride+Carlos&background=D35400&color=fff&size=256&bold=true', role: 'Rideshare driver', energy: 'high', favModel: 'Dolphin' },
   { name: 'BuildMike', avatar: 'https://ui-avatars.com/api/?name=Build+Mike&background=7F8C8D&color=fff&size=256&bold=true', role: 'Work trucks', energy: 'medium', favModel: 'Commercial' },
-  
-  // International (4)
   { name: 'EU_Hans', avatar: 'https://ui-avatars.com/api/?name=EU+Hans&background=1E88E5&color=fff&size=256&bold=true', role: 'European market', energy: 'medium', favModel: 'Seal' },
   { name: 'ChinaWei', avatar: 'https://ui-avatars.com/api/?name=China+Wei&background=C62828&color=fff&size=256&bold=true', role: 'BYD home market', energy: 'high', favModel: 'Yangwang U8' },
   { name: 'OutbackSteve', avatar: 'https://ui-avatars.com/api/?name=Outback+Steve&background=F57C00&color=fff&size=256&bold=true', role: 'Remote driving', energy: 'high', favModel: 'Tang' },
   { name: 'UK_Emma', avatar: 'https://ui-avatars.com/api/?name=UK+Emma&background=3949AB&color=fff&size=256&bold=true', role: 'UK market', energy: 'medium', favModel: 'ATTO 3' },
-  
-  // Enthusiasts by model (10)
   { name: 'SealAlex', avatar: 'https://ui-avatars.com/api/?name=Seal+Alex&background=0066CC&color=fff&size=256&bold=true', role: 'Seal owner', energy: 'high', favModel: 'Seal' },
   { name: 'ATTO3Sarah', avatar: 'https://ui-avatars.com/api/?name=ATTO+Sarah&background=00CC66&color=fff&size=256&bold=true', role: 'Road tripper', energy: 'high', favModel: 'ATTO 3' },
   { name: 'DolphChris', avatar: 'https://ui-avatars.com/api/?name=Dolph+Chris&background=00CCCC&color=fff&size=256&bold=true', role: 'City commuter', energy: 'medium', favModel: 'Dolphin' },
@@ -59,9 +333,8 @@ const defaultPersonas = [
   { name: 'SealPerfFan', avatar: 'https://ui-avatars.com/api/?name=Seal+Perf+Fan&background=FF3333&color=fff&size=256&bold=true', role: 'Speed demon', energy: 'high', favModel: 'Seal Performance' },
 ];
 
-// ========== 750+ CONVERSATION SNIPPETS ==========
+// ========== CONVERSATION SNIPPETS ==========
 const chatterMessages = {
-  // Questions (70+)
   questions: [
     "Has anyone test‑driven the Seal yet? How's the acceleration?",
     "What's the real‑world range of the ATTO 3 in winter?",
@@ -153,8 +426,6 @@ const chatterMessages = {
     "How does the Blade Battery compare to Tesla's 4680?",
     "Is there a battery preheating feature?",
   ],
-  
-  // Answers (80+)
   answers: [
     "I drove the Seal last week – 0‑60 felt like 4 seconds! So smooth.",
     "ATTO 3 gave me 280 miles at 30°F. Not bad at all!",
@@ -196,8 +467,6 @@ const chatterMessages = {
     "Han's luxury interior rivals BMW for half the price.",
     "The Tang's 6-year battery warranty is industry leading.",
   ],
-  
-  // Testimonials (50+)
   testimonials: [
     "I saved $7,500 thanks to federal credits. Seal cost me ~$32k out the door!",
     "Traded in my gas guzzler for $5k and got a Dolphin. Best financial decision.",
@@ -229,13 +498,9 @@ const chatterMessages = {
     "BYD's customer support actually responds quickly. Refreshing.",
     "The V2L turned my car into a mobile office. Coffee maker and laptop powered.",
   ],
-  
-  // Reactions (30+)
   reactions: [
     "😍", "🔥", "🤔", "💡", "👍", "😎", "🚗⚡", "🤯", "🎉", "🏆", "💪", "👏", "🙌", "😱", "🤩", "💯", "⭐", "✨", "💚", "🌍", "🔋", "⚡", "🏁", "🎯", "💸", "💰", "🤝", "💬", "📈", "🔧", "🛡️", "😊", "😄", "😃", "🥳", "😁", "👌", "✌️", "🤙", "💪", "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💖", "💗"
   ],
-  
-  // Facts (50+)
   facts: [
     "BYD sold more EVs than Tesla in 2024!",
     "Blade Battery passed nail penetration test with zero fire.",
@@ -265,8 +530,6 @@ const chatterMessages = {
     "BYD's electric buses have driven over 5 billion miles worldwide.",
     "The Yangwang U9's active aero adjusts at 180mph for stability.",
   ],
-  
-  // Tips (50+)
   tips: [
     "Set your charging limit to 80% for daily driving to preserve battery.",
     "Precondition your battery before fast charging in cold weather.",
@@ -293,8 +556,6 @@ const chatterMessages = {
     "Clean your windshield sensors regularly for autopilot to work best.",
     "Set your regenerative braking to max for one-pedal city driving.",
   ],
-  
-  // Debates (25+)
   debates: [
     "Hot take: Seal > Model 3. Fight me.",
     "Unpopular opinion: The Dolphin is the best value EV on the market.",
@@ -317,8 +578,6 @@ const chatterMessages = {
     "Software updates make EVs better over time – gas cars don't improve.",
     "The government should mandate V2G in all new EVs.",
   ],
-  
-  // Comparisons (35+)
   comparisons: [
     "Seal vs Model 3: Seal is $8k cheaper and quieter. Tesla has better charging network.",
     "ATTO 3 vs ID.4: ATTO has more range and lower price. ID.4 rides softer.",
@@ -336,8 +595,6 @@ const chatterMessages = {
     "Seal vs Polestar 2: Seal is faster and cheaper. Polestar has Google built-in.",
     "Yangwang U9 vs Rimac: Different league, but U9 is 1/3 the price!",
   ],
-  
-  // News (30+)
   news: [
     "BYD just announced solid-state batteries for 2027!",
     "Rumor: BYD is building a factory in Mexico for US imports.",
@@ -357,8 +614,6 @@ const chatterMessages = {
     "BYD just announced a new electric supercar with 1,500hp!",
     "BYD signed a deal with a major rental car company for 100k EVs.",
   ],
-  
-  // Humor (25+)
   humor: [
     "My gas car sits in the driveway collecting dust now. Poor thing.",
     "I named my Seal 'Electra'. Yes I'm that person.",
@@ -378,8 +633,6 @@ const chatterMessages = {
     "My wife still calls it 'the electric car' not 'BYD'. I'm working on it.",
     "The sound of silence is deafening to my gas-loving friends.",
   ],
-  
-  // Regrets (15+)
   regrets: [
     "I wish I had bought the larger battery pack.",
     "I regret not getting the heat pump option.",
@@ -392,8 +645,6 @@ const chatterMessages = {
     "I miss having a spare tire. The repair kit is stressful.",
     "The front sensors are too sensitive. They beep constantly.",
   ],
-  
-  // Upgrades (15+)
   upgrades: [
     "Just ordered floor mats. The factory ones are too thin.",
     "Added a dash cam. Peace of mind.",
@@ -411,8 +662,6 @@ const chatterMessages = {
     "Installed a wireless charging pad for my phone.",
     "Added a cargo liner for the dog.",
   ],
-  
-  // Maintenance (15+)
   maintenance: [
     "Just did my 10k service. They rotated tires and checked fluids. That's it!",
     "Cabin air filter was dirty at 15k. Easy DIY replacement.",
@@ -430,8 +679,6 @@ const chatterMessages = {
     "The wireless charger overheats sometimes. Known issue.",
     "USB port stopped working. Fuse was blown. Easy replacement.",
   ],
-  
-  // Financing (15+)
   financing: [
     "I financed through BYD North America. Rate was 3.99% for 60 months.",
     "My credit union gave me 2.5% on my EV loan.",
@@ -449,8 +696,6 @@ const chatterMessages = {
     "My insurance went down $200/year from my gas car!",
     "Some banks offer green vehicle discounts. Ask your lender.",
   ],
-  
-  // Road Trips (20+)
   road_trips: [
     "Drove my Seal from LA to SF. One 30-minute charging stop. Easy.",
     "Took my Tang from Texas to Colorado. ABRP made planning simple.",
@@ -471,8 +716,6 @@ const chatterMessages = {
     "The Yangwang may not be here yet, but I dream of off-roading it.",
     "ATTO 3's V2L powered my coffee maker at a rest stop. Showstopper.",
   ],
-  
-  // Winter Driving (15+)
   winter_driving: [
     "Expect 20-30% range loss in freezing temps. Normal for all EVs.",
     "Preheat while plugged in. Huge difference in range.",
@@ -492,19 +735,15 @@ const chatterMessages = {
   ],
 };
 
-function getRandomMessage(type) {
-  const arr = chatterMessages[type];
-  return arr ? getRandomItem(arr) : '';
-}
+// ============================================
+// CORE FUNCTIONS
+// ============================================
 
-/**
- * Get a random message type with weighted probabilities
- */
 function getRandomMessageType() {
   const weightedTypes = [
-    'questions', 'questions', 'questions', 
+    'questions', 'questions', 'questions',
     'answers', 'answers', 'answers',
-    'testimonials', 'testimonials', 
+    'testimonials', 'testimonials',
     'facts', 'tips', 'tips',
     'reactions', 'debates', 'comparisons', 'news', 'humor',
     'regrets', 'upgrades', 'maintenance', 'financing', 'road_trips', 'winter_driving'
@@ -512,39 +751,32 @@ function getRandomMessageType() {
   return getRandomItem(weightedTypes);
 }
 
-/**
- * Generate a rich conversation turn from a persona
- * @param {Object} persona - Persona object with name, role, favModel, etc.
- * @param {Object} options - Optional configuration
- * @returns {string} - Generated message
- */
 function generateChatTurn(persona, options = {}) {
-  const { 
-    includePersonalNote = true, 
+  const {
+    includePersonalNote = true,
     includeFavModel = true,
     maxLength = 350,
-    forceType = null 
+    forceType = null,
+    guildId = null
   } = options;
-  
-  const type = forceType || getRandomMessageType();
-  let message = getRandomMessage(type);
-  
+
+  const type = forceType || getWeightedMessageType();
+  let message = getRandomMessage(type, guildId);
+
   if (!message) {
-    message = getRandomMessage('reactions') || "Nice! 👍";
+    message = getRandomMessage('reactions', guildId) || "Nice! 👍";
   }
-  
-  // Make reactions more expressive
+
   if (type === 'reactions') {
     const count = Math.random() > 0.7 ? 2 : 1;
     const emojis = [];
     for (let i = 0; i < count; i++) {
-      const emoji = getRandomMessage('reactions');
+      const emoji = getRandomMessage('reactions', guildId);
       if (emoji) emojis.push(emoji);
     }
     message = emojis.join(' ');
   }
-  
-  // Add persona-specific flavor
+
   if (includePersonalNote && Math.random() < 0.25) {
     const personalNotes = {
       'Early adopter': ' Been following BYD since before they came to the US!',
@@ -593,26 +825,20 @@ function generateChatTurn(persona, options = {}) {
     const note = personalNotes[persona.role] || '';
     if (note) message += note;
   }
-  
-  // Add occasional mention of persona's favorite model
+
   if (includeFavModel && persona.favModel && Math.random() < 0.12) {
     message += ` The ${persona.favModel} is amazing by the way!`;
   }
-  
-  // Keep messages reasonably short for Discord
+
   if (message.length > maxLength) {
     message = message.substring(0, maxLength - 3) + '...';
   }
-  
+
+  trackMessageUsage(type, persona);
+
   return message;
 }
 
-/**
- * Generate a conversational response to a specific topic
- * @param {string} topic - Topic keyword (e.g., 'range', 'charging', 'price')
- * @param {Object} persona - Persona object
- * @returns {string} - Generated response
- */
 function generateTopicResponse(topic, persona = null) {
   const topicMap = {
     'range': ['answers', 'facts', 'tips'],
@@ -625,80 +851,45 @@ function generateTopicResponse(topic, persona = null) {
     'winter': ['winter_driving', 'tips'],
     'roadtrip': ['road_trips', 'tips'],
   };
-  
   const types = topicMap[topic.toLowerCase()] || ['answers', 'facts'];
   const type = getRandomItem(types);
   let message = getRandomMessage(type);
-  
-  if (!message) {
-    message = getRandomMessage('answers') || "Great question about BYD!";
-  }
-  
-  if (persona) {
-    message = generateChatTurn(persona, { includePersonalNote: true, forceType: type });
-  }
-  
+  if (!message) message = getRandomMessage('answers') || "Great question about BYD!";
+  if (persona) message = generateChatTurn(persona, { includePersonalNote: true, forceType: type });
   return message;
 }
 
-/**
- * Get random persona
- * @returns {Object} - Random persona
- */
 function getRandomPersona() {
   return { ...getRandomItem(defaultPersonas) };
 }
 
-/**
- * Get multiple random personas
- * @param {number} count - Number of personas to get
- * @returns {Array} - Array of personas
- */
 function getRandomPersonas(count = 1) {
   const shuffled = [...defaultPersonas].sort(() => 0.5 - Math.random());
   return shuffled.slice(0, Math.min(count, defaultPersonas.length)).map(p => ({ ...p }));
 }
 
-/**
- * Get persona by name
- * @param {string} name - Persona name
- * @returns {Object|null} - Persona object or null
- */
 function getPersonaByName(name) {
   const persona = defaultPersonas.find(p => p.name === name);
   return persona ? { ...persona } : null;
 }
 
-/**
- * Get all personas
- * @returns {Array} - Array of all personas
- */
 function getAllPersonas() {
   return defaultPersonas.map(p => ({ ...p }));
 }
 
-/**
- * Get personas by role category
- * @param {string} roleCategory - Role category (e.g., 'Enthusiast', 'Buyer', 'Skeptic')
- * @returns {Array} - Filtered personas
- */
 function getPersonasByRoleCategory(roleCategory) {
   const categories = {
     'enthusiast': ['Early adopter', 'Loves gadgets', 'Eco warrior', 'Auto journalist', 'Switched from Tesla', 'Owns multiple EVs'],
     'buyer': ['Value seeker', 'Safety first', 'Already owns BYD', 'First EV', 'Premium only', 'New driver', 'Looking for deals', 'Upgrading'],
-    'family': ['DadRob', 'Family hauler', 'TripPete'],
+    'family': ['Safety first', 'Family hauler', 'Adventure seeker'],
     'skeptic': ['Needs convincing', 'Worried about range', 'Charging skeptic', 'Northern driver', 'Rural driver', 'Worried about depreciation'],
     'commercial': ['Commercial buyer', 'Delivery fleet', 'Rideshare driver', 'Work trucks'],
     'international': ['European market', 'BYD home market', 'Remote driving', 'UK market'],
   };
-  
   const roleNames = categories[roleCategory.toLowerCase()] || [];
-  return defaultPersonas
-    .filter(p => roleNames.includes(p.role) || roleNames.includes(p.name))
-    .map(p => ({ ...p }));
+  return defaultPersonas.filter(p => roleNames.includes(p.role)).map(p => ({ ...p }));
 }
 
-// Get message counts for stats
 function getMessageCounts() {
   const counts = {};
   for (const [type, messages] of Object.entries(chatterMessages)) {
@@ -707,17 +898,55 @@ function getMessageCounts() {
   return counts;
 }
 
-module.exports = { 
-  defaultPersonas, 
-  generateChatTurn,
-  generateTopicResponse,
+function clearMessageHistory(guildId) {
+  if (guildId) {
+    messageHistory.delete(guildId);
+  } else {
+    messageHistory.clear();
+  }
+}
+
+// ============================================
+// EXPORTS
+// ============================================
+module.exports = {
+  // Personas
+  defaultPersonas,
   getRandomPersona,
   getRandomPersonas,
   getPersonaByName,
   getAllPersonas,
   getPersonasByRoleCategory,
+
+  // Message Generation
+  generateChatTurn,
+  generateQualityMessage,
+  generateTopicResponse,
+  generateContextualResponse,
+  generateTemplateMessage,
   getRandomMessage,
+
+  // Message Types
   getRandomMessageType,
+  getWeightedMessageType,
+
+  // Content Rotation
+  getDailyContentRotation,
+  getTimeBasedWeights,
+
+  // Energy Matching
+  matchPersonaEnergy,
+
+  // Context
+  ConversationContext,
+
+  // Analytics & History
   getMessageCounts,
-  chatterMessages 
+  getAnalytics,
+  trackMessageUsage,
+  clearMessageHistory,
+
+  // Raw Data
+  chatterMessages,
+  personaRelationships,
 };
