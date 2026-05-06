@@ -54,13 +54,14 @@ const levels = {
 // ============================================
 const CONFIG = {
   logToFile: process.env.LOG_TO_FILE === 'true',
-  logLevel: process.env.LOG_LEVEL || 'info', // Changed from 'debug' to 'info' for production
+  logLevel: process.env.LOG_LEVEL || 'info',
   maxLogSize: parseInt(process.env.MAX_LOG_SIZE, 10) || 10 * 1024 * 1024, // 10MB default
-  maxLogFiles: parseInt(process.env.MAX_LOG_FILES, 10) || 7, // Keep 7 days of logs
+  maxLogFiles: parseInt(process.env.MAX_LOG_FILES, 10) || 7,
   showTimestamp: process.env.LOG_TIMESTAMP !== 'false',
   showEmoji: process.env.LOG_EMOJI !== 'false',
   colorize: process.env.LOG_COLOR !== 'false',
-  separateErrorFile: process.env.LOG_SEPARATE_ERRORS === 'true', // Separate error log file
+  separateErrorFile: process.env.LOG_SEPARATE_ERRORS === 'true',
+  logToConsole: process.env.LOG_TO_CONSOLE !== 'false',
 };
 
 // Log level hierarchy (higher = more verbose)
@@ -101,7 +102,7 @@ if (CONFIG.logToFile && !fs.existsSync(logDir)) {
  * Get current log file path with date
  */
 function getLogFilePath() {
-  const date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const date = new Date().toISOString().split('T')[0];
   return path.join(logDir, `bot-${date}.log`);
 }
 
@@ -111,6 +112,13 @@ function getLogFilePath() {
 function getErrorLogFilePath() {
   const date = new Date().toISOString().split('T')[0];
   return path.join(logDir, `error-${date}.log`);
+}
+
+/**
+ * Get formatted date for filenames
+ */
+function getDateString() {
+  return new Date().toISOString().split('T')[0];
 }
 
 /**
@@ -125,11 +133,9 @@ function rotateLogs() {
       .sort()
       .reverse();
     
-    // Group by prefix to delete separately
     const botLogs = files.filter(f => f.startsWith('bot-'));
     const errorLogs = files.filter(f => f.startsWith('error-'));
     
-    // Delete files beyond the limit
     const deleteOldLogs = (logArray) => {
       if (logArray.length > CONFIG.maxLogFiles) {
         const toDelete = logArray.slice(CONFIG.maxLogFiles);
@@ -137,6 +143,9 @@ function rotateLogs() {
           const filePath = path.join(logDir, file);
           if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
+            if (CONFIG.logLevel === 'debug') {
+              console.log(`Deleted old log file: ${file}`);
+            }
           }
         }
       }
@@ -152,6 +161,9 @@ function rotateLogs() {
       if (stats.size > CONFIG.maxLogSize) {
         const archiveName = currentLogPath.replace('.log', `-${Date.now()}.log`);
         fs.renameSync(currentLogPath, archiveName);
+        if (CONFIG.logLevel === 'debug') {
+          console.log(`Rotated large log file: ${path.basename(archiveName)}`);
+        }
       }
     }
   } catch (err) {
@@ -187,25 +199,35 @@ function formatMessage(level, message, ...args) {
   
   let prefix = '';
   
-  if (CONFIG.colorize) {
+  if (CONFIG.colorize && CONFIG.logToConsole) {
     if (time) prefix += `${colors.dim}${time}${colors.reset} `;
-    if (CONFIG.showEmoji) prefix += `${emoji} `;
+    if (CONFIG.showEmoji && emoji) prefix += `${emoji} `;
     prefix += `${bg}${colors.bright} ${name} ${colors.reset}${color}`;
   } else {
     if (time) prefix += `${time} `;
-    if (CONFIG.showEmoji) prefix += `${emoji} `;
+    if (CONFIG.showEmoji && emoji) prefix += `${emoji} `;
     prefix += `[${name}]`;
   }
   
-  // Format args for logging
+  // Format args for logging - improved error handling
   let formattedArgs = '';
   if (args && args.length > 0) {
     formattedArgs = args.map(arg => {
       if (arg instanceof Error) {
-        return `\n${colors.red}${arg.stack || arg.message}${colors.reset}`;
+        const stackLines = (arg.stack || arg.message).split('\n');
+        const shortStack = stackLines.slice(0, 3).join('\n');
+        return CONFIG.colorize && CONFIG.logToConsole 
+          ? `\n${colors.red}${shortStack}${colors.reset}`
+          : `\n${shortStack}`;
       }
-      if (typeof arg === 'object') {
-        return `\n${util.inspect(arg, { colors: CONFIG.colorize, depth: 3 })}`;
+      if (typeof arg === 'object' && arg !== null) {
+        try {
+          return CONFIG.colorize && CONFIG.logToConsole
+            ? `\n${util.inspect(arg, { colors: true, depth: 3 })}`
+            : `\n${util.inspect(arg, { colors: false, depth: 3 })}`;
+        } catch (err) {
+          return `\n[Uninspectable: ${err.message}]`;
+        }
       }
       return arg;
     }).join(' ');
@@ -213,7 +235,7 @@ function formatMessage(level, message, ...args) {
   
   return {
     prefix,
-    formatted: `${prefix} ${message}${formattedArgs}${colors.reset}`,
+    formatted: CONFIG.logToConsole ? `${prefix} ${message}${formattedArgs}${colors.reset}` : `${prefix} ${message}${formattedArgs}`,
     rawArgs: args,
   };
 }
@@ -228,17 +250,22 @@ function writeToFile(level, message, ...args) {
   try {
     const time = getTimestamp();
     const { emoji, name } = levels[level] || levels.info;
+    
     const plainArgs = args.map(a => {
       if (a instanceof Error) {
         return `\n${a.stack || a.message}`;
       }
-      if (typeof a === 'object') {
-        return `\n${util.inspect(a, { colors: false, depth: 5 })}`;
+      if (typeof a === 'object' && a !== null) {
+        try {
+          return `\n${util.inspect(a, { colors: false, depth: 5 })}`;
+        } catch {
+          return `\n[Object]`;
+        }
       }
       return String(a);
     }).join(' ');
     
-    const logLine = `[${time}] ${emoji} [${name}] ${message} ${plainArgs}\n`;
+    const logLine = `[${time}] ${emoji || '📝'} [${name}] ${message} ${plainArgs}\n`.replace(/\x1b\[[0-9;]*m/g, ''); // Strip ANSI colors
     fs.appendFileSync(getLogFilePath(), logLine);
     
     // Write to separate error file if needed
@@ -261,12 +288,14 @@ function log(level, message, ...args) {
   const { formatted, rawArgs } = formatMessage(level, message, ...args);
   
   // Console output
-  if (level === 'error') {
-    console.error(formatted, ...rawArgs);
-  } else if (level === 'warn') {
-    console.warn(formatted, ...rawArgs);
-  } else {
-    console.log(formatted, ...rawArgs);
+  if (CONFIG.logToConsole) {
+    if (level === 'error') {
+      console.error(formatted, ...rawArgs);
+    } else if (level === 'warn') {
+      console.warn(formatted, ...rawArgs);
+    } else {
+      console.log(formatted, ...rawArgs);
+    }
   }
   
   // File output
@@ -291,7 +320,7 @@ function webhook(message, ...args) { log('webhook', message, ...args); }
 function cron(message, ...args)    { log('cron', message, ...args); }
 function test(message, ...args)    { log('test', message, ...args); }
 
-// Alias for backward compatibility (since autoPost uses logger.success)
+// Alias for backward compatibility
 module.exports.success = success;
 
 // ============================================
@@ -313,16 +342,22 @@ function json(label, obj) {
     debug(`${label}: null`);
     return;
   }
-  const formatted = typeof obj === 'object' 
-    ? JSON.stringify(obj, null, 2)
-    : String(obj);
-  debug(`${label}:\n${formatted}`);
+  try {
+    const formatted = typeof obj === 'object' 
+      ? JSON.stringify(obj, null, 2)
+      : String(obj);
+    debug(`${label}:\n${formatted}`);
+  } catch (err) {
+    debug(`${label}: [Unable to stringify - ${err.message}]`);
+  }
 }
 
 /**
  * Log a separator line for visual distinction
  */
 function separator(title = '') {
+  if (!CONFIG.logToConsole) return;
+  
   const line = '━'.repeat(50);
   if (title) {
     console.log(`\n${colors.cyan}${line}${colors.reset}`);
@@ -337,13 +372,15 @@ function separator(title = '') {
  * Log a table from array of objects
  */
 function table(data, columns) {
+  if (!CONFIG.logToConsole) return;
+  
   if (!Array.isArray(data) || data.length === 0) {
     info('No data to display in table');
     return;
   }
   
   const keys = columns || Object.keys(data[0]);
-  const maxWidth = 60; // Max width per column
+  const maxWidth = 60;
   const truncatedKeys = keys.map(k => k.substring(0, maxWidth));
   
   console.log(`\n${colors.cyan}┌${'─'.repeat(maxWidth)}┐${colors.reset}`);
@@ -357,7 +394,13 @@ function table(data, columns) {
     const values = keys.map(k => {
       let val = row[k];
       if (val === undefined) return 'N/A';
-      if (typeof val === 'object') return JSON.stringify(val).substring(0, 20);
+      if (typeof val === 'object') {
+        try {
+          return JSON.stringify(val).substring(0, 20);
+        } catch {
+          return '[Object]';
+        }
+      }
       return String(val).substring(0, maxWidth - 5);
     });
     console.log(`${colors.cyan}│${colors.reset} ${values.join(' │ ').substring(0, maxWidth)} ${colors.cyan}│${colors.reset}`);
@@ -370,6 +413,7 @@ function table(data, columns) {
  * Progress log with percentage
  */
 function progress(current, total, label = 'Progress') {
+  if (!CONFIG.logToConsole) return;
   if (total <= 0) return;
   
   const percent = Math.min(100, Math.round((current / total) * 100));
@@ -391,7 +435,9 @@ const timers = new Map();
 
 function timeStart(label) {
   timers.set(label, Date.now());
-  debug(`⏱️  Timer started: ${label}`);
+  if (shouldLog('debug')) {
+    debug(`⏱️  Timer started: ${label}`);
+  }
 }
 
 function timeEnd(label) {
@@ -416,6 +462,19 @@ function timeRecord(label, callback) {
   return { result, elapsed };
 }
 
+/**
+ * Log HTTP request details
+ */
+function http(method, url, status, durationMs, metadata = {}) {
+  const statusEmoji = status >= 500 ? '🔴' : status >= 400 ? '🟡' : status >= 300 ? '🔵' : '🟢';
+  const logMessage = `${statusEmoji} ${method} ${url} → ${status} (${durationMs}ms)`;
+  if (metadata && Object.keys(metadata).length > 0) {
+    debug(logMessage, metadata);
+  } else {
+    info(logMessage);
+  }
+}
+
 // ============================================
 // BANNER & STARTUP
 // ============================================
@@ -424,6 +483,8 @@ function timeRecord(label, callback) {
  * Display a fancy startup banner
  */
 function printBanner(botName = 'BYD BladeBot', version = '2.0.0') {
+  if (!CONFIG.logToConsole) return;
+  
   const banner = `
 ${colors.cyan}${colors.bright}╔══════════════════════════════════════════════════╗
 ║                                                  ║
@@ -443,6 +504,8 @@ ${colors.cyan}${colors.bright}╔═══════════════�
  * Display system info on startup
  */
 function printSystemInfo(client) {
+  if (!CONFIG.logToConsole) return;
+  
   const info = [
     { key: 'Bot Tag', value: client?.user?.tag || 'N/A' },
     { key: 'Bot ID', value: client?.user?.id || 'N/A' },
@@ -467,6 +530,8 @@ function printSystemInfo(client) {
  * Display current configuration
  */
 function printConfig() {
+  if (!CONFIG.logToConsole) return;
+  
   console.log(`\n${colors.cyan}${colors.bright}  ⚙️ Logger Configuration${colors.reset}`);
   console.log(`${colors.dim}  ─────────────────────────${colors.reset}`);
   console.log(`  ${colors.dim}Log Level:${colors.reset} ${colors.white}${CONFIG.logLevel}${colors.reset}`);
@@ -478,15 +543,48 @@ function printConfig() {
   console.log('');
 }
 
-// Run log rotation on startup
-setInterval(rotateLogs, 3600000); // Run rotation every hour
+// ============================================
+// CLEANUP & MAINTENANCE
+// ============================================
+
+let rotationInterval = null;
+
+function startLogRotation() {
+  if (rotationInterval) clearInterval(rotationInterval);
+  rotationInterval = setInterval(rotateLogs, 3600000); // Run rotation every hour
+}
+
+function stopLogRotation() {
+  if (rotationInterval) {
+    clearInterval(rotationInterval);
+    rotationInterval = null;
+  }
+}
+
+// Start log rotation
+startLogRotation();
 rotateLogs(); // Run once on startup
 
 // Clean up timers on exit
 process.on('beforeExit', () => {
+  stopLogRotation();
   for (const [label] of timers) {
-    warn(`Timer "${label}" still running on exit`);
+    if (shouldLog('warn')) {
+      warn(`Timer "${label}" still running on exit`);
+    }
   }
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  error('Uncaught Exception:', err);
+  if (process.env.NODE_ENV === 'production') {
+    process.exit(1);
+  }
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
 // ============================================
@@ -518,6 +616,7 @@ module.exports = {
   timeStart,
   timeEnd,
   timeRecord,
+  http,
   
   // Display
   printBanner,
@@ -535,6 +634,7 @@ module.exports = {
   },
   getLogLevel: () => CONFIG.logLevel,
   setFileLogging: (enabled) => { CONFIG.logToFile = enabled; },
+  setConsoleLogging: (enabled) => { CONFIG.logToConsole = enabled; },
   
   // Raw log function for custom use
   log,
@@ -544,4 +644,6 @@ module.exports = {
   
   // Utilities
   rotateLogs,
+  startLogRotation,
+  stopLogRotation,
 };
