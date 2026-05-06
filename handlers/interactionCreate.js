@@ -278,8 +278,14 @@ async function handleSelectMenu(interaction, client) {
   
   // Admin pull leads select menu
   if (customId === 'admin_select_giveaway_leads') {
+    // Directly require and call the function to avoid circular dependency issues
     const { handleLeadSelect } = require('../commands/admin');
-    return handleLeadSelect(interaction);
+    if (typeof handleLeadSelect === 'function') {
+      return handleLeadSelect(interaction);
+    } else {
+      logger.error('handleLeadSelect is not a function');
+      return interaction.reply({ content: '❌ An error occurred. Please try again.', ephemeral: true });
+    }
   }
 
   logger.warn(`Unknown select menu customId: ${customId}`);
