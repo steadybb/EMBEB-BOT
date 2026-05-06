@@ -1,5 +1,5 @@
 // commands/posttemplate.js
-const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags } = require('discord.js');
 const buildEmbed = require('../utils/buildEmbed');
 const bydTemplates = require('../modules/bydEmbeds');
 const { isAdmin, isStaffOrAbove } = require('../utils/permissions');
@@ -10,12 +10,12 @@ const logger = require('../utils/logger');
 // ============================================
 const testimonials = [
   "“Saved $7,500 with federal credits – the Seal is a steal!” – Marina, CA",
-  "“ATTO 3’s Blade Battery gave my family real peace of mind.” – Carlos, TX",
+  "“ATTO 3's Blade Battery gave my family real peace of mind.” – Carlos, TX",
   "“Free home charger? BYD really cares.” – Luisa, NY",
   "“0‑60 in 3.8s – the Han Performance is pure adrenaline.” – Felipe, FL",
   "“Best EV decision I ever made. And I saved thousands.” – Ahmed, CO",
   "“The Yangwang U8 is absolutely unreal – worth every penny.” – James, CA",
-  "“BYD’s customer service blew me away. Real humans who care.” – Sarah, NY",
+  "“BYD's customer service blew me away. Real humans who care.” – Sarah, NY",
   "“Range anxiety? Never heard of it with 450 miles of range.” – Mike, TX"
 ];
 
@@ -143,6 +143,50 @@ function enhanceEmbed(embed, key, replacements, modelOverride) {
 }
 
 // ============================================
+// SAFE INTERACTION REPLY HELPERS
+// ============================================
+
+/**
+ * Safely reply to an interaction, handling already-acknowledged errors.
+ */
+async function safeReply(interaction, content) {
+  try {
+    if (interaction.replied || interaction.deferred) {
+      return await interaction.editReply(content);
+    }
+    return await interaction.reply(content);
+  } catch (err) {
+    if (err.code === 40060) {
+      // Already acknowledged - try edit instead
+      return await interaction.editReply(content);
+    }
+    if (err.code === 10062) {
+      // Unknown interaction - too late to respond
+      logger.warn('Interaction expired, cannot reply');
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Safely defer an interaction reply as ephemeral.
+ */
+async function safeDefer(interaction) {
+  try {
+    if (!interaction.deferred && !interaction.replied) {
+      return await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    }
+  } catch (err) {
+    if (err.code === 10062) {
+      logger.warn('Interaction expired, cannot defer');
+      return null;
+    }
+    throw err;
+  }
+}
+
+// ============================================
 // SLASH COMMAND DEFINITION
 // ============================================
 module.exports = {
@@ -162,7 +206,7 @@ module.exports = {
     )
     .addBooleanOption(option =>
       option.setName('dm')
-        .setDescription('Send directly to user’s DM instead of channel')
+        .setDescription('Send directly to user\'s DM instead of channel')
         .setRequired(false)
     )
     .addStringOption(option =>
@@ -210,17 +254,30 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    // Permission check - allow staff as well as admin
+    // ============================================
+    // STEP 1: Permission check (respond before deferring if denied)
+    // ============================================
     if (!isAdmin(interaction.member) && !(await isStaffOrAbove(interaction.member))) {
       logger.warn(`⛔ Non‑admin ${interaction.user.tag} tried /posttemplate`);
+      // ✅ Use MessageFlags instead of ephemeral
       return interaction.reply({
         content: '❌ This command requires Admin or Staff permissions.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    // ============================================
+    // STEP 2: Defer reply (15-minute window to respond)
+    // ============================================
+    const deferred = await safeDefer(interaction);
+    if (!deferred) {
+      // Interaction already expired
+      return;
+    }
 
+    // ============================================
+    // STEP 3: Parse options
+    // ============================================
     const key = interaction.options.getString('template');
     const mention = interaction.options.getUser('mention');
     const sendDM = interaction.options.getBoolean('dm') ?? false;
@@ -232,7 +289,9 @@ module.exports = {
 
     const template = bydTemplates[key];
     if (!template) {
-      return interaction.editReply({ content: '❌ Template not found. Available: ' + Object.keys(bydTemplates).join(', ') });
+      return safeReply(interaction, {
+        content: '❌ Template not found. Available: ' + Object.keys(bydTemplates).join(', ')
+      });
     }
 
     logger.cmd(`/posttemplate ${key} used by ${interaction.user.tag} (DM: ${sendDM}, mention: ${mention?.tag || 'none'}, model: ${modelOverride})`);
@@ -240,21 +299,25 @@ module.exports = {
     const targetUser = mention || interaction.user;
     const expiryDate = expiryHours ? getExpiryDate(expiryHours) : null;
     
-    // Get target channel
+    // ============================================
+    // STEP 4: Get target channel
+    // ============================================
     let targetChannel = interaction.channel;
     if (targetChannelId && !sendDM) {
       try {
         targetChannel = await interaction.client.channels.fetch(targetChannelId);
         if (!targetChannel) {
-          return interaction.editReply({ content: '❌ Invalid channel ID provided.' });
+          return safeReply(interaction, { content: '❌ Invalid channel ID provided.' });
         }
       } catch (err) {
         logger.error('Failed to fetch target channel:', err.message);
-        return interaction.editReply({ content: '❌ Could not find the specified channel.' });
+        return safeReply(interaction, { content: '❌ Could not find the specified channel.' });
       }
     }
 
-    // Prepare replacements
+    // ============================================
+    // STEP 5: Build the embed
+    // ============================================
     const seasonal = getSeasonalTheme();
     const replacements = {
       username: targetUser.username,
@@ -272,10 +335,9 @@ module.exports = {
       channel_mention: interaction.channel?.toString() || '#general'
     };
 
-    // Check if embed template exists
     if (!template.embed) {
       logger.error(`Template ${key} missing embed property`);
-      return interaction.editReply({ content: '❌ Template configuration error.' });
+      return safeReply(interaction, { content: '❌ Template configuration error.' });
     }
 
     let builtEmbed = buildEmbed(template.embed, {
@@ -285,12 +347,12 @@ module.exports = {
       replacements
     });
 
-    // Enhance embed with additional content
     builtEmbed = enhanceEmbed(builtEmbed, key, replacements, modelOverride);
-
     const components = getButtonsForTemplate(key, modelOverride);
 
-    // Build content with urgency and personal note
+    // ============================================
+    // STEP 6: Build content
+    // ============================================
     let content = '';
     if (personalNote) content += `📝 *${personalNote}*\n\n`;
     if (mention && !sendDM) content += `${mention} `;
@@ -306,11 +368,14 @@ module.exports = {
       components: components
     };
 
+    // ============================================
+    // STEP 7: Send and respond
+    // ============================================
     try {
       if (sendDM && mention) {
         // DM the user
         await mention.send(payload);
-        await interaction.editReply({
+        await safeReply(interaction, {
           content: `✅ **${key.replace(/_/g, ' ').toUpperCase()}** campaign sent to **${mention.tag}** via DM ${expiryHours ? `(⏳ ${expiryHours}h urgency active)` : ''}`
         });
         logger.success(`📨 DM campaign "${key}" → ${mention.tag} (model: ${modelOverride})`);
@@ -318,7 +383,7 @@ module.exports = {
       } else {
         // Post to channel
         const message = await targetChannel.send(payload);
-        await interaction.editReply({
+        await safeReply(interaction, {
           content: `✅ **${key.replace(/_/g, ' ').toUpperCase()}** campaign posted in ${targetChannel.toString()} ${expiryHours ? `(⏳ ${expiryHours}h expiry)` : ''}`
         });
         logger.success(`📢 Channel campaign "${key}" → #${targetChannel.name || targetChannel.id}`);
@@ -330,7 +395,6 @@ module.exports = {
             await message.delete();
             logger.debug(`🗑️ Auto‑deleted campaign "${key}" after ${autoDeleteMinutes} minutes`);
           } catch (err) {
-            // Message already deleted or no permissions
             logger.debug(`Could not delete campaign message: ${err.message}`);
           }
         }, autoDeleteMinutes * 60 * 1000);
@@ -350,7 +414,6 @@ module.exports = {
           true
         );
       } catch (dbErr) {
-        // Non-critical, just log
         logger.debug('Could not log campaign to database:', dbErr.message);
       }
       
@@ -366,7 +429,7 @@ module.exports = {
         errorMessage += err.message;
       }
       
-      await interaction.editReply({ content: errorMessage });
+      await safeReply(interaction, { content: errorMessage });
     }
   }
 };
