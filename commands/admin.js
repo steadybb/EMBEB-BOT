@@ -797,6 +797,7 @@ async function toggleLobby(interaction) {
   setTimeout(() => showLobbyMenu(interaction), 500);
 }
 
+// FIXED: Changed TextInputStyle.Url to TextInputStyle.Short
 async function setLobbyWebhook(interaction) {
   const modal = new ModalBuilder()
     .setCustomId('admin_lobby_set_webhook_modal')
@@ -806,7 +807,7 @@ async function setLobbyWebhook(interaction) {
     .setCustomId('webhook_url')
     .setLabel('Discord Webhook URL')
     .setPlaceholder('https://discord.com/api/webhooks/...')
-    .setStyle(TextInputStyle.Url)
+    .setStyle(TextInputStyle.Short)  // Fixed: Changed from .Url to .Short
     .setRequired(true);
   
   modal.addComponents(new ActionRowBuilder().addComponents(input));
