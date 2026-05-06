@@ -12,7 +12,7 @@ const STATIC_BASE_URL = process.env.STATIC_BASE_URL || 'http://localhost:3000/st
 
 // Configuration
 const CONFIG = {
-  maxRetries: 1, // Reduced since we have fallback content
+  maxRetries: 2, // Increased for better reliability
   retryDelay: 2000, // Base delay in ms
   maxTokens: 500,
   temperature: 0.8,
@@ -25,6 +25,7 @@ const CONFIG = {
   timeout: 15000, // 15 seconds
   maxResponseLength: 4000, // Discord embed limit buffer
   useLocalFallback: true, // Enable local fallback content when API fails
+  enableImageValidation: process.env.ENABLE_IMAGE_VALIDATION !== 'false', // Validate image URLs
 };
 
 // System prompt for consistent BYD content
@@ -53,15 +54,46 @@ const apiStats = {
 };
 
 // ============================================
-// IMAGE HELPER FUNCTION
+// IMAGE HELPER FUNCTIONS
 // ============================================
+
 /**
  * Get the full image URL for a static asset
  * @param {string} filename - Image filename in static folder
  * @returns {string} - Full URL to the image
  */
 function getImageUrl(filename) {
+  if (!filename) return null;
+  
+  // If STATIC_BASE_URL is localhost or not set, return relative path
+  if (STATIC_BASE_URL === 'http://localhost:3000/static' || !STATIC_BASE_URL) {
+    logger.warn(`STATIC_BASE_URL not configured properly. Images may not display. Using: ${STATIC_BASE_URL}`);
+  }
+  
   return `${STATIC_BASE_URL}/${filename}`;
+}
+
+/**
+ * Validate image URL before using
+ * @param {string} url - Image URL to validate
+ * @returns {boolean} - Whether URL is valid
+ */
+function isValidImageUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  
+  // Check if URL is from allowed domains or has valid extensions
+  const isValidProtocol = url.startsWith('https://') || url.startsWith('http://');
+  const isValidDiscordCDN = url.includes('cdn.discordapp.com');
+  const isValidImgur = url.includes('imgur.com');
+  const isValidLocal = url.includes('localhost') || url.includes('127.0.0.1');
+  
+  // Check for valid image extensions
+  const validExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+  const hasValidExtension = validExtensions.some(ext => 
+    url.toLowerCase().includes(ext)
+  );
+  
+  return isValidProtocol && (isValidDiscordCDN || isValidImgur || isValidLocal || hasValidExtension);
 }
 
 // ============================================
@@ -492,13 +524,20 @@ function getFallbackPost(type = null) {
   if (type) {
     availablePosts = fallbackPosts.filter(post => post.type === type);
     if (availablePosts.length === 0) {
-      availablePosts = fallbackPosts; // Fall back to all posts
+      logger.warn(`No fallback posts found for type: ${type}, using all posts`);
+      availablePosts = fallbackPosts;
     }
   }
   
   // Rotate through posts
   lastFallbackIndex = (lastFallbackIndex + 1) % availablePosts.length;
-  const selectedPost = availablePosts[lastFallbackIndex];
+  const selectedPost = { ...availablePosts[lastFallbackIndex] }; // Clone to prevent mutation
+  
+  // Validate image if validation is enabled
+  if (CONFIG.enableImageValidation && selectedPost.image && !isValidImageUrl(selectedPost.image)) {
+    logger.warn(`Invalid image URL for fallback post ${selectedPost.id}, removing image`);
+    delete selectedPost.image;
+  }
   
   apiStats.fallbackUsed++;
   logger.info(`📦 Using fallback post: ${selectedPost.id} (${selectedPost.type})${selectedPost.image ? ' 🖼️ with image' : ''}`);
@@ -522,8 +561,17 @@ function getRandomFallbackPosts(count = 1) {
  */
 function addFallbackPosts(posts) {
   if (Array.isArray(posts)) {
-    fallbackPosts.push(...posts);
-    logger.info(`Added ${posts.length} custom fallback posts. Total: ${fallbackPosts.length}`);
+    // Validate posts before adding
+    const validPosts = posts.filter(post => 
+      post.content && post.type && post.id
+    );
+    
+    if (validPosts.length !== posts.length) {
+      logger.warn(`Skipped ${posts.length - validPosts.length} invalid fallback posts`);
+    }
+    
+    fallbackPosts.push(...validPosts);
+    logger.info(`Added ${validPosts.length} custom fallback posts. Total: ${fallbackPosts.length}`);
   }
 }
 
@@ -555,8 +603,12 @@ function sanitizeContent(content) {
     .replace(/<[^>]+>/g, '')
     .replace(/\n{3,}/g, '\n\n');
 
+  // Convert markdown lists to Discord-friendly format
   sanitized = sanitized.replace(/^(-|\*)\s/gm, '• ');
+  
+  // Add spaces around emojis for better rendering
   sanitized = sanitized.replace(/(\S)([🎉🚗🔋⚡🌟💡🎯🛡️🌍🔌🐬🏎️🔨📏🔒♻️🔄📰🏆🚢🏭🤝📊🌐👷🏗️❄️🏕️💡⛽🌱🏠🏪⚡🛞🌬️🗺️💰🎸🎵🏆⭐🌟🕊️🔮🛻🏍️🤖🛰️])/g, '$1 $2');
+  sanitized = sanitized.replace(/([🎉🚗🔋⚡🌟💡🎯🛡️🌍🔌🐬🏎️🔨📏🔒♻️🔄📰🏆🚢🏭🤝📊🌐👷🏗️❄️🏕️💡⛽🌱🏠🏪⚡🛞🌬️🗺️💰🎸🎵🏆⭐🌟🕊️🔮🛻🏍️🤖🛰️])(\S)/g, '$1 $2');
   
   return sanitized;
 }
@@ -581,6 +633,8 @@ function validateContent(content) {
     'I do not have',
     'I don\'t have access',
     'my knowledge cutoff',
+    'I\'m sorry',
+    'I can\'t',
   ];
 
   const lowerContent = content.toLowerCase();
@@ -643,7 +697,7 @@ function getApiStats() {
   return {
     ...apiStats,
     fallbackPostsAvailable: fallbackPosts.length,
-    fallbackPostsWithImages: fallbackPosts.filter(p => p.image).length,
+    fallbackPostsWithImages: fallbackPosts.filter(p => p.image && isValidImageUrl(p.image)).length,
     successRate: apiStats.totalRequests > 0
       ? `${((apiStats.successfulRequests / apiStats.totalRequests) * 100).toFixed(1)}%`
       : 'N/A',
@@ -780,7 +834,7 @@ async function generateContent(prompt, preferredModel = CONFIG.defaultModel, con
           content = content.substring(0, CONFIG.maxResponseLength - 3) + '...';
         }
 
-        logger.success(`✅ Content generated successfully with ${model} (${responseTime}ms, ${content.length} chars)`);
+        logger.info(`✅ Content generated successfully with ${model} (${responseTime}ms, ${content.length} chars)`);
         logger.debug(`Generated content preview: ${content.substring(0, 100)}...`);
         
         return {
@@ -797,6 +851,9 @@ async function generateContent(prompt, preferredModel = CONFIG.defaultModel, con
         
         apiStats.lastError = error.message;
         apiStats.lastErrorTime = new Date().toISOString();
+        
+        // Sanitize error messages to avoid leaking sensitive info
+        const sanitizedError = error.message?.replace(/sk-[a-zA-Z0-9]{32,}/g, 'REDACTED') || error.message;
         
         if (error.code === 'ECONNABORTED') {
           logger.error(`Timeout error with ${model} (attempt ${attempt}/${CONFIG.maxRetries})`);
@@ -821,8 +878,7 @@ async function generateContent(prompt, preferredModel = CONFIG.defaultModel, con
             continue;
           }
         } else {
-          logger.error(`OpenRouter API error with ${model}:`, 
-            error.response?.data || error.message);
+          logger.error(`OpenRouter API error with ${model}:`, sanitizedError);
         }
         
         if (attempt === CONFIG.maxRetries) {
@@ -887,6 +943,7 @@ module.exports = {
   getRandomFallbackPosts,
   addFallbackPosts,
   getImageUrl,
+  isValidImageUrl,
   SYSTEM_PROMPT,
   STATIC_BASE_URL,
 };
