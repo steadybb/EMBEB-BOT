@@ -45,13 +45,11 @@ const EPHEMERAL = { flags: MessageFlags.Ephemeral };
 async function getAdminUsers(guild) {
   const admins = [];
   
-  // Server owner
   try {
     const owner = await guild.fetchOwner();
     admins.push(owner);
   } catch {}
   
-  // Users with Administrator permission
   const adminMembers = guild.members.cache.filter(m => 
     m.permissions.has(PermissionsBitField.Flags.Administrator) && m.id !== guild.ownerId
   );
@@ -59,7 +57,6 @@ async function getAdminUsers(guild) {
     if (!admins.some(a => a.id === member.id)) admins.push(member);
   }
   
-  // Staff role members
   try {
     const config = await getGuildConfig(guild.id);
     if (config?.staff_role_id) {
@@ -187,13 +184,9 @@ async function startCarGiveaway(interaction) {
   const customImage = interaction.options.getString('image');
   const endTime = new Date(Date.now() + durationHours * 60 * 60 * 1000);
   
-  // Validate custom image URL
   let imageUrl = customImage;
   if (imageUrl && !imageUrl.startsWith('https://')) {
-    return interaction.reply({ 
-      content: '❌ Image URL must use HTTPS protocol.', 
-      ...EPHEMERAL 
-    });
+    return interaction.reply({ content: '❌ Image URL must use HTTPS protocol.', ...EPHEMERAL });
   }
   
   await interaction.deferReply(EPHEMERAL);
@@ -208,28 +201,20 @@ async function startCarGiveaway(interaction) {
   const guild = interaction.guild;
   const config = await getGuildConfig(guild.id);
   
-  // Create or get categories
   let leadCategory = guild.channels.cache.find(c => 
     c.name === '🎁 Giveaway Leads' && c.type === ChannelType.GuildCategory
   );
   if (!leadCategory) {
-    leadCategory = await guild.channels.create({ 
-      name: '🎁 Giveaway Leads', 
-      type: ChannelType.GuildCategory 
-    });
+    leadCategory = await guild.channels.create({ name: '🎁 Giveaway Leads', type: ChannelType.GuildCategory });
   }
   
   let entryCategory = guild.channels.cache.find(c => 
     c.name === '🎁 Giveaway Entries' && c.type === ChannelType.GuildCategory
   );
   if (!entryCategory) {
-    entryCategory = await guild.channels.create({ 
-      name: '🎁 Giveaway Entries', 
-      type: ChannelType.GuildCategory 
-    });
+    entryCategory = await guild.channels.create({ name: '🎁 Giveaway Entries', type: ChannelType.GuildCategory });
   }
   
-  // Create lead tracking thread
   const leadThread = await guild.channels.create({
     name: `giveaway-${model.toLowerCase()}-${Date.now()}`,
     type: ChannelType.GuildText,
@@ -242,11 +227,7 @@ async function startCarGiveaway(interaction) {
   });
   
   if (config?.staff_role_id) {
-    await leadThread.permissionOverwrites.create(config.staff_role_id, { 
-      ViewChannel: true, 
-      SendMessages: true, 
-      ReadMessageHistory: true 
-    });
+    await leadThread.permissionOverwrites.create(config.staff_role_id, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true });
   }
   
   await leadThread.send({ 
@@ -258,7 +239,6 @@ async function startCarGiveaway(interaction) {
     ] 
   });
 
-  // Create giveaway embed
   const embed = new EmbedBuilder()
     .setTitle('🚗 **OFFICIAL BYD CAR GIVEAWAY!** 🚗')
     .setDescription(`### 🎁 Win a ${year} BYD ${model}!\n\n### 📊 Vehicle Specs:\n• **MSRP:** $${carData.msrp.toLocaleString()}\n• **Range:** ${carData.range}\n• **Type:** ${carData.type}\n\n### ✨ How to Enter:\nClick **"ENTER GIVEAWAY"** below.\n\n### 📋 Winner Pays:\n• Shipping: $${shippingCost.toLocaleString()}\n• Doc Fee: $${docFee.toLocaleString()}\n• **Total:** $${totalWinnerCost.toLocaleString()}\n\n### ⏰ Entry Deadline:\n<t:${Math.floor(endTime / 1000)}:R>\n\n### 👑 Winners to be selected: **${winnersCount}**\n\n⚠️ Winners will be announced after the entry deadline by admins.\n\n${entryFee > 0 ? `### 💵 Entry Fee: $${entryFee}\n\n` : ''}*18+ with valid driver's license required.*`)
@@ -266,9 +246,7 @@ async function startCarGiveaway(interaction) {
     .setThumbnail('https://cdn.byd.com/bot/byd-logo.png')
     .setTimestamp(endTime);
   
-  if (imageUrl) {
-    embed.setImage(imageUrl);
-  }
+  if (imageUrl) embed.setImage(imageUrl);
   
   embed.setFooter({ 
     text: `Hosted by ${interaction.user.tag} • Winner cost: $${totalWinnerCost.toLocaleString()} • Winners selected manually`, 
@@ -284,13 +262,8 @@ async function startCarGiveaway(interaction) {
   );
   
   const pingContent = await getGiveawayPingContent(guild.id);
-  const message = await targetChannel.send({ 
-    content: pingContent, 
-    embeds: [embed], 
-    components: [row] 
-  });
+  const message = await targetChannel.send({ content: pingContent, embeds: [embed], components: [row] });
   
-  // Save to database
   const result = await pool.query(
     `INSERT INTO car_giveaways (guild_id, channel_id, message_id, car_model, car_year, msrp, shipping_cost, documentation_fee, winners_count, entry_fee, end_time, hosted_by) 
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
@@ -322,14 +295,11 @@ async function endCarGiveaway(interaction) {
   const giveaway = res.rows[0];
   await interaction.deferReply(EPHEMERAL);
   
-  // Get entry count
   const entriesRes = await pool.query('SELECT COUNT(*) as count FROM car_giveaway_entries WHERE giveaway_id = $1', [giveaway.id]);
   const entryCount = entriesRes.rows[0]?.count || 0;
   
-  // Mark as ended without selecting winners
   await pool.query('UPDATE car_giveaways SET ended = true WHERE id = $1', [giveaway.id]);
   
-  // Update the original message
   try {
     const channel = await interaction.client.channels.fetch(giveaway.channel_id);
     const originalMessage = await channel.messages.fetch(giveaway.message_id);
@@ -338,15 +308,11 @@ async function endCarGiveaway(interaction) {
       .setDescription(originalMessage.embeds[0].description + `\n\n### ⏰ GIVEAWAY ENDED!\n• Total Entries: **${entryCount}**\n• Winners will be announced soon by admins.`)
       .setColor('#FFA500');
     
-    await originalMessage.edit({ 
-      embeds: [updatedEmbed],
-      components: [] // Remove entry button
-    });
+    await originalMessage.edit({ embeds: [updatedEmbed], components: [] });
   } catch (err) {
     logger.warn(`Could not update giveaway message: ${err.message}`);
   }
   
-  // Notify lead thread
   const ps = giveaway.payment_status || {};
   if (ps.leadThreadId) {
     try {
@@ -379,7 +345,6 @@ async function adminSelectWinner(interaction) {
     return interaction.reply({ content: '❌ Giveaway not found.', ...EPHEMERAL });
   }
   
-  // Check if giveaway has ended
   if (!giveaway.ended) {
     return interaction.reply({ content: '⚠️ Giveaway has not ended yet. Use `/cargiveaway end` first.', ...EPHEMERAL });
   }
@@ -403,10 +368,8 @@ async function adminSelectWinner(interaction) {
   currentWinners.push(winnerUser.id);
   await pool.query('UPDATE car_giveaways SET winners = $2 WHERE id = $1', [giveaway.id, currentWinners]);
   
-  // Update or create announcement
   await updateWinnerAnnouncement(interaction, giveaway, currentWinners);
   
-  // Notify lead thread
   const ps = giveaway.payment_status || {};
   if (ps.leadThreadId) {
     try {
@@ -419,7 +382,6 @@ async function adminSelectWinner(interaction) {
     } catch {}
   }
   
-  // DM winner
   try {
     await winnerUser.send({ 
       embeds: [new EmbedBuilder()
@@ -466,7 +428,6 @@ async function adminSelectMultipleWinners(interaction) {
     return interaction.reply({ content: '❌ No entries found.', ...EPHEMERAL });
   }
   
-  // Create a select menu for winners
   const { StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = require('discord.js');
   
   const selectMenu = new StringSelectMenuBuilder()
@@ -475,7 +436,6 @@ async function adminSelectMultipleWinners(interaction) {
     .setMinValues(1)
     .setMaxValues(Math.min(giveaway.winners_count, 25));
   
-  // Add entries to select menu (limit to 25 for Discord)
   for (const entry of entries.slice(0, 25)) {
     const user = await interaction.client.users.fetch(entry.user_id).catch(() => null);
     const label = user ? user.username : entry.user_id.substring(0, 32);
@@ -495,7 +455,6 @@ async function adminSelectMultipleWinners(interaction) {
     ...EPHEMERAL
   });
   
-  // Create collector for selection
   const filter = i => i.user.id === interaction.user.id && i.customId === `select_winners_${giveaway.id}`;
   const collector = interaction.channel.createMessageComponentCollector({ filter, time: 60000, max: 1 });
   
@@ -512,13 +471,10 @@ async function adminSelectMultipleWinners(interaction) {
     
     await selectInteraction.deferUpdate();
     
-    // Verify all selected users entered
     const validWinners = [];
     for (const userId of selectedUserIds) {
       const entryCheck = await pool.query('SELECT * FROM car_giveaway_entries WHERE giveaway_id = $1 AND user_id = $2', [giveaway.id, userId]);
-      if (entryCheck.rows.length > 0) {
-        validWinners.push(userId);
-      }
+      if (entryCheck.rows.length > 0) validWinners.push(userId);
     }
     
     if (validWinners.length !== giveaway.winners_count) {
@@ -527,13 +483,10 @@ async function adminSelectMultipleWinners(interaction) {
     }
     
     await pool.query('UPDATE car_giveaways SET winners = $2 WHERE id = $1', [giveaway.id, validWinners]);
-    
-    // Update announcement
     await updateWinnerAnnouncement(interaction, giveaway, validWinners);
     
     const totalCost = giveaway.shipping_cost + giveaway.documentation_fee;
     
-    // DM all winners
     for (const userId of validWinners) {
       try {
         const user = await interaction.client.users.fetch(userId);
@@ -550,7 +503,6 @@ async function adminSelectMultipleWinners(interaction) {
       }
     }
     
-    // Notify lead thread
     const ps = giveaway.payment_status || {};
     if (ps.leadThreadId) {
       try {
@@ -674,7 +626,7 @@ async function listCarGiveaways(interaction) {
     
     embed.addFields({ 
       name: `${gw.car_year} BYD ${gw.car_model}`, 
-      value: `• Value: $${gw.msrp.toLocaleString()}\n• Entries: ${entryCount}\n• Winners: ${winnersSelected}/${gw.winners_count}\n• Ends: <t:${Math.floor(new Date(gw.end_time).getTime() / 1000)}:R>\n• Ended: ${gw.ended ? '✅ Yes' : '❌ No'}\n• ID: \`${gw.message_id}\``, 
+      value: `• Value: $${gw.msrp.toLocaleString()}\n• Entries: ${entryCount}\n• Winners: ${winnersSelected}/${gw.winners_count}\n• Ends: <t:${Math.floor(new Date(gw.end_time).getTime() / 1000)}:R>\n• ID: \`${gw.message_id}\``, 
       inline: true 
     });
   }
@@ -713,7 +665,7 @@ async function listEntries(interaction) {
 }
 
 // ============================================
-// EXPORT LEADS
+// EXPORT LEADS (FIXED - no deferReply needed)
 // ============================================
 async function exportLeads(interaction) {
   const messageId = interaction.options.getString('message_id');
@@ -731,7 +683,6 @@ async function exportLeads(interaction) {
     return interaction.reply({ content: '❌ No entries yet.', ...EPHEMERAL });
   }
 
-  // Create CSV export
   let csvData = 'Name,User ID,Email,Phone,Entered At,Is Winner\n';
   for (const e of entries) {
     const user = await interaction.client.users.fetch(e.user_id).catch(() => null);
@@ -739,6 +690,7 @@ async function exportLeads(interaction) {
     csvData += `"${user?.tag || 'Unknown'}","${e.user_id}","${e.user_email || ''}","${e.user_phone || ''}","${e.entered_at}","${isWinner ? 'YES' : 'NO'}"\n`;
   }
 
+  // Direct reply, no defer needed
   await interaction.reply({ 
     content: `📎 CSV export for **${giveaway.car_year} BYD ${giveaway.car_model}** (${entries.length} entries):`, 
     files: [{ name: `entries-${giveaway.car_model.toLowerCase()}-${Date.now()}.csv`, attachment: Buffer.from(csvData) }], 
@@ -772,30 +724,13 @@ async function handleCarGiveawayButton(interaction) {
   
   modal.addComponents(
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('email')
-        .setLabel('Email Address')
-        .setPlaceholder('you@example.com')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
+      new TextInputBuilder().setCustomId('email').setLabel('Email Address').setPlaceholder('you@example.com').setStyle(TextInputStyle.Short).setRequired(true)
     ),
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('phone')
-        .setLabel('Phone Number (optional)')
-        .setPlaceholder('(555) 123-4567')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(false)
+      new TextInputBuilder().setCustomId('phone').setLabel('Phone Number (optional)').setPlaceholder('(555) 123-4567').setStyle(TextInputStyle.Short).setRequired(false)
     ),
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('terms')
-        .setLabel('Type "I AGREE" to accept terms')
-        .setPlaceholder('I AGREE')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-        .setMinLength(6)
-        .setMaxLength(7)
+      new TextInputBuilder().setCustomId('terms').setLabel('Type "I AGREE" to accept terms').setPlaceholder('I AGREE').setStyle(TextInputStyle.Short).setRequired(true).setMinLength(6).setMaxLength(7)
     )
   );
   
@@ -815,7 +750,6 @@ async function handleCarGiveawayModal(interaction) {
   const phone = interaction.fields.getTextInputValue('phone');
   const terms = interaction.fields.getTextInputValue('terms');
   
-  // Validate inputs
   if (terms.toUpperCase() !== 'I AGREE') {
     return interaction.editReply({ content: '❌ You must type "I AGREE" to accept the terms and conditions.' });
   }
@@ -840,13 +774,11 @@ async function handleCarGiveawayModal(interaction) {
     return interaction.editReply({ content: '❌ This giveaway has ended.' });
   }
   
-  // Check for duplicate
   const existing = await pool.query('SELECT * FROM car_giveaway_entries WHERE giveaway_id = $1 AND user_id = $2', [giveaway.id, interaction.user.id]);
   if (existing.rows.length > 0) {
     return interaction.editReply({ content: '✅ You are already entered! Good luck! 🍀' });
   }
   
-  // Save entry
   await pool.query(
     'INSERT INTO car_giveaway_entries (giveaway_id, user_id, user_email, user_phone, agreed_to_terms) VALUES ($1,$2,$3,$4,$5)',
     [giveaway.id, interaction.user.id, email, phone || null, true]
@@ -856,7 +788,6 @@ async function handleCarGiveawayModal(interaction) {
   const config = await getGuildConfig(guild.id);
   const ps = giveaway.payment_status || {};
   
-  // Create entry channel
   let entryCategory = guild.channels.cache.find(c => c.name === '🎁 Giveaway Entries');
   if (ps.entryCategoryId) {
     entryCategory = guild.channels.cache.get(ps.entryCategoryId) || entryCategory;
@@ -893,27 +824,13 @@ async function handleCarGiveawayModal(interaction) {
     .setTimestamp();
   
   const adminRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`verify_entry_${giveaway.id}_${interaction.user.id}`)
-      .setLabel('✅ Verify')
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId(`contact_entry_${giveaway.id}_${interaction.user.id}`)
-      .setLabel('📩 Contact')
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId(`disqualify_entry_${giveaway.id}_${interaction.user.id}`)
-      .setLabel('❌ Disqualify')
-      .setStyle(ButtonStyle.Danger)
+    new ButtonBuilder().setCustomId(`verify_entry_${giveaway.id}_${interaction.user.id}`).setLabel('✅ Verify').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`contact_entry_${giveaway.id}_${interaction.user.id}`).setLabel('📩 Contact').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`disqualify_entry_${giveaway.id}_${interaction.user.id}`).setLabel('❌ Disqualify').setStyle(ButtonStyle.Danger)
   );
   
-  await entryChannel.send({ 
-    content: `Welcome <@${interaction.user.id}>! Staff will review your entry.`, 
-    embeds: [welcomeEmbed], 
-    components: [adminRow] 
-  });
+  await entryChannel.send({ content: `Welcome <@${interaction.user.id}>! Staff will review your entry.`, embeds: [welcomeEmbed], components: [adminRow] });
   
-  // Notify lead thread
   if (ps.leadThreadId) {
     try {
       const leadThread = await interaction.client.channels.fetch(ps.leadThreadId);
@@ -931,7 +848,6 @@ async function handleCarGiveawayModal(interaction) {
     } catch {}
   }
   
-  // DM confirmation
   try {
     await interaction.user.send({ 
       embeds: [new EmbedBuilder()
