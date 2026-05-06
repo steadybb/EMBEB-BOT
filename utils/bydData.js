@@ -15,6 +15,7 @@ const models = {
     charging: '10-80% in 30 min (DC fast)',
     warranty: '8 years / 120,000 miles',
     colors: ['Coral Pink', 'Arctic White', 'Electric Blue', 'Lime Green'],
+    features: ['LED Lights', '10.1" Touchscreen', 'Backup Camera', 'Keyless Entry'],
   },
   Dolphin: { 
     basePrice: 29990, 
@@ -25,6 +26,7 @@ const models = {
     charging: '10-80% in 28 min (DC fast)',
     warranty: '8 years / 120,000 miles',
     colors: ['Ocean Blue', 'Pearl White', 'Coral Red', 'Graphite Black'],
+    features: ['Wireless Charging', 'Sunroof', 'Heated Seats', '360° Camera'],
   },
   SeagullPlus: {
     basePrice: 23990,
@@ -35,6 +37,7 @@ const models = {
     charging: '10-80% in 32 min (DC fast)',
     warranty: '8 years / 120,000 miles',
     colors: ['Sunset Orange', 'Arctic White', 'Electric Blue'],
+    features: ['LED Lights', '12.8" Touchscreen', 'Wireless Charging', 'Sunroof'],
   },
 
   // Sedans & Sports
@@ -48,6 +51,7 @@ const models = {
     zeroToSixty: '3.8 seconds',
     warranty: '8 years / 150,000 miles',
     colors: ['Ocean X Blue', 'Aurora White', 'Phantom Black', 'Storm Grey'],
+    features: ['Panoramic Glass Roof', '14.6" Rotating Screen', 'Dynaudio Sound', 'HUD'],
   },
   SealPerformance: { 
     basePrice: 48990, 
@@ -58,8 +62,10 @@ const models = {
     charging: '10-80% in 26 min (150kW DC)',
     zeroToSixty: '3.4 seconds',
     topSpeed: '165 mph',
+    horsepower: '530 hp (dual motor)',
     warranty: '8 years / 150,000 miles',
     colors: ['Racing Red', 'Phantom Black', 'Thunder Blue', 'Storm Grey'],
+    features: ['Sport Suspension', 'Carbon Fiber Trim', 'Performance Brakes', 'Launch Control'],
   },
 
   // SUVs & Crossovers
@@ -74,6 +80,7 @@ const models = {
     cargo: '15.7 cu ft',
     warranty: '8 years / 120,000 miles',
     colors: ['Forest Green', 'Sky Blue', 'Pearl White', 'Titanium Grey'],
+    features: ['Gym Interior Design', 'Heated Steering Wheel', 'V2L Capability', 'Power Tailgate'],
   },
   YuanPlus: { 
     basePrice: 37990, 
@@ -86,6 +93,7 @@ const models = {
     cargo: '17.2 cu ft',
     warranty: '8 years / 120,000 miles',
     colors: ['Adventure Orange', 'Arctic White', 'Midnight Black'],
+    features: ['Panoramic Roof', 'Wireless Charging', 'Ambient Lighting', 'V2L'],
   },
   SongPlus: { 
     basePrice: 42990, 
@@ -98,6 +106,7 @@ const models = {
     cargo: '22.5 cu ft',
     warranty: '8 years / 150,000 miles',
     colors: ['Sapphire Blue', 'Diamond White', 'Onyx Black', 'Ruby Red'],
+    features: ['Ventilated Seats', 'Three-Zone Climate', 'Rear Sunshades', 'Premium Sound'],
   },
   Tang: { 
     basePrice: 49990, 
@@ -111,6 +120,7 @@ const models = {
     cargo: '12.5 cu ft (all seats) / 72.8 cu ft (folded)',
     warranty: '8 years / 150,000 miles',
     colors: ['Imperial Red', 'Glacier White', 'Obsidian Black', 'Silver Mist'],
+    features: ['Captain Chairs (2nd row)', 'Rear Entertainment', 'Massage Front Seats', 'Air Suspension'],
   },
   TangL: {
     basePrice: 56990,
@@ -123,6 +133,7 @@ const models = {
     cargo: '18.5 cu ft (all seats) / 85.2 cu ft (folded)',
     warranty: '8 years / 150,000 miles',
     colors: ['Imperial Red', 'Glacier White', 'Obsidian Black'],
+    features: ['Executive Lounge Seats', 'Refrigerator', '22" Wheels', 'Night Vision Assist'],
   },
 
   // Luxury Line
@@ -135,7 +146,7 @@ const models = {
     charging: '10-80% in 25 min (150kW DC)',
     zeroToSixty: '3.9 seconds',
     warranty: '8 years / 150,000 miles',
-    features: ['Dynaudio Premium Sound', 'Nappa Leather', 'Massage Seats', 'HUD'],
+    features: ['Dynaudio Premium Sound', 'Nappa Leather', 'Massage Seats', 'HUD', 'Air Purification'],
     colors: ['Imperial Jade', 'Onyx Black', 'Champagne Gold', 'Arctic White'],
   },
   HanPerformance: { 
@@ -147,8 +158,10 @@ const models = {
     charging: '10-80% in 25 min (150kW DC)',
     zeroToSixty: '3.4 seconds',
     topSpeed: '175 mph',
+    horsepower: '670 hp (triple motor)',
     warranty: '8 years / 150,000 miles',
     colors: ['Carbon Black', 'Racing Red', 'Matte Grey', 'Pearl White'],
+    features: ['Carbon Ceramic Brakes', 'Active Suspension', 'Sport Exhaust Sound', 'Track Mode'],
   },
 
   // Ultra-Luxury (Yangwang Brand)
@@ -161,9 +174,9 @@ const models = {
     charging: '10-80% in 20 min (250kW DC)',
     zeroToSixty: '3.6 seconds',
     seats: 5,
-    features: ['Hydraulic Suspension', 'Tank Turn', 'Water Wading 1.4m', 'Drone Launch'],
+    features: ['Hydraulic Suspension', 'Tank Turn', 'Water Wading 1.4m', 'Drone Launch', 'Bulletproof Glass Option'],
     warranty: '10 years / 200,000 miles',
-    colors: ['Midnight Blue', 'Royal Black', 'Arctic White'],
+    colors: ['Midnight Blue', 'Royal Black', 'Arctic White', 'Desert Sand'],
   },
   YangwangU9: { 
     basePrice: 149990, 
@@ -177,6 +190,7 @@ const models = {
     horsepower: '1,100 hp (4 motors)',
     warranty: '10 years / 200,000 miles',
     colors: ['Carbon Fiber', 'Liquid Silver', 'Sunset Gold', 'Racing Green'],
+    features: ['Active Aero', 'Gullwing Doors', 'Racing Bucket Seats', 'Telemetry Recording'],
   },
 
   // Commercial
@@ -321,6 +335,20 @@ const regionIncentives = {
     utilityRebate: 1000,
     name: 'Michigan',
   },
+  Virginia: {
+    evCredit: 2500,
+    stateCredit: 0,
+    freeCharger: false,
+    utilityRebate: 500,
+    name: 'Virginia',
+  },
+  Maryland: {
+    evCredit: 3000,
+    stateCredit: 1000,
+    freeCharger: true,
+    utilityRebate: 800,
+    name: 'Maryland',
+  },
 };
 
 // ============================================
@@ -334,11 +362,17 @@ const FINANCE_TERM = 60; // months
 const FINANCE_RATE = 0.0399; // 3.99% APR
 const LEASE_TERM = 36; // months
 const LEASE_RESIDUAL = 0.55; // 55% residual value
+const DOWN_PAYMENT_PERCENT = 0.20; // 20% down payment
 
 /**
  * Generate an on-road price quote in USD.
  */
 function generateQuote(model, region, variant = 'Premium', color = 'Aurora White') {
+  if (!model) {
+    logger.error('generateQuote called without model');
+    return null;
+  }
+
   logger.debug(`Generating quote for ${model} in ${region} (${variant}, ${color})`);
 
   const modelData = models[model];
@@ -355,7 +389,7 @@ function generateQuote(model, region, variant = 'Premium', color = 'Aurora White
     name: region || 'Unknown',
   };
 
-  // Calculate tax
+  // Calculate tax (with no-sales-tax override)
   let tax = Math.round(base * TAX_RATE);
   if (incentives.noSalesTax) tax = 0;
 
@@ -368,37 +402,45 @@ function generateQuote(model, region, variant = 'Premium', color = 'Aurora White
                           (incentives.utilityRebate || 0) +
                           (incentives.utilityBonus || 0);
   
-  // Final total
-  const total = subtotal - totalIncentives;
+  // Final total (never below 0)
+  const total = Math.max(0, subtotal - totalIncentives);
 
-  // Finance calculation (simple)
-  const amountFinanced = total * 0.80; // 80% financed with 20% down
+  // Down payment
+  const downPayment = Math.round(total * DOWN_PAYMENT_PERCENT);
+
+  // Finance calculation (simple - 80% financed after down payment)
+  const amountFinanced = total - downPayment;
   const monthlyRate = FINANCE_RATE / 12;
-  const monthlyFinance = Math.round(
-    (amountFinanced * monthlyRate * Math.pow(1 + monthlyRate, FINANCE_TERM)) /
-    (Math.pow(1 + monthlyRate, FINANCE_TERM) - 1)
-  );
+  let monthlyFinance = 0;
+  
+  if (amountFinanced > 0 && FINANCE_TERM > 0) {
+    const factor = Math.pow(1 + monthlyRate, FINANCE_TERM);
+    monthlyFinance = Math.round(
+      (amountFinanced * monthlyRate * factor) / (factor - 1)
+    );
+  }
 
   // Lease calculation
   const residualValue = Math.round(base * LEASE_RESIDUAL);
   const depreciation = total - residualValue;
-  const monthlyLease = Math.round(depreciation / LEASE_TERM * 1.08); // 8% money factor
-
-  // Down payment
-  const downPayment = Math.round(total * 0.20);
+  const monthlyLease = depreciation > 0 ? Math.round(depreciation / LEASE_TERM * 1.08) : 0;
 
   logger.debug(`Quote for ${model}: $${total.toLocaleString()} total, $${monthlyFinance}/mo finance`);
+
+  // Determine estimated delivery time
+  const estimatedDelivery = getEstimatedDelivery(model);
 
   return {
     model: modelData?.name || model,
     variant,
     color,
     region: incentives.name,
-    total: Math.max(total, 0),
+    total,
     downPayment,
     monthlyFinance,
     monthlyLease,
     incentivesSavings: totalIncentives,
+    estimatedDelivery,
     breakdown: {
       vehiclePrice: base,
       registration: REGISTRATION_FEE,
@@ -425,9 +467,23 @@ function generateQuote(model, region, variant = 'Premium', color = 'Aurora White
       zeroToSixty: modelData.zeroToSixty,
       seats: modelData.seats,
       cargo: modelData.cargo,
+      topSpeed: modelData.topSpeed,
+      horsepower: modelData.horsepower,
     } : null,
     generatedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Get estimated delivery time based on model and region.
+ */
+function getEstimatedDelivery(model) {
+  const premiumModels = ['YangwangU8', 'YangwangU9', 'HanPerformance', 'SealPerformance'];
+  const commercialModels = ['Commercial', 'eBus', 'eTruck'];
+  
+  if (premiumModels.includes(model)) return '6-8 weeks';
+  if (commercialModels.includes(model)) return '10-12 weeks';
+  return '2-4 weeks';
 }
 
 /**
@@ -466,12 +522,23 @@ function getQuickPrice(model) {
  */
 function getModelsByType(type) {
   return Object.entries(models)
-    .filter(([_, data]) => data.type?.toLowerCase().includes(type.toLowerCase()))
+    .filter(([_, data]) => data.type && data.type.toLowerCase().includes(type.toLowerCase()))
     .map(([key, data]) => ({
       key,
       ...data,
       quickPrice: getQuickPrice(key),
     }));
+}
+
+/**
+ * Get all model types (unique).
+ */
+function getAllModelTypes() {
+  const types = new Set();
+  Object.values(models).forEach(model => {
+    if (model.type) types.add(model.type);
+  });
+  return Array.from(types).sort();
 }
 
 /**
@@ -481,7 +548,9 @@ function getComparableModels(model, count = 3) {
   const modelData = models[model];
   if (!modelData) return [];
   
-  const sameType = getModelsByType(modelData.type.split(' ').pop());
+  const modelType = modelData.type.split(' ').pop();
+  const sameType = getModelsByType(modelType);
+  
   return sameType
     .filter(m => m.key !== model)
     .slice(0, count)
@@ -491,6 +560,7 @@ function getComparableModels(model, count = 3) {
       price: m.basePrice,
       type: m.type,
       range: m.range,
+      zeroToSixty: m.zeroToSixty,
     }));
 }
 
@@ -498,12 +568,14 @@ function getComparableModels(model, count = 3) {
  * Search models by keyword.
  */
 function searchModels(query) {
+  if (!query || typeof query !== 'string') return [];
+  
   const q = query.toLowerCase();
   return Object.entries(models)
     .filter(([key, data]) => 
       key.toLowerCase().includes(q) ||
-      data.name.toLowerCase().includes(q) ||
-      data.type.toLowerCase().includes(q)
+      (data.name && data.name.toLowerCase().includes(q)) ||
+      (data.type && data.type.toLowerCase().includes(q))
     )
     .map(([key, data]) => ({
       key,
@@ -527,23 +599,104 @@ function compareModels(model1, model2) {
   const m2 = models[model2];
   if (!m1 || !m2) return null;
 
+  const priceDiff = m1.basePrice - m2.basePrice;
+  const priceDiffFormatted = priceDiff !== 0 
+    ? `$${Math.abs(priceDiff).toLocaleString()} ${priceDiff > 0 ? 'more' : 'less'}`
+    : 'Same price';
+
   return {
     model1: { key: model1, ...m1 },
     model2: { key: model2, ...m2 },
-    priceDiff: m1.basePrice - m2.basePrice,
-    priceDiffFormatted: `$${Math.abs(m1.basePrice - m2.basePrice).toLocaleString()} ${m1.basePrice > m2.basePrice ? 'more' : 'less'}`,
+    priceDiff,
+    priceDiffFormatted,
+    comparisons: {
+      price: { model1: m1.basePrice, model2: m2.basePrice, diff: priceDiffFormatted },
+      range: { model1: m1.range, model2: m2.range },
+      zeroToSixty: { model1: m1.zeroToSixty, model2: m2.zeroToSixty },
+      battery: { model1: m1.battery, model2: m2.battery },
+    },
+  };
+}
+
+/**
+ * Get model details by name/key.
+ */
+function getModel(modelKey) {
+  const model = models[modelKey];
+  if (!model) return null;
+  
+  return {
+    key: modelKey,
+    ...model,
+    quickPrice: getQuickPrice(modelKey),
+  };
+}
+
+/**
+ * Get all models with optional filtering.
+ */
+function getAllModels(filter = null) {
+  let results = Object.entries(models).map(([key, data]) => ({
+    key,
+    ...data,
+    quickPrice: getQuickPrice(key),
+  }));
+  
+  if (filter === 'affordable') {
+    results = results.filter(m => m.basePrice <= 40000);
+  } else if (filter === 'luxury') {
+    results = results.filter(m => m.basePrice >= 60000);
+  } else if (filter === 'suv') {
+    results = results.filter(m => m.type && m.type.toLowerCase().includes('suv'));
+  }
+  
+  return results;
+}
+
+/**
+ * Calculate total cost including all fees and taxes.
+ */
+function calculateTotalCost(model, region) {
+  const quote = generateQuote(model, region);
+  if (!quote) return null;
+  
+  return {
+    basePrice: quote.breakdown.vehiclePrice,
+    fees: quote.breakdown.registration + quote.breakdown.delivery + quote.breakdown.docFee,
+    tax: quote.breakdown.tax,
+    incentives: quote.incentivesSavings,
+    total: quote.total,
+    monthlyFinance: quote.monthlyFinance,
+    monthlyLease: quote.monthlyLease,
   };
 }
 
 module.exports = {
+  // Data exports
   models,
   regionIncentives,
+  
+  // Quote generation
   generateQuote,
   getIncentivesText,
   getQuickPrice,
+  calculateTotalCost,
+  getEstimatedDelivery,
+  
+  // Model queries
+  getModel,
+  getAllModels,
   getModelsByType,
+  getAllModelTypes,
   getComparableModels,
   searchModels,
-  getRegions,
   compareModels,
+  
+  // Region queries
+  getRegions,
+  
+  // Constants
+  FINANCE_TERM,
+  LEASE_TERM,
+  TAX_RATE,
 };
