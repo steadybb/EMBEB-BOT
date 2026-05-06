@@ -10,13 +10,13 @@ const {
   TextInputStyle,
 } = require('discord.js');
 
-const { isAdmin } = require('../utils/permissions');
+const { isAdmin, isStaffOrAbove } = require('../utils/permissions');
 const logger = require('../utils/logger');
 const bydEmbeds = require('../modules/bydEmbeds');
-const { getUserState, updateUserState } = require('../utils/stateManager');
+const { getUserState, updateUserState, addLeadScore } = require('../utils/stateManager');
 const { generateQuote, models, regionIncentives } = require('../utils/bydData');
 const { getCalendarPicker, getTimePicker } = require('../utils/calendar');
-const { getAutoPostStats } = require('../schedulers/autoPost');
+const { getAutoPostStats, postAutoContent } = require('../schedulers/autoPost');
 const { handleCarGiveawayButton, handleCarGiveawayModal } = require('../commands/cargiveaway');
 const { getApiStats } = require('../utils/openai');
 const {
@@ -29,6 +29,7 @@ const {
   getUserOpenTickets,
   setGiveawayPingRole,
   getGiveawayPingRole,
+  pool,
 } = require('../utils/database');
 
 // ========== SOCIAL PROOF & URGENCY LIBRARY ==========
@@ -37,7 +38,9 @@ const testimonials = [
   "“ATTO 3's Blade Battery gave my family real peace of mind.” – Carlos, TX",
   "“Free home charger? BYD really cares.” – Luisa, NY",
   "“0‑60 in 3.8s – the Han Performance is pure adrenaline.” – Felipe, FL",
-  "“Best EV decision I ever made. And I saved thousands.” – Ahmed, CO"
+  "“Best EV decision I ever made. And I saved thousands.” – Ahmed, CO",
+  "“The Yangwang U8 is absolutely unreal – worth every penny.” – James, CA",
+  "“BYD’s customer service blew me away. Real humans who care.” – Sarah, NY"
 ];
 
 const urgencyPhrases = [
@@ -45,10 +48,12 @@ const urgencyPhrases = [
   "🔥 Launch edition models – limited inventory!",
   "⏳ EV tax credits may phase out – lock yours now.",
   "🎁 Free charger installation ends June 30.",
-  "📉 0.99% financing – last 10 cars at this rate."
+  "📉 0.99% financing – last 10 cars at this rate.",
+  "🏆 BYD just won 'EV of the Year' – demand is surging!",
+  "💨 Spring delivery slots filling fast – order this week!"
 ];
 
-const advisorNames = ["Carlos", "Marina", "Rafael", "Luciana", "Ahmed"];
+const advisorNames = ["Carlos", "Marina", "Rafael", "Luciana", "Ahmed", "James", "Sarah"];
 
 function getRandomItem(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -92,7 +97,7 @@ module.exports = (client) => {
       return;
     }
 
-    // Modals (Trade‑in + Admin + Car Giveaway)
+    // Modals
     if (interaction.isModalSubmit()) {
       if (interaction.customId === 'cargiveaway_entry_modal') {
         return handleCarGiveawayModal(interaction);
@@ -116,6 +121,7 @@ async function handleButton(interaction, client) {
   if (customId === 'welcome_model_seal') return selectModel(interaction, 'Seal');
   if (customId === 'welcome_model_atto3') return selectModel(interaction, 'ATTO 3');
   if (customId === 'welcome_model_han') return selectModel(interaction, 'Han');
+  if (customId === 'welcome_model_yangwang') return selectModel(interaction, 'Yangwang U8');
   if (customId === 'welcome_model_commercial') return selectModel(interaction, 'Commercial');
   if (customId === 'welcome_model_notsure') return handleNotSure(interaction);
 
@@ -123,9 +129,13 @@ async function handleButton(interaction, client) {
   if (customId === 'action_quote') return startQuoteFlow(interaction, state.selectedModel);
   if (customId === 'action_testdrive') return startTestDriveFlow(interaction, state.selectedModel);
   if (customId === 'action_tradein') return startTradeInFlow(interaction, state.selectedModel);
+  if (customId === 'action_incentives') return sendIncentivesInfo(interaction, state.selectedModel);
+  if (customId === 'action_compare') return sendCompareInfo(interaction, state.selectedModel);
+  if (customId === 'action_specs') return sendSpecsInfo(interaction, state.selectedModel);
 
   if (customId === 'quote_book_testdrive') return startTestDriveFlow(interaction, state.selectedModel);
   if (customId === 'quote_chat_advisors') return transferToAdvisor(interaction);
+  if (customId === 'quote_financing') return sendFinancingInfo(interaction, state.selectedModel);
 
   if (customId === 'td_showroom') return askForDateTime(interaction, 'showroom');
   if (customId === 'td_home') return askForDateTime(interaction, 'home');
@@ -151,7 +161,7 @@ async function handleButton(interaction, client) {
   if (customId === 'close_ticket') return closeTicketHandler(interaction, client);
 
   // ============================================
-  // ADMIN DASHBOARD BUTTONS (FULL INTEGRATION)
+  // ADMIN DASHBOARD BUTTONS
   // ============================================
   if (customId === 'admin_verify_menu') return adminVerifyMenu(interaction);
   if (customId === 'admin_ticket_menu') return adminTicketMenu(interaction);
@@ -173,15 +183,17 @@ async function handleButton(interaction, client) {
   if (customId === 'admin_lobby_set_webhook') return adminLobbySetWebhook(interaction);
   if (customId === 'admin_lobby_set_personas') return adminLobbySetPersonas(interaction);
   if (customId === 'admin_giveaway_set_pingrole') return adminGiveawaySetPingRole(interaction);
-  
-  // New admin buttons for stats and test
   if (customId === 'admin_stats_detail') return adminStatsDetail(interaction);
   if (customId === 'admin_test_autopost') return adminTestAutoPost(interaction);
+  if (customId === 'admin_pull_all_leads') return adminPullAllLeads(interaction);
+  if (customId === 'admin_pull_active_leads') return adminPullActiveLeads(interaction);
 
-// Car giveaway entry management buttons
+  // Car giveaway entry management buttons
   if (customId.startsWith('verify_entry_')) return handleVerifyEntry(interaction);
   if (customId.startsWith('contact_entry_')) return handleContactEntry(interaction);
   if (customId.startsWith('disqualify_entry_')) return handleDisqualifyEntry(interaction);
+  if (customId.startsWith('verified_')) return; // Already verified, ignore
+  if (customId.startsWith('disqualified_')) return; // Already disqualified, ignore
 
   logger.warn(`Unknown button customId: ${customId}`);
   await interaction.reply({ content: '❓ Unknown option. Use the buttons provided.', ephemeral: true });
@@ -234,11 +246,13 @@ async function handleSelectMenu(interaction, client) {
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('quote_book_testdrive').setLabel('🗓️ Book a Test Drive').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('quote_chat_advisors').setLabel('💬 Chat With an Advisor').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('quote_chat_advisors').setLabel('💬 Chat With an Advisor').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('quote_financing').setLabel('💰 Financing Options').setStyle(ButtonStyle.Success)
     );
 
     await interaction.update({ embeds: [embed], components: [row] });
     await updateUserState(userId, { step: null });
+    await addLeadScore(userId, 'quote_viewed', user.username);
     return;
   }
 
@@ -256,11 +270,12 @@ async function handleSelectMenu(interaction, client) {
   if (customId.startsWith('calendar_time_select_')) {
     const time = values[0];
     const date = customId.replace('calendar_time_select_', '');
-    const state = await getUserState(userId, user.username);
-    const { locationType } = state.tempData || {};
+    const currentState = await getUserState(userId, user.username);
+    const { locationType } = currentState.tempData || {};
     await confirmTestDrive(interaction, client, date, time, locationType);
     return;
   }
+  
   // Admin pull leads select menu
   if (customId === 'admin_select_giveaway_leads') {
     const { handleLeadSelect } = require('../commands/admin');
@@ -271,7 +286,7 @@ async function handleSelectMenu(interaction, client) {
   await interaction.reply({ content: '❓ Unknown selection.', ephemeral: true });
 }
 
-// ------------------------- MODAL HANDLERS (Trade‑in + Admin) -------------------------
+// ------------------------- MODAL HANDLERS -------------------------
 async function handleModal(interaction) {
   const { customId, fields, user } = interaction;
   const userId = user.id;
@@ -317,6 +332,7 @@ async function handleModal(interaction) {
       new ButtonBuilder().setCustomId('tradein_condition_needs_repair').setLabel('💥 Needs Repair').setStyle(ButtonStyle.Danger)
     );
     await interaction.reply({ embeds: [embed], components: [row], ephemeral: false });
+    await addLeadScore(userId, 'trade_in_started', user.username);
     return;
   }
 
@@ -427,10 +443,14 @@ async function handleModal(interaction) {
 }
 
 // ============================================
-// NEW ADMIN FUNCTIONS (Stats & Test Post)
+// ADMIN FUNCTIONS
 // ============================================
 
 async function adminStatsDetail(interaction) {
+  if (!isAdmin(interaction.member)) {
+    return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  }
+  
   const autoPostStats = getAutoPostStats();
   const apiStats = getApiStats();
   
@@ -535,7 +555,6 @@ async function adminStatsDetail(interaction) {
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('↩️ Back to Dashboard').setStyle(ButtonStyle.Secondary)
   );
 
-  // Check if interaction has been replied/deferred
   if (interaction.deferred || interaction.replied) {
     await interaction.editReply({ embeds: [statsEmbed], components: [row] });
   } else {
@@ -544,9 +563,11 @@ async function adminStatsDetail(interaction) {
 }
 
 async function adminTestAutoPost(interaction) {
-  await interaction.deferReply({ ephemeral: true });
+  if (!isAdmin(interaction.member)) {
+    return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  }
   
-  const { postAutoContent } = require('../schedulers/autoPost');
+  await interaction.deferReply({ ephemeral: true });
   
   try {
     logger.info(`Admin ${interaction.user.tag} triggered test auto post`);
@@ -571,6 +592,87 @@ async function adminTestAutoPost(interaction) {
       ephemeral: true 
     });
   }
+}
+
+async function adminPullAllLeads(interaction) {
+  if (!isAdmin(interaction.member)) {
+    return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  }
+  
+  await interaction.deferReply({ ephemeral: true });
+  const guildId = interaction.guildId;
+
+  const res = await pool.query(
+    `SELECT cge.*, cg.car_model, cg.car_year, cg.msrp, cg.message_id, cg.ended
+     FROM car_giveaway_entries cge
+     JOIN car_giveaways cg ON cge.giveaway_id = cg.id
+     WHERE cg.guild_id = $1
+     ORDER BY cge.entered_at DESC
+     LIMIT 100`,
+    [guildId]
+  );
+  const entries = res.rows;
+
+  if (entries.length === 0) {
+    return interaction.editReply({ content: '📭 No giveaway leads found in this server.' });
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle('📋 All Giveaway Leads')
+    .setDescription(`Total entries: **${entries.length}**`)
+    .setColor('#FFD700')
+    .setTimestamp();
+
+  const grouped = {};
+  for (const e of entries) {
+    const key = `${e.car_year} BYD ${e.car_model}`;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(e);
+  }
+
+  for (const [giveawayName, leads] of Object.entries(grouped)) {
+    embed.addFields({
+      name: `${giveawayName} (${leads.length} leads)`,
+      value: leads.slice(0, 10).map((l, i) => `**${i + 1}.** <@${l.user_id}> | 📧 ${l.user_email || 'N/A'} | 📱 ${l.user_phone || 'N/A'}`).join('\n') + (leads.length > 10 ? `\n*...and ${leads.length - 10} more*` : ''),
+      inline: false
+    });
+  }
+
+  let csv = 'Giveaway,User ID,Email,Phone,Entered At\n';
+  for (const e of entries) {
+    csv += `"${e.car_year} BYD ${e.car_model}",${e.user_id},${e.user_email || ''},${e.user_phone || ''},${e.entered_at}\n`;
+  }
+
+  await interaction.editReply({ embeds: [embed] });
+  await interaction.followUp({ content: '📎 **CSV Export:**', files: [{ name: `all-leads-${Date.now()}.csv`, attachment: Buffer.from(csv) }], ephemeral: true });
+}
+
+async function adminPullActiveLeads(interaction) {
+  if (!isAdmin(interaction.member)) {
+    return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  }
+  
+  await interaction.deferReply({ ephemeral: true });
+  const guildId = interaction.guildId;
+
+  const gwRes = await pool.query('SELECT * FROM car_giveaways WHERE guild_id = $1 AND ended = false ORDER BY end_time ASC', [guildId]);
+  const giveaways = gwRes.rows;
+
+  if (giveaways.length === 0) {
+    return interaction.editReply({ content: '📭 No active giveaways in this server.' });
+  }
+
+  const selectMenu = new StringSelectMenuBuilder()
+    .setCustomId('admin_select_giveaway_leads')
+    .setPlaceholder('Select a giveaway to pull leads')
+    .addOptions(giveaways.slice(0, 25).map(gw => ({
+      label: `${gw.car_year} BYD ${gw.car_model}`,
+      description: `Ends: ${new Date(gw.end_time).toLocaleDateString()}`,
+      value: gw.id.toString()
+    })));
+
+  const row = new ActionRowBuilder().addComponents(selectMenu);
+  await interaction.editReply({ content: '📋 **Select a giveaway to export leads:**', components: [row] });
 }
 
 // ------------------------- VERIFICATION & TICKET FUNCTIONS -------------------------
@@ -670,9 +772,9 @@ async function closeTicketHandler(interaction, client) {
   const config = await getGuildConfig(interaction.guildId);
   const staffRoleId = config.staff_role_id;
   const isStaff = staffRoleId && interaction.member.roles.cache.has(staffRoleId);
-  const isAdmin = interaction.member.permissions.has('Administrator');
+  const isAdminUser = interaction.member.permissions.has('Administrator');
 
-  if (!isStaff && !isAdmin) {
+  if (!isStaff && !isAdminUser) {
     return interaction.reply({ content: '❌ Only staff members or admins can close tickets.', ephemeral: true });
   }
 
@@ -696,6 +798,8 @@ async function closeTicketHandler(interaction, client) {
 
 // ------------------------- ADMIN DASHBOARD INTERFACE -------------------------
 async function adminVerifyMenu(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const embed = new EmbedBuilder()
     .setTitle('✅ Verification Configuration')
     .setDescription('What would you like to do?')
@@ -710,6 +814,8 @@ async function adminVerifyMenu(interaction) {
 }
 
 async function adminTicketMenu(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const embed = new EmbedBuilder()
     .setTitle('🎫 Ticket System Configuration')
     .setDescription('What would you like to do?')
@@ -725,10 +831,11 @@ async function adminTicketMenu(interaction) {
 }
 
 async function adminRefresh(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const guildId = interaction.guildId;
   const config = await getGuildConfig(guildId);
   
-  // Get stats
   let autoPostStats = null;
   let apiStats = null;
   try {
@@ -738,46 +845,18 @@ async function adminRefresh(interaction) {
     logger.debug('Stats not available:', err.message);
   }
 
-  const verifyRole = config.verify_role_id ? `<@&${config.verify_role_id}>` : '❌ Not set';
-  const ticketCategory = config.ticket_category_id ? `<#${config.ticket_category_id}>` : '❌ Not set';
-  const staffRole = config.staff_role_id ? `<@&${config.staff_role_id}>` : '❌ Not set';
-  const logsChannel = config.ticket_logs_channel_id ? `<#${config.ticket_logs_channel_id}>` : '❌ Not set';
-  const autoPostEnabled = config.auto_post_enabled ? '🟢 Enabled' : '🔴 Disabled';
-  const autoPostChannels = config.auto_post_channels?.length ? config.auto_post_channels.map(id => `<#${id}>`).join(', ') : 'None';
-  const lobbyStatus = config.lobby_chatter_enabled ? '🟢 Enabled' : '🔴 Disabled';
-  const lobbyWebhook = config.lobby_webhook_url ? '✅ Set' : '❌ Not set';
-  const giveawayPingRole = config.giveaway_ping_role_id ? `<@&${config.giveaway_ping_role_id}>` : '❌ Not set';
-
   const embed = new EmbedBuilder()
     .setTitle('🎛️ BYD Bot Admin Dashboard')
     .setDescription('Configuration refreshed.')
     .setColor('#00BFFF')
     .addFields(
-      { name: '✅ Verification', value: `**Status:** ${config.verify_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Role:** ${verifyRole}`, inline: true },
-      { name: '🎫 Ticket System', value: `**Category:** ${ticketCategory}\n**Staff Role:** ${staffRole}\n**Logs Channel:** ${logsChannel}`, inline: true },
-      { name: '🤖 Auto Poster', value: getAutoPostFieldValue(config, autoPostChannels, autoPostStats), inline: true },
-      { name: '💬 Lobby Chatter', value: `**Status:** ${lobbyStatus}\n**Webhook:** ${lobbyWebhook}`, inline: true },
-      { name: '🎁 Giveaways', value: `**Ping Role:** ${giveawayPingRole}\n**Commands:** \`/giveaway\` \`/cargiveaway\``, inline: true }
+      { name: '✅ Verification', value: `**Status:** ${config.verify_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Role:** ${config.verify_role_id ? `<@&${config.verify_role_id}>` : '❌ Not set'}`, inline: true },
+      { name: '🎫 Ticket System', value: `**Category:** ${config.ticket_category_id ? `<#${config.ticket_category_id}>` : '❌ Not set'}\n**Staff Role:** ${config.staff_role_id ? `<@&${config.staff_role_id}>` : '❌ Not set'}\n**Logs Channel:** ${config.ticket_logs_channel_id ? `<#${config.ticket_logs_channel_id}>` : '❌ Not set'}`, inline: true },
+      { name: '🤖 Auto Poster', value: `**Status:** ${config.auto_post_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Total Posts:** ${autoPostStats?.totalPosts || 0}\n**Success Rate:** ${autoPostStats?.successRate || 'N/A'}`, inline: true },
+      { name: '💬 Lobby Chatter', value: `**Status:** ${config.lobby_chatter_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Webhook:** ${config.lobby_webhook_url ? '✅ Set' : '❌ Not set'}`, inline: true },
+      { name: '🎁 Giveaways', value: `**Ping Role:** ${config.giveaway_ping_role_id ? `<@&${config.giveaway_ping_role_id}>` : '❌ Not set'}`, inline: true }
     )
     .setTimestamp();
-
-  // Add stats if available
-  if (autoPostStats && autoPostStats.totalPosts > 0) {
-    embed.addFields({
-      name: '📊 Auto Poster Statistics',
-      value: getStatsFieldValue(autoPostStats, apiStats),
-      inline: false
-    });
-  }
-
-  // Add health status
-  if (apiStats) {
-    embed.addFields({
-      name: '🏥 System Health',
-      value: getHealthStatus(apiStats),
-      inline: false
-    });
-  }
 
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('admin_verify_menu').setLabel('✅ Verification').setStyle(ButtonStyle.Primary),
@@ -799,87 +878,10 @@ async function adminRefresh(interaction) {
   await interaction.update({ embeds: [embed], components: [row1, row2, row3, row4] });
 }
 
-// ============================================
-// STATS HELPER FUNCTIONS
-// ============================================
-function getAutoPostFieldValue(config, autoPostChannels, autoPostStats) {
-  let value = `**Status:** ${config.auto_post_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n`;
-  value += `**Channels:** ${autoPostChannels}\n`;
-  value += `**Interval:** Every ${config.auto_post_interval_hours || 2} hours\n`;
-  value += `**Mode:** ${process.env.AUTO_POST_ALL_CHANNELS === 'true' ? 'All channels' : 'Round-robin'}\n`;
-  
-  if (autoPostStats && autoPostStats.totalPosts > 0) {
-    value += `**Total Posts:** ${autoPostStats.totalPosts}\n`;
-    value += `**Success Rate:** ${autoPostStats.successRate}\n`;
-    value += `**API/Fallback:** ${autoPostStats.apiPosts || 0}/${autoPostStats.fallbackPosts || 0}`;
-  }
-  
-  return value;
-}
-
-function getStatsFieldValue(autoPostStats, apiStats) {
-  let value = '';
-  
-  if (autoPostStats) {
-    value += `**Uptime:** ${autoPostStats.uptime}\n`;
-    value += `**Total Posts:** ${autoPostStats.totalPosts}\n`;
-    value += `**Successful:** ${autoPostStats.successfulPosts} | **Failed:** ${autoPostStats.failedPosts}\n`;
-    value += `**Success Rate:** ${autoPostStats.successRate}\n`;
-    
-    if (autoPostStats.apiVsFallback && autoPostStats.apiVsFallback !== 'N/A') {
-      value += `**Source Split:** ${autoPostStats.apiVsFallback}\n`;
-    }
-    
-    if (autoPostStats.lastPostTime) {
-      const lastPost = new Date(autoPostStats.lastPostTime);
-      const unixTimestamp = Math.floor(lastPost.getTime() / 1000);
-      value += `**Last Post:** <t:${unixTimestamp}:R>\n`;
-    }
-  }
-  
-  if (apiStats) {
-    value += `\n**API Calls:** ${apiStats.totalRequests}\n`;
-    value += `**Fallback Used:** ${apiStats.fallbackUsed || 0} times\n`;
-    value += `**Fallback Available:** ${apiStats.fallbackPostsAvailable || 0} posts`;
-  }
-  
-  return value || 'No stats available yet';
-}
-
-function getHealthStatus(apiStats) {
-  let status = '';
-  
-  if (!process.env.OPENROUTER_API_KEY) {
-    status += '⚠️ **API Key:** Not set (using fallback only)\n';
-  } else {
-    const successRate = apiStats.totalRequests > 0 
-      ? (apiStats.successfulRequests / apiStats.totalRequests) * 100 
-      : 100;
-    
-    if (apiStats.totalRequests === 0) {
-      status += '⚪ **API:** No requests yet\n';
-    } else if (successRate >= 90) {
-      status += '🟢 **API:** Healthy\n';
-    } else if (successRate >= 50) {
-      status += '🟡 **API:** Degraded\n';
-    } else {
-      status += '🔴 **API:** Failing\n';
-    }
-  }
-  
-  if (apiStats.fallbackPostsAvailable > 0) {
-    status += `🟢 **Fallback Content:** ${apiStats.fallbackPostsAvailable} posts ready\n`;
-  }
-  
-  if (apiStats.fallbackPostsWithImages) {
-    status += `🖼️ **Image Assets:** ${apiStats.fallbackPostsWithImages} posts have images`;
-  }
-  
-  return status;
-}
-
 // ----- ADMIN SETTING FUNCTIONS -----
 async function adminSetVerifyRole(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_verify_role')
     .setTitle('Set Verification Role')
@@ -896,14 +898,17 @@ async function adminSetVerifyRole(interaction) {
 }
 
 async function adminToggleVerify(interaction) {
-  const guildId = interaction.guildId;
-  const config = await getGuildConfig(guildId);
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
+  const config = await getGuildConfig(interaction.guildId);
   config.verify_enabled = !config.verify_enabled;
-  await setGuildConfig(guildId, config);
+  await setGuildConfig(interaction.guildId, config);
   await interaction.reply({ content: `✅ Verification ${config.verify_enabled ? 'enabled' : 'disabled'}.`, ephemeral: true });
 }
 
 async function adminPostVerifyPanel(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const config = await getGuildConfig(interaction.guildId);
   if (!config.verify_enabled) {
     return interaction.reply({ content: '❌ Verification system is disabled. Enable it first.', ephemeral: true });
@@ -930,6 +935,8 @@ async function adminPostVerifyPanel(interaction) {
 }
 
 async function adminSetTicketCategory(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_ticket_category')
     .setTitle('Set Ticket Category')
@@ -946,6 +953,8 @@ async function adminSetTicketCategory(interaction) {
 }
 
 async function adminSetTicketStaff(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_ticket_staff')
     .setTitle('Set Staff Role')
@@ -962,6 +971,8 @@ async function adminSetTicketStaff(interaction) {
 }
 
 async function adminSetTicketLogs(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_ticket_logs')
     .setTitle('Set Logs Channel')
@@ -978,6 +989,8 @@ async function adminSetTicketLogs(interaction) {
 }
 
 async function adminPostTicketPanel(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const config = await getGuildConfig(interaction.guildId);
   if (!config.ticket_category_id || !config.staff_role_id) {
     return interaction.reply({ content: '❌ Ticket category and staff role must be set first.', ephemeral: true });
@@ -998,6 +1011,8 @@ async function adminPostTicketPanel(interaction) {
 
 // ----- AUTO POSTER ADMIN FUNCTIONS -----
 async function adminAutopostMenu(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const config = await getGuildConfig(interaction.guildId);
   const channels = config.auto_post_channels?.length ? config.auto_post_channels.map(id => `<#${id}>`).join(', ') : 'None';
   
@@ -1032,6 +1047,8 @@ async function adminAutopostMenu(interaction) {
 }
 
 async function adminAutopostToggle(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const config = await getGuildConfig(interaction.guildId);
   config.auto_post_enabled = !config.auto_post_enabled;
   await setGuildConfig(interaction.guildId, config);
@@ -1039,6 +1056,8 @@ async function adminAutopostToggle(interaction) {
 }
 
 async function adminAutopostSetChannels(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_autopost_channels')
     .setTitle('Set Auto Poster Channels')
@@ -1056,6 +1075,8 @@ async function adminAutopostSetChannels(interaction) {
 }
 
 async function adminAutopostSetInterval(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_autopost_interval')
     .setTitle('Set Posting Interval (hours)')
@@ -1074,6 +1095,8 @@ async function adminAutopostSetInterval(interaction) {
 
 // ----- LOBBY CHATTER ADMIN FUNCTIONS -----
 async function adminLobbyMenu(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const config = await getGuildConfig(interaction.guildId);
   const embed = new EmbedBuilder()
     .setTitle('💬 Lobby Chatter Configuration')
@@ -1093,6 +1116,8 @@ async function adminLobbyMenu(interaction) {
 }
 
 async function adminLobbyToggle(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const config = await getGuildConfig(interaction.guildId);
   config.lobby_chatter_enabled = !config.lobby_chatter_enabled;
   await setGuildConfig(interaction.guildId, config);
@@ -1100,6 +1125,8 @@ async function adminLobbyToggle(interaction) {
 }
 
 async function adminLobbySetWebhook(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_lobby_webhook')
     .setTitle('Set Webhook URL')
@@ -1117,6 +1144,8 @@ async function adminLobbySetWebhook(interaction) {
 }
 
 async function adminLobbySetPersonas(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_lobby_personas')
     .setTitle('Set Personas (JSON array)')
@@ -1135,29 +1164,34 @@ async function adminLobbySetPersonas(interaction) {
 
 // ----- GIVEAWAY ADMIN FUNCTIONS -----
 async function adminGiveawayMenu(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const config = await getGuildConfig(interaction.guildId);
   const embed = new EmbedBuilder()
     .setTitle('🎁 Giveaway Configuration')
     .setDescription(
       `**Ping Role:** ${config.giveaway_ping_role_id ? `<@&${config.giveaway_ping_role_id}>` : '❌ Not set'}\n\n` +
       `**Available Commands:**\n` +
-      `• \`/giveaway start prize:"Prize" duration:24 winners:1\`\n` +
-      `• \`/giveaway end message_id:123\`\n` +
-      `• \`/giveaway reroll message_id:123\`\n\n` +
-      `**Car Giveaway Commands:**\n` +
-      `• \`/cargiveaway start model:Seal shipping:1999 duration:168 winners:1\`\n` +
-      `• \`/cargiveaway end message_id:123\`\n` +
-      `• \`/cargiveaway winner message_id:123 user:@winner\``
+      `• \`/cargiveaway start\` – Start a car giveaway\n` +
+      `• \`/cargiveaway select\` – Select winners\n` +
+      `• \`/cargiveaway paid\` – Mark as paid\n` +
+      `• \`/cargiveaway end\` – End giveaway\n` +
+      `• \`/cargiveaway list\` – List active giveaways\n` +
+      `• \`/cargiveaway leads\` – Export leads`
     )
     .setColor('#FFD700');
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('admin_giveaway_set_pingrole').setLabel('📌 Set Ping Role').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('admin_pull_all_leads').setLabel('📋 All Leads').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('admin_pull_active_leads').setLabel('📋 Active Giveaway Leads').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
   );
   await interaction.update({ embeds: [embed], components: [row] });
 }
 
 async function adminGiveawaySetPingRole(interaction) {
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_giveaway_pingrole')
     .setTitle('Set Giveaway Ping Role')
@@ -1183,8 +1217,8 @@ async function handleVerifyEntry(interaction) {
   const giveawayId = parts[2];
   const userId = parts[3];
   
-  if (!isAdmin(interaction.member)) {
-    return interaction.reply({ content: '❌ Only admins can verify entries.', flags: 64 });
+  if (!isAdmin(interaction.member) && !(await isStaffOrAbove(interaction.member))) {
+    return interaction.reply({ content: '❌ Only admins or staff can verify entries.', ephemeral: true });
   }
   
   const row = new ActionRowBuilder().addComponents(
@@ -1201,11 +1235,11 @@ async function handleContactEntry(interaction) {
   const parts = interaction.customId.split('_');
   const userId = parts[3];
   
-  if (!isAdmin(interaction.member)) {
-    return interaction.reply({ content: '❌ Only admins can contact entrants.', flags: 64 });
+  if (!isAdmin(interaction.member) && !(await isStaffOrAbove(interaction.member))) {
+    return interaction.reply({ content: '❌ Only admins or staff can contact entrants.', ephemeral: true });
   }
   
-  await interaction.reply({ content: `📩 **Contact <@${userId}>:** Use this channel to communicate with them directly.`, flags: 64 });
+  await interaction.reply({ content: `📩 **Contact <@${userId}>:** Use this channel to communicate with them directly.`, ephemeral: true });
 }
 
 async function handleDisqualifyEntry(interaction) {
@@ -1213,8 +1247,8 @@ async function handleDisqualifyEntry(interaction) {
   const giveawayId = parts[2];
   const userId = parts[3];
   
-  if (!isAdmin(interaction.member)) {
-    return interaction.reply({ content: '❌ Only admins can disqualify entries.', flags: 64 });
+  if (!isAdmin(interaction.member) && !(await isStaffOrAbove(interaction.member))) {
+    return interaction.reply({ content: '❌ Only admins or staff can disqualify entries.', ephemeral: true });
   }
   
   const row = new ActionRowBuilder().addComponents(
@@ -1222,23 +1256,28 @@ async function handleDisqualifyEntry(interaction) {
   );
   
   try {
-    const { pool } = require('../utils/database');
     await pool.query('DELETE FROM car_giveaway_entries WHERE giveaway_id = $1 AND user_id = $2', [giveawayId, userId]);
-  } catch {}
+  } catch (err) {
+    logger.error(`Failed to delete entry: ${err.message}`);
+  }
   
   await interaction.update({ content: `❌ **Entry disqualified** by ${interaction.user.tag}`, components: [row] });
   
   try {
     const user = await interaction.client.users.fetch(userId);
     await user.send({ content: `❌ Your entry for giveaway #${giveawayId} has been disqualified. Contact an admin if you believe this is an error.` });
-  } catch {}
+  } catch (err) {
+    logger.debug(`Could not DM disqualified user ${userId}`);
+  }
   
   logger.info(`Entry disqualified for user ${userId} in giveaway ${giveawayId} by ${interaction.user.tag}`);
 }
+
 // ------------------------- CORE BUSINESS FUNCTIONS -------------------------
 async function selectModel(interaction, model) {
   const userId = interaction.user.id;
   await updateUserState(userId, { selectedModel: model, step: 'model_selected' });
+  await addLeadScore(userId, 'model_selected', interaction.user.username);
 
   const advisor = getPersonalAdvisor();
   const testimonial = getRandomItem(testimonials);
@@ -1270,7 +1309,7 @@ async function handleNotSure(interaction) {
   const embed = new EmbedBuilder()
     .setTitle('❓ Let\'s find your perfect BYD – together')
     .setDescription(
-      `Tell me what matters most, and I\'ll match you with the ideal EV.\n\n` +
+      `Tell me what matters most, and I'll match you with the ideal EV.\n\n` +
       `_"${getRandomItem(testimonials)}"_\n\n` +
       `👉 Choose your priority below:`
     )
@@ -1285,6 +1324,68 @@ async function handleNotSure(interaction) {
   await interaction.update({ embeds: [embed], components: [row] });
 }
 
+async function sendBrochure(interaction, model) {
+  if (!model) return interaction.reply({ content: '❓ Please select a BYD model first.', ephemeral: true });
+  await interaction.reply({ content: `📄 **Brochure for BYD ${model}:**\nhttps://byd.com/brochure/${model.toLowerCase().replace(/ /g, '-')}`, ephemeral: true });
+  await addLeadScore(interaction.user.id, 'brochure_requested', interaction.user.username);
+}
+
+async function sendIncentivesInfo(interaction, model) {
+  await interaction.reply({ 
+    content: `💰 **EV Incentives for BYD ${model || 'vehicles'}:**\n\n` +
+      `• **Federal Tax Credit:** Up to $7,500\n` +
+      `• **State Rebates:** Vary by state (CA: $2,500, CO: $5,000, etc.)\n` +
+      `• **Utility Rebates:** Up to $1,500 from local providers\n` +
+      `• **HOV Lane Access:** Available in CA, NY, WA\n\n` +
+      `Use \`/quote\` to see your personalized savings!`, 
+    ephemeral: true 
+  });
+}
+
+async function sendCompareInfo(interaction, model) {
+  await interaction.reply({ 
+    content: `📊 **Compare BYD ${model || 'models'}:**\n\n` +
+      `• **BYD Seal:** 420 mi range, 3.8s 0-60, $39,990\n` +
+      `• **ATTO 3:** 380 mi range, 5.2s 0-60, $34,990\n` +
+      `• **Han:** 450 mi range, 3.9s 0-60, $59,990\n\n` +
+      `Use \`/compare model1:Seal model2:Han\` for detailed comparison!`, 
+    ephemeral: true 
+  });
+}
+
+async function sendSpecsInfo(interaction, model) {
+  if (!model) return interaction.reply({ content: '❓ Please select a BYD model first.', ephemeral: true });
+  
+  const modelData = require('../utils/bydData').models[model];
+  if (!modelData) {
+    return interaction.reply({ content: `❌ Specs not found for ${model}.`, ephemeral: true });
+  }
+  
+  await interaction.reply({ 
+    content: `📋 **BYD ${model} Specifications:**\n\n` +
+      `• **Price:** Starting at $${modelData.basePrice.toLocaleString()}\n` +
+      `• **Range:** ${modelData.range}\n` +
+      `• **Battery:** ${modelData.battery}\n` +
+      `• **Charging:** ${modelData.charging}\n` +
+      `• **Warranty:** ${modelData.warranty}\n` +
+      `${modelData.zeroToSixty ? `• **0-60:** ${modelData.zeroToSixty}\n` : ''}` +
+      `${modelData.seats ? `• **Seats:** ${modelData.seats}\n` : ''}`, 
+    ephemeral: true 
+  });
+}
+
+async function sendFinancingInfo(interaction, model) {
+  await interaction.reply({ 
+    content: `💰 **Financing Options for BYD ${model || 'vehicles'}:**\n\n` +
+      `• **APR:** As low as 0.99% for qualified buyers\n` +
+      `• **Terms:** 36, 48, or 60 months\n` +
+      `• **Lease:** Starting at $399/month with $3,999 down\n` +
+      `• **BYD Financing:** Special rates for Lead members\n\n` +
+      `Contact an advisor for a personalized quote!`, 
+    ephemeral: true 
+  });
+}
+
 async function startQuoteFlow(interaction, model) {
   if (!model) {
     return interaction.reply({ content: '❓ Please select a BYD model first.', ephemeral: true });
@@ -1293,7 +1394,7 @@ async function startQuoteFlow(interaction, model) {
   await updateUserState(userId, { step: 'awaiting_region' });
   const embed = new EmbedBuilder()
     .setTitle('📍 One last step – where do you drive?')
-    .setDescription(`I\'ll apply your **local EV incentives** to give you the most accurate on‑road price.\n\n_"${getRandomItem(testimonials)}"_\n\nSelect your region below – it takes 10 seconds.`)
+    .setDescription(`I'll apply your **local EV incentives** to give you the most accurate on‑road price.\n\n_"${getRandomItem(testimonials)}"_\n\nSelect your region below – it takes 10 seconds.`)
     .setColor('#3498DB');
   const selectMenu = new StringSelectMenuBuilder()
     .setCustomId('region_select')
@@ -1302,7 +1403,8 @@ async function startQuoteFlow(interaction, model) {
       { label: 'California', value: 'California' }, { label: 'Texas', value: 'Texas' },
       { label: 'New York', value: 'New York' }, { label: 'Florida', value: 'Florida' },
       { label: 'Colorado', value: 'Colorado' }, { label: 'New Jersey', value: 'New Jersey' },
-      { label: 'Washington', value: 'Washington' },
+      { label: 'Washington', value: 'Washington' }, { label: 'Oregon', value: 'Oregon' },
+      { label: 'Massachusetts', value: 'Massachusetts' }, { label: 'Illinois', value: 'Illinois' },
     ]);
   const row = new ActionRowBuilder().addComponents(selectMenu);
   await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
@@ -1315,7 +1417,7 @@ async function startTestDriveFlow(interaction, model) {
   const embed = new EmbedBuilder()
     .setTitle('🚗 Let\'s get you behind the wheel – no pressure.')
     .setDescription(
-      `Choose how you\'d like to experience the BYD ${model}:\n\n` +
+      `Choose how you'd like to experience the BYD ${model}:\n\n` +
       `🏢 **Showroom visit** – full tour, coffee, and expert talk.\n` +
       `🏠 **Home test drive** – we bring the car to your door.\n\n` +
       `_"${getRandomItem(testimonials)}"_\n\n` +
@@ -1389,12 +1491,8 @@ async function confirmTestDrive(interaction, client, date, time, locationType) {
   if (threadChannel) await threadChannel.send({ embeds: [embed] });
   await saveTestDriveBooking(userId, username, date, time, locationType, threadChannel?.id || 'DM_BOOKING');
   await updateUserState(userId, { step: 'test_drive_booked', tempData: {} });
+  await addLeadScore(userId, 'test_drive_booked', username);
   logger.success(`🚗 Test drive booked: ${username} on ${date} at ${time} (${locationType})`);
-}
-
-async function sendBrochure(interaction, model) {
-  if (!model) return interaction.reply({ content: '❓ Please select a BYD model first.', ephemeral: true });
-  await interaction.reply({ content: `📄 Brochure for BYD ${model}: https://byd.com/brochure/${model.toLowerCase()}`, ephemeral: true });
 }
 
 async function transferToAdvisor(interaction) {
@@ -1407,20 +1505,25 @@ async function setTradeCondition(interaction, condition) {
   const { makeModel, odometer } = state.tempData || {};
   await interaction.reply({ content: `✅ Your ${makeModel || 'vehicle'} with ${odometer || 'N/A'} miles is rated **${condition}**. Estimated trade‑in: $${Math.floor(Math.random() * 50000 + 50000).toLocaleString()}. A formal offer will be sent shortly.`, ephemeral: true });
   await updateUserState(userId, { step: null, tempData: {} });
+  await addLeadScore(userId, 'trade_in_completed', interaction.user.username);
 }
 
 async function recommendAffordability(interaction) {
-  await interaction.reply({ content: '💸 **Best value picks:**\n• **Seagull** – $19,990 (city EV)\n• **Dolphin** – $29,990 (hatch)\n• **Yuan Plus** – $37,990 (crossover)\n\nWant a quote on any of these?' });
+  await interaction.reply({ content: '💸 **Best value picks:**\n• **Seagull** – $19,990 (city EV)\n• **Dolphin** – $29,990 (hatch)\n• **Yuan Plus** – $37,990 (crossover)\n\nWant a quote on any of these?', ephemeral: true });
 }
+
 async function recommendRange(interaction) {
-  await interaction.reply({ content: '⚡ **Longest range:**\n• **Seal** – 350+ miles\n• **Tang** – 320 miles (3‑row SUV)\n• **Han Performance** – 310 miles\n\nWhich one catches your eye?' });
+  await interaction.reply({ content: '⚡ **Longest range:**\n• **Seal** – 420 miles\n• **Han** – 450 miles\n• **Tang** – 390 miles (3‑row SUV)\n\nWhich one catches your eye?', ephemeral: true });
 }
+
 async function recommendFamily(interaction) {
-  await interaction.reply({ content: '👨‍👩‍👧‍👦 **Family‑friendly BYDs:**\n• **ATTO 3** – compact SUV, $34,990*\n• **Tang** – 3‑row midsize, $49,990*\n• **Song Plus** – spacious family SUV, $42,990*\n\n_*Before EV credits._ Would you like a safety brochure or a test drive?' });
+  await interaction.reply({ content: '👨‍👩‍👧‍👦 **Family‑friendly BYDs:**\n• **ATTO 3** – compact SUV, $34,990*\n• **Tang** – 3‑row midsize, $49,990*\n• **Song Plus** – spacious family SUV, $42,990*\n\n_*Before EV credits._ Would you like a safety brochure or a test drive?', ephemeral: true });
 }
+
 async function recommendCity(interaction) {
-  await interaction.reply({ content: '🏙️ **Perfect for city driving:**\n• **Seagull** – ultra‑compact, $19,990\n• **Dolphin** – nimble hatch, $29,990\n• **Yuan Plus** – crossover with parking assist, $37,990\n\nAll come with parking sensors and 360° camera. Want to see city range figures?' });
+  await interaction.reply({ content: '🏙️ **Perfect for city driving:**\n• **Seagull** – ultra‑compact, $19,990\n• **Dolphin** – nimble hatch, $29,990\n• **Yuan Plus** – crossover with parking assist, $37,990\n\nAll come with parking sensors and 360° camera. Want to see city range figures?', ephemeral: true });
 }
+
 async function handleFleet(interaction) {
-  await interaction.reply({ content: '🚛 A commercial sales advisor will contact you soon. Please share your fleet size and use case in the thread.' });
+  await interaction.reply({ content: '🚛 A commercial sales advisor will contact you soon. Please share your fleet size and use case in the thread.', ephemeral: true });
 }
