@@ -112,18 +112,18 @@ module.exports = {
     )
     .addSubcommand(sub => 
       sub.setName('end')
-        .setDescription('End giveaway (winners must be selected manually with /cargiveaway select)')
+        .setDescription('End giveaway entry period (winners can still be selected)')
         .addStringOption(opt => opt.setName('message_id').setDescription('Message ID').setRequired(true))
     )
     .addSubcommand(sub => 
       sub.setName('select')
-        .setDescription('👑 Select a winner manually (admin only)')
+        .setDescription('👑 Select a winner manually (can be done ANYTIME - even before deadline)')
         .addStringOption(opt => opt.setName('message_id').setDescription('Giveaway message ID').setRequired(true))
         .addUserOption(opt => opt.setName('user').setDescription('Select winner').setRequired(true))
     )
     .addSubcommand(sub => 
       sub.setName('winners')
-        .setDescription('👑 Select multiple winners at once')
+        .setDescription('👑 Select multiple winners at once (can be done ANYTIME)')
         .addStringOption(opt => opt.setName('message_id').setDescription('Giveaway message ID').setRequired(true))
     )
     .addSubcommand(sub => 
@@ -233,7 +233,7 @@ async function startCarGiveaway(interaction) {
   await leadThread.send({ 
     embeds: [new EmbedBuilder()
       .setTitle(`🎁 BYD ${model} Giveaway - Lead Tracker`)
-      .setDescription(`All entries for the **${year} BYD ${model}** giveaway will appear here.\n\n• **Value:** $${carData.msrp.toLocaleString()}\n• **Winner Cost:** $${totalWinnerCost.toLocaleString()}\n• **Ends:** <t:${Math.floor(endTime / 1000)}:R>\n• **Winners to be selected:** ${winnersCount}\n\n⚠️ Winners must be selected MANUALLY using \`/cargiveaway select\` or \`/cargiveaway winners\``)
+      .setDescription(`All entries for the **${year} BYD ${model}** giveaway will appear here.\n\n• **Value:** $${carData.msrp.toLocaleString()}\n• **Winner Cost:** $${totalWinnerCost.toLocaleString()}\n• **Entry Deadline:** <t:${Math.floor(endTime / 1000)}:R>\n• **Winners to be selected:** ${winnersCount}\n\n✅ **Winners can be selected ANYTIME - even before the deadline!**`)
       .setColor(carData.color || '#FFD700')
       .setTimestamp()
     ] 
@@ -241,7 +241,7 @@ async function startCarGiveaway(interaction) {
 
   const embed = new EmbedBuilder()
     .setTitle('🚗 **OFFICIAL BYD CAR GIVEAWAY!** 🚗')
-    .setDescription(`### 🎁 Win a ${year} BYD ${model}!\n\n### 📊 Vehicle Specs:\n• **MSRP:** $${carData.msrp.toLocaleString()}\n• **Range:** ${carData.range}\n• **Type:** ${carData.type}\n\n### ✨ How to Enter:\nClick **"ENTER GIVEAWAY"** below.\n\n### 📋 Winner Pays:\n• Shipping: $${shippingCost.toLocaleString()}\n• Doc Fee: $${docFee.toLocaleString()}\n• **Total:** $${totalWinnerCost.toLocaleString()}\n\n### ⏰ Entry Deadline:\n<t:${Math.floor(endTime / 1000)}:R>\n\n### 👑 Winners to be selected: **${winnersCount}**\n\n⚠️ Winners will be announced after the entry deadline by admins.\n\n${entryFee > 0 ? `### 💵 Entry Fee: $${entryFee}\n\n` : ''}*18+ with valid driver's license required.*`)
+    .setDescription(`### 🎁 Win a ${year} BYD ${model}!\n\n### 📊 Vehicle Specs:\n• **MSRP:** $${carData.msrp.toLocaleString()}\n• **Range:** ${carData.range}\n• **Type:** ${carData.type}\n\n### ✨ How to Enter:\nClick **"ENTER GIVEAWAY"** below.\n\n### 📋 Winner Pays:\n• Shipping: $${shippingCost.toLocaleString()}\n• Doc Fee: $${docFee.toLocaleString()}\n• **Total:** $${totalWinnerCost.toLocaleString()}\n\n### ⏰ Entry Deadline:\n<t:${Math.floor(endTime / 1000)}:R>\n\n### 👑 Winners to be selected: **${winnersCount}**\n\n🎯 **Winners can be selected ANYTIME - even before the deadline!**\n\n${entryFee > 0 ? `### 💵 Entry Fee: $${entryFee}\n\n` : ''}*18+ with valid driver's license required.*`)
     .setColor(carData.color || '#FFD700')
     .setThumbnail('https://cdn.byd.com/bot/byd-logo.png')
     .setTimestamp(endTime);
@@ -249,7 +249,7 @@ async function startCarGiveaway(interaction) {
   if (imageUrl) embed.setImage(imageUrl);
   
   embed.setFooter({ 
-    text: `Hosted by ${interaction.user.tag} • Winner cost: $${totalWinnerCost.toLocaleString()} • Winners selected manually`, 
+    text: `Hosted by ${interaction.user.tag} • Winner cost: $${totalWinnerCost.toLocaleString()} • Early winner selection enabled!`, 
     iconURL: interaction.user.displayAvatarURL() 
   });
 
@@ -275,14 +275,14 @@ async function startCarGiveaway(interaction) {
   );
 
   await interaction.editReply({ 
-    content: `✅ **BYD ${model} Giveaway Started!**\n\n• Channel: ${targetChannel}\n• Value: $${carData.msrp.toLocaleString()}\n• Duration: ${durationHours}h\n• Winners to select: ${winnersCount}\n• Lead Thread: ${leadThread}\n• Entry Category: ${entryCategory}\n\n⚠️ Remember: Winners must be selected manually after the giveaway ends using \`/cargiveaway select\` or \`/cargiveaway winners\`` 
+    content: `✅ **BYD ${model} Giveaway Started!**\n\n• Channel: ${targetChannel}\n• Value: $${carData.msrp.toLocaleString()}\n• Entry Deadline: ${durationHours}h\n• Winners to select: ${winnersCount}\n• Lead Thread: ${leadThread}\n• Entry Category: ${entryCategory}\n\n✅ **Winners can be selected ANYTIME using \`/cargiveaway select\` or \`/cargiveaway winners\`**` 
   });
   
   logger.success(`🚗 Car giveaway started: BYD ${model} (ID: ${result.rows[0].id}) by ${interaction.user.tag}`);
 }
 
 // ============================================
-// END GIVEAWAY (NO AUTO WINNER SELECTION)
+// END GIVEAWAY ENTRY PERIOD (Stop new entries only)
 // ============================================
 async function endCarGiveaway(interaction) {
   const messageId = interaction.options.getString('message_id');
@@ -297,6 +297,7 @@ async function endCarGiveaway(interaction) {
   
   const entriesRes = await pool.query('SELECT COUNT(*) as count FROM car_giveaway_entries WHERE giveaway_id = $1', [giveaway.id]);
   const entryCount = entriesRes.rows[0]?.count || 0;
+  const hasWinnersSelected = (giveaway.winners || []).length > 0;
   
   await pool.query('UPDATE car_giveaways SET ended = true WHERE id = $1', [giveaway.id]);
   
@@ -304,8 +305,15 @@ async function endCarGiveaway(interaction) {
     const channel = await interaction.client.channels.fetch(giveaway.channel_id);
     const originalMessage = await channel.messages.fetch(giveaway.message_id);
     
+    let statusMessage = `\n\n### ⏰ ENTRY PERIOD ENDED!\n• Total Entries: **${entryCount}**`;
+    if (hasWinnersSelected) {
+      statusMessage += `\n✅ **Winners have already been selected!**`;
+    } else {
+      statusMessage += `\n⚠️ Winners pending selection by admins.`;
+    }
+    
     const updatedEmbed = EmbedBuilder.from(originalMessage.embeds[0])
-      .setDescription(originalMessage.embeds[0].description + `\n\n### ⏰ GIVEAWAY ENDED!\n• Total Entries: **${entryCount}**\n• Winners will be announced soon by admins.`)
+      .setDescription(originalMessage.embeds[0].description + statusMessage)
       .setColor('#FFA500');
     
     await originalMessage.edit({ embeds: [updatedEmbed], components: [] });
@@ -319,21 +327,21 @@ async function endCarGiveaway(interaction) {
       const lt = await interaction.client.channels.fetch(ps.leadThreadId);
       if (lt) {
         await lt.send({ 
-          content: `⏰ **GIVEAWAY ENDED!**\n\n• ${giveaway.car_year} BYD ${giveaway.car_model}\n• Total Entries: ${entryCount}\n• Winners: ${giveaway.winners_count}\n\nUse \`/cargiveaway select\` or \`/cargiveaway winners\` to select winners!` 
+          content: `⏰ **ENTRY PERIOD ENDED!**\n\n• ${giveaway.car_year} BYD ${giveaway.car_model}\n• Total Entries: ${entryCount}\n• Winners Already Selected: ${hasWinnersSelected ? '✅ YES' : '❌ NO'}\n\nUse \`/cargiveaway select\` or \`/cargiveaway winners\` to select winners!` 
         });
       }
     } catch {}
   }
   
   await interaction.editReply({ 
-    content: `✅ **Giveaway Ended!**\n\n• ${giveaway.car_year} BYD ${giveaway.car_model}\n• Total Entries: ${entryCount}\n• Winners to select: ${giveaway.winners_count}\n\nUse \`/cargiveaway select\` to select winners manually or \`/cargiveaway winners\` to select multiple at once.` 
+    content: `✅ **Entry Period Ended!**\n\n• ${giveaway.car_year} BYD ${giveaway.car_model}\n• Total Entries: ${entryCount}\n• Winners Already Selected: ${hasWinnersSelected ? '✅ Yes' : '❌ No'}\n\nUse \`/cargiveaway select\` or \`/cargiveaway winners\` to select winners.` 
   });
   
-  logger.info(`Giveaway ${giveaway.id} ended with ${entryCount} entries. Winners pending selection.`);
+  logger.info(`Giveaway ${giveaway.id} entry period ended with ${entryCount} entries. Winners selected: ${hasWinnersSelected}`);
 }
 
 // ============================================
-// ADMIN SELECT SINGLE WINNER
+// ADMIN SELECT SINGLE WINNER (Can be done ANYTIME!)
 // ============================================
 async function adminSelectWinner(interaction) {
   const messageId = interaction.options.getString('message_id');
@@ -345,30 +353,29 @@ async function adminSelectWinner(interaction) {
     return interaction.reply({ content: '❌ Giveaway not found.', ...EPHEMERAL });
   }
   
-  if (!giveaway.ended) {
-    return interaction.reply({ content: '⚠️ Giveaway has not ended yet. Use `/cargiveaway end` first.', ...EPHEMERAL });
+  // Check if already reached max winners
+  const currentWinners = giveaway.winners || [];
+  if (currentWinners.length >= giveaway.winners_count) {
+    return interaction.reply({ content: `❌ Already selected ${giveaway.winners_count} winner(s). Cannot add more.`, ...EPHEMERAL });
   }
   
+  // Check if user entered the giveaway
   const entryCheck = await pool.query('SELECT * FROM car_giveaway_entries WHERE giveaway_id = $1 AND user_id = $2', [giveaway.id, winnerUser.id]);
   if (entryCheck.rows.length === 0) {
     return interaction.reply({ content: `❌ <@${winnerUser.id}> has not entered this giveaway.`, ...EPHEMERAL });
   }
   
-  const totalCost = giveaway.shipping_cost + giveaway.documentation_fee;
-  const currentWinners = giveaway.winners || [];
-  
+  // Check if already a winner
   if (currentWinners.includes(winnerUser.id)) {
     return interaction.reply({ content: `⚠️ <@${winnerUser.id}> is already a winner.`, ...EPHEMERAL });
   }
   
-  if (currentWinners.length >= giveaway.winners_count) {
-    return interaction.reply({ content: `❌ Already selected ${giveaway.winners_count} winner(s). Cannot add more.`, ...EPHEMERAL });
-  }
-  
+  const totalCost = giveaway.shipping_cost + giveaway.documentation_fee;
   currentWinners.push(winnerUser.id);
   await pool.query('UPDATE car_giveaways SET winners = $2 WHERE id = $1', [giveaway.id, currentWinners]);
   
-  await updateWinnerAnnouncement(interaction, giveaway, currentWinners);
+  const allWinnersSelected = currentWinners.length >= giveaway.winners_count;
+  await updateWinnerAnnouncement(interaction, giveaway, currentWinners, !allWinnersSelected);
   
   const ps = giveaway.payment_status || {};
   if (ps.leadThreadId) {
@@ -382,11 +389,14 @@ async function adminSelectWinner(interaction) {
     } catch {}
   }
   
+  const isEarly = !giveaway.ended;
+  const earlyMessage = isEarly ? "\n\n🎉 **EARLY WINNER!** Winners can be selected before the entry deadline!" : "";
+  
   try {
     await winnerUser.send({ 
       embeds: [new EmbedBuilder()
         .setTitle('🚗 YOU WON A BYD! 🚗')
-        .setDescription(`# 🎉 CONGRATULATIONS!\n\nYou have been selected as a winner of the **${giveaway.car_year} BYD ${giveaway.car_model}** giveaway!\n\n### 💵 Payment Required:\n• Shipping: $${giveaway.shipping_cost.toLocaleString()}\n• Doc Fee: $${giveaway.documentation_fee.toLocaleString()}\n• **Total:** $${totalCost.toLocaleString()}\n\n### ⚠️ You have ${PAYMENT_DEADLINE_HOURS} hours to complete payment.\n\nReply **CLAIM** in this DM to get started with payment!`)
+        .setDescription(`# 🎉 CONGRATULATIONS!\n\nYou have been selected as a winner of the **${giveaway.car_year} BYD ${giveaway.car_model}** giveaway!${earlyMessage}\n\n### 💵 Payment Required:\n• Shipping: $${giveaway.shipping_cost.toLocaleString()}\n• Doc Fee: $${giveaway.documentation_fee.toLocaleString()}\n• **Total:** $${totalCost.toLocaleString()}\n\n### ⚠️ You have ${PAYMENT_DEADLINE_HOURS} hours to complete payment.\n\nReply **CLAIM** in this DM to get started with payment!`)
         .setColor('#00FF00')
         .setTimestamp()
       ] 
@@ -397,8 +407,10 @@ async function adminSelectWinner(interaction) {
   }
   
   const remaining = giveaway.winners_count - currentWinners.length;
+  const earlyNote = isEarly ? "\n\n⚠️ **Note:** Giveaway entry period is still active, but winners have been selected early!" : "";
+  
   await interaction.reply({ 
-    content: `✅ **Winner Selected!**\n\n• Winner: ${winnerUser.tag}\n• Vehicle: ${giveaway.car_year} BYD ${giveaway.car_model}\n• Amount Due: $${totalCost.toLocaleString()}\n• Winner has been DM'd.\n• ${remaining} winner(s) remaining to select.`, 
+    content: `✅ **Winner Selected!**\n\n• Winner: ${winnerUser.tag}\n• Vehicle: ${giveaway.car_year} BYD ${giveaway.car_model}\n• Amount Due: $${totalCost.toLocaleString()}\n• Winner has been DM'd.\n• ${remaining} winner(s) remaining to select.${earlyNote}`, 
     ...EPHEMERAL 
   });
   
@@ -406,7 +418,7 @@ async function adminSelectWinner(interaction) {
 }
 
 // ============================================
-// ADMIN SELECT MULTIPLE WINNERS
+// ADMIN SELECT MULTIPLE WINNERS (Can be done ANYTIME!)
 // ============================================
 async function adminSelectMultipleWinners(interaction) {
   const messageId = interaction.options.getString('message_id');
@@ -417,24 +429,29 @@ async function adminSelectMultipleWinners(interaction) {
     return interaction.reply({ content: '❌ Giveaway not found.', ...EPHEMERAL });
   }
   
-  if (!giveaway.ended) {
-    return interaction.reply({ content: '⚠️ Giveaway has not ended yet. Use `/cargiveaway end` first.', ...EPHEMERAL });
+  const existingWinners = giveaway.winners || [];
+  const winnersNeeded = giveaway.winners_count - existingWinners.length;
+  
+  if (winnersNeeded <= 0) {
+    return interaction.reply({ content: `❌ Already selected ${giveaway.winners_count} winner(s). Cannot add more.`, ...EPHEMERAL });
   }
   
   const entriesRes = await pool.query('SELECT user_id, user_email, user_phone FROM car_giveaway_entries WHERE giveaway_id = $1', [giveaway.id]);
-  const entries = entriesRes.rows;
+  let entries = entriesRes.rows;
+  
+  entries = entries.filter(e => !existingWinners.includes(e.user_id));
   
   if (entries.length === 0) {
-    return interaction.reply({ content: '❌ No entries found.', ...EPHEMERAL });
+    return interaction.reply({ content: '❌ No eligible entries found.', ...EPHEMERAL });
   }
   
   const { StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = require('discord.js');
   
   const selectMenu = new StringSelectMenuBuilder()
     .setCustomId(`select_winners_${giveaway.id}`)
-    .setPlaceholder(`Select ${giveaway.winners_count} winner(s)`)
+    .setPlaceholder(`Select ${winnersNeeded} winner(s)`)
     .setMinValues(1)
-    .setMaxValues(Math.min(giveaway.winners_count, 25));
+    .setMaxValues(Math.min(winnersNeeded, 25));
   
   for (const entry of entries.slice(0, 25)) {
     const user = await interaction.client.users.fetch(entry.user_id).catch(() => null);
@@ -448,9 +465,11 @@ async function adminSelectMultipleWinners(interaction) {
   }
   
   const row = new ActionRowBuilder().addComponents(selectMenu);
+  const isEarly = !giveaway.ended;
+  const earlyNote = isEarly ? "\n\n⚠️ **Note:** Giveaway entry period is still active, but you can select winners early!" : "";
   
   await interaction.reply({
-    content: `🎁 **Select Winners for ${giveaway.car_year} BYD ${giveaway.car_model}**\n\nSelect ${giveaway.winners_count} winner(s) from the dropdown below.`,
+    content: `🎁 **Select Winners for ${giveaway.car_year} BYD ${giveaway.car_model}**\n\nNeed to select ${winnersNeeded} winner(s).${earlyNote}`,
     components: [row],
     ...EPHEMERAL
   });
@@ -461,9 +480,9 @@ async function adminSelectMultipleWinners(interaction) {
   collector.on('collect', async (selectInteraction) => {
     const selectedUserIds = selectInteraction.values;
     
-    if (selectedUserIds.length !== giveaway.winners_count) {
+    if (selectedUserIds.length !== winnersNeeded) {
       await selectInteraction.reply({
-        content: `⚠️ You selected ${selectedUserIds.length} winner(s), but the giveaway requires ${giveaway.winners_count} winner(s). Please run the command again.`,
+        content: `⚠️ You selected ${selectedUserIds.length} winner(s), but need to select ${winnersNeeded} winner(s). Please run the command again.`,
         ephemeral: true
       });
       return;
@@ -474,16 +493,19 @@ async function adminSelectMultipleWinners(interaction) {
     const validWinners = [];
     for (const userId of selectedUserIds) {
       const entryCheck = await pool.query('SELECT * FROM car_giveaway_entries WHERE giveaway_id = $1 AND user_id = $2', [giveaway.id, userId]);
-      if (entryCheck.rows.length > 0) validWinners.push(userId);
+      if (entryCheck.rows.length > 0 && !existingWinners.includes(userId)) {
+        validWinners.push(userId);
+      }
     }
     
-    if (validWinners.length !== giveaway.winners_count) {
-      await interaction.followUp({ content: '❌ Some selected users did not enter the giveaway.', ephemeral: true });
+    if (validWinners.length !== winnersNeeded) {
+      await interaction.followUp({ content: '❌ Some selected users did not enter the giveaway or are already winners.', ephemeral: true });
       return;
     }
     
-    await pool.query('UPDATE car_giveaways SET winners = $2 WHERE id = $1', [giveaway.id, validWinners]);
-    await updateWinnerAnnouncement(interaction, giveaway, validWinners);
+    const allWinners = [...existingWinners, ...validWinners];
+    await pool.query('UPDATE car_giveaways SET winners = $2 WHERE id = $1', [giveaway.id, allWinners]);
+    await updateWinnerAnnouncement(interaction, giveaway, allWinners, false);
     
     const totalCost = giveaway.shipping_cost + giveaway.documentation_fee;
     
@@ -493,7 +515,7 @@ async function adminSelectMultipleWinners(interaction) {
         await user.send({ 
           embeds: [new EmbedBuilder()
             .setTitle('🚗 YOU WON A BYD! 🚗')
-            .setDescription(`# 🎉 CONGRATULATIONS!\n\nYou have been selected as a winner of the **${giveaway.car_year} BYD ${giveaway.car_model}** giveaway!\n\n### 💵 Payment Required:\n• Shipping: $${giveaway.shipping_cost.toLocaleString()}\n• Doc Fee: $${giveaway.documentation_fee.toLocaleString()}\n• **Total:** $${totalCost.toLocaleString()}\n\n### ⚠️ You have ${PAYMENT_DEADLINE_HOURS} hours to complete payment.\n\nReply **CLAIM** in this DM to get started with payment!`)
+            .setDescription(`# 🎉 CONGRATULATIONS!\n\nYou have been selected as a winner of the **${giveaway.car_year} BYD ${giveaway.car_model}** giveaway!${isEarly ? "\n\n🎉 **EARLY WINNER!** Winners can be selected before the entry deadline!" : ""}\n\n### 💵 Payment Required:\n• Shipping: $${giveaway.shipping_cost.toLocaleString()}\n• Doc Fee: $${giveaway.documentation_fee.toLocaleString()}\n• **Total:** $${totalCost.toLocaleString()}\n\n### ⚠️ You have ${PAYMENT_DEADLINE_HOURS} hours to complete payment.\n\nReply **CLAIM** in this DM to get started with payment!`)
             .setColor('#00FF00')
             .setTimestamp()
           ] 
@@ -509,14 +531,14 @@ async function adminSelectMultipleWinners(interaction) {
         const lt = await interaction.client.channels.fetch(ps.leadThreadId);
         if (lt) {
           await lt.send({ 
-            content: `👑 **WINNERS SELECTED!**\n\nWinners for **${giveaway.car_year} BYD ${giveaway.car_model}**:\n${validWinners.map(id => `<@${id}>`).join('\n')}\n\nSelected by ${interaction.user.tag}` 
+            content: `👑 **WINNERS SELECTED!**\n\nWinners for **${giveaway.car_year} BYD ${giveaway.car_model}**:\n${validWinners.map(id => `<@${id}>`).join('\n')}\n\nSelected by ${interaction.user.tag}\n${isEarly ? "\n✅ Selected EARLY - giveaway entry period still active!" : ""}` 
           });
         }
       } catch {}
     }
     
     await interaction.followUp({
-      content: `✅ **${validWinners.length} Winner(s) Selected!**\n\nWinners:\n${validWinners.map(id => `<@${id}>`).join('\n')}\n\nAll winners have been DM'd.`,
+      content: `✅ **${validWinners.length} Winner(s) Selected!**\n\nWinners:\n${validWinners.map(id => `<@${id}>`).join('\n')}\n\nAll winners have been DM'd.\n${isEarly ? "\n⚠️ **Note:** Giveaway entry period is still active, but winners have been selected early!" : ""}`,
       ephemeral: true
     });
     
@@ -533,23 +555,37 @@ async function adminSelectMultipleWinners(interaction) {
 // ============================================
 // UPDATE WINNER ANNOUNCEMENT
 // ============================================
-async function updateWinnerAnnouncement(interaction, giveaway, winners) {
+async function updateWinnerAnnouncement(interaction, giveaway, winners, awaitMoreWinners = false) {
   try {
     const channel = await interaction.client.channels.fetch(giveaway.channel_id);
     const originalMessage = await channel.messages.fetch(giveaway.message_id);
     
     const totalCost = giveaway.shipping_cost + giveaway.documentation_fee;
     const winnersList = winners.map(id => `<@${id}>`).join(', ');
+    const isEarly = !giveaway.ended;
+    
+    let description = `## 🏆 CONGRATULATIONS!\n\n**Prize:** ${giveaway.car_year} BYD ${giveaway.car_model}\n**MSRP:** $${giveaway.msrp.toLocaleString()}\n\n### 👑 Winner${winners.length > 1 ? 's' : ''}:\n${winnersList}\n\n### 📋 Payment Required:\n• Shipping: $${giveaway.shipping_cost.toLocaleString()}\n• Doc Fee: $${giveaway.documentation_fee.toLocaleString()}\n• **Total:** $${totalCost.toLocaleString()}\n\nWinners have been DM'd with payment instructions.`;
+    
+    if (isEarly) {
+      description += `\n\n🎯 **EARLY WINNER SELECTION!** Winners were selected before the entry deadline!`;
+    }
+    
+    if (awaitMoreWinners) {
+      description += `\n\n⏳ **More winners will be announced soon!**`;
+    }
     
     const winnerEmbed = new EmbedBuilder()
       .setTitle(`🚗 BYD CAR GIVEAWAY WINNER${winners.length > 1 ? 'S' : ''}! 🚗`)
-      .setDescription(`## 🏆 CONGRATULATIONS!\n\n**Prize:** ${giveaway.car_year} BYD ${giveaway.car_model}\n**MSRP:** $${giveaway.msrp.toLocaleString()}\n\n### 👑 Winner${winners.length > 1 ? 's' : ''}:\n${winnersList}\n\n### 📋 Payment Required:\n• Shipping: $${giveaway.shipping_cost.toLocaleString()}\n• Doc Fee: $${giveaway.documentation_fee.toLocaleString()}\n• **Total:** $${totalCost.toLocaleString()}\n\nWinners have been DM'd with payment instructions.`)
+      .setDescription(description)
       .setColor('#00FF00')
       .setFooter({ text: `Selected by ${interaction.user.tag} • BYD Official` })
       .setTimestamp();
     
     await originalMessage.edit({ embeds: [winnerEmbed], components: [] });
-    await originalMessage.reply({ content: `🎉 Congratulations ${winnersList}! You won the **${giveaway.car_year} BYD ${giveaway.car_model}**! Check your DMs for payment instructions!` });
+    
+    if (!awaitMoreWinners) {
+      await originalMessage.reply({ content: `🎉 Congratulations ${winnersList}! You won the **${giveaway.car_year} BYD ${giveaway.car_model}**! Check your DMs for payment instructions!` });
+    }
   } catch (err) {
     logger.warn(`Could not update winner announcement: ${err.message}`);
   }
@@ -623,10 +659,11 @@ async function listCarGiveaways(interaction) {
     const countRes = await pool.query('SELECT COUNT(*) as count FROM car_giveaway_entries WHERE giveaway_id = $1', [gw.id]);
     const entryCount = countRes.rows[0]?.count || 0;
     const winnersSelected = (gw.winners || []).length;
+    const hasEarlyWinners = winnersSelected > 0 && !gw.ended;
     
     embed.addFields({ 
-      name: `${gw.car_year} BYD ${gw.car_model}`, 
-      value: `• Value: $${gw.msrp.toLocaleString()}\n• Entries: ${entryCount}\n• Winners: ${winnersSelected}/${gw.winners_count}\n• Ends: <t:${Math.floor(new Date(gw.end_time).getTime() / 1000)}:R>\n• ID: \`${gw.message_id}\``, 
+      name: `${gw.car_year} BYD ${gw.car_model}${hasEarlyWinners ? ' 🎯 (Early Winners Selected!)' : ''}`, 
+      value: `• Value: $${gw.msrp.toLocaleString()}\n• Entries: ${entryCount}\n• Winners: ${winnersSelected}/${gw.winners_count}\n• Entry Deadline: <t:${Math.floor(new Date(gw.end_time).getTime() / 1000)}:R>\n• Status: ${gw.ended ? '✅ Entry Period Ended' : '🟢 Open for Entries'}\n• ID: \`${gw.message_id}\``, 
       inline: true 
     });
   }
@@ -653,10 +690,12 @@ async function listEntries(interaction) {
     return interaction.reply({ content: '❌ No entries yet.', ...EPHEMERAL });
   }
   
+  const winners = giveaway.winners || [];
+  
   const embed = new EmbedBuilder()
     .setTitle(`📋 Entries: ${giveaway.car_year} BYD ${giveaway.car_model}`)
-    .setDescription(`Total: **${entries.length}** entries\n\n${entries.slice(0, 20).map((e, i) => 
-      `**${i + 1}.** <@${e.user_id}>\n📧 ${e.user_email || 'N/A'}\n📱 ${e.user_phone || 'N/A'}\n🕐 <t:${Math.floor(new Date(e.entered_at).getTime() / 1000)}:R>`
+    .setDescription(`Total: **${entries.length}** entries\nWinners Selected: **${winners.length}/${giveaway.winners_count}**\n\n${entries.slice(0, 20).map((e, i) => 
+      `**${i + 1}.** <@${e.user_id}> ${winners.includes(e.user_id) ? '🏆 **WINNER!**' : ''}\n📧 ${e.user_email || 'N/A'}\n📱 ${e.user_phone || 'N/A'}\n🕐 <t:${Math.floor(new Date(e.entered_at).getTime() / 1000)}:R>`
     ).join('\n\n')}${entries.length > 20 ? `\n\n... and ${entries.length - 20} more entries` : ''}`)
     .setColor('#FFD700')
     .setTimestamp();
@@ -665,7 +704,7 @@ async function listEntries(interaction) {
 }
 
 // ============================================
-// EXPORT LEADS (FIXED - no deferReply needed)
+// EXPORT LEADS
 // ============================================
 async function exportLeads(interaction) {
   const messageId = interaction.options.getString('message_id');
@@ -683,14 +722,17 @@ async function exportLeads(interaction) {
     return interaction.reply({ content: '❌ No entries yet.', ...EPHEMERAL });
   }
 
-  let csvData = 'Name,User ID,Email,Phone,Entered At,Is Winner\n';
+  let csvData = 'Name,User ID,Email,Phone,Entered At,Is Winner,Paid\n';
+  const winners = giveaway.winners || [];
+  const paymentStatus = giveaway.payment_status || {};
+  
   for (const e of entries) {
     const user = await interaction.client.users.fetch(e.user_id).catch(() => null);
-    const isWinner = (giveaway.winners || []).includes(e.user_id);
-    csvData += `"${user?.tag || 'Unknown'}","${e.user_id}","${e.user_email || ''}","${e.user_phone || ''}","${e.entered_at}","${isWinner ? 'YES' : 'NO'}"\n`;
+    const isWinner = winners.includes(e.user_id);
+    const isPaid = paymentStatus[e.user_id]?.paid || false;
+    csvData += `"${user?.tag || 'Unknown'}","${e.user_id}","${e.user_email || ''}","${e.user_phone || ''}","${e.entered_at}","${isWinner ? 'YES' : 'NO'}","${isPaid ? 'YES' : 'NO'}"\n`;
   }
 
-  // Direct reply, no defer needed
   await interaction.reply({ 
     content: `📎 CSV export for **${giveaway.car_year} BYD ${giveaway.car_model}** (${entries.length} entries):`, 
     files: [{ name: `entries-${giveaway.car_model.toLowerCase()}-${Date.now()}.csv`, attachment: Buffer.from(csvData) }], 
@@ -711,6 +753,12 @@ async function handleCarGiveawayButton(interaction) {
   
   if (!giveaway) {
     return interaction.reply({ content: '❌ This giveaway has ended.', ...EPHEMERAL });
+  }
+  
+  // Check if max winners already selected
+  const winners = giveaway.winners || [];
+  if (winners.length >= giveaway.winners_count) {
+    return interaction.reply({ content: '❌ All winners have already been selected for this giveaway. Entry closed.', ...EPHEMERAL });
   }
   
   const existing = await pool.query('SELECT * FROM car_giveaway_entries WHERE giveaway_id = $1 AND user_id = $2', [giveaway.id, interaction.user.id]);
@@ -774,6 +822,12 @@ async function handleCarGiveawayModal(interaction) {
     return interaction.editReply({ content: '❌ This giveaway has ended.' });
   }
   
+  // Check if max winners already selected
+  const winners = giveaway.winners || [];
+  if (winners.length >= giveaway.winners_count) {
+    return interaction.editReply({ content: '❌ All winners have already been selected for this giveaway. Entry closed.' });
+  }
+  
   const existing = await pool.query('SELECT * FROM car_giveaway_entries WHERE giveaway_id = $1 AND user_id = $2', [giveaway.id, interaction.user.id]);
   if (existing.rows.length > 0) {
     return interaction.editReply({ content: '✅ You are already entered! Good luck! 🍀' });
@@ -817,7 +871,7 @@ async function handleCarGiveawayModal(interaction) {
   
   const welcomeEmbed = new EmbedBuilder()
     .setTitle('🎁 Giveaway Entry Confirmed!')
-    .setDescription(`Welcome <@${interaction.user.id}>! Your entry has been recorded.\n\n### 📋 Entry Details:\n• **Giveaway:** ${giveaway.car_year} BYD ${giveaway.car_model}\n• **Value:** $${giveaway.msrp.toLocaleString()}\n• **Email:** ${email}\n• **Phone:** ${phone || 'N/A'}\n• **Entry Fee:** $${(giveaway.entry_fee || 0).toLocaleString()}\n\n### ⏰ Entry Deadline:\n<t:${Math.floor(new Date(giveaway.end_time).getTime() / 1000)}:R>\n\n### 📋 What's Next:\n• Winners will be announced after the deadline\n• Admins will select winners manually\n• You will be DM'd if selected\n• Your entry is in the pool for review\n\n🍀 **Good luck!**`)
+    .setDescription(`Welcome <@${interaction.user.id}>! Your entry has been recorded.\n\n### 📋 Entry Details:\n• **Giveaway:** ${giveaway.car_year} BYD ${giveaway.car_model}\n• **Value:** $${giveaway.msrp.toLocaleString()}\n• **Email:** ${email}\n• **Phone:** ${phone || 'N/A'}\n• **Entry Fee:** $${(giveaway.entry_fee || 0).toLocaleString()}\n\n### ⏰ Entry Deadline:\n<t:${Math.floor(new Date(giveaway.end_time).getTime() / 1000)}:R>\n\n### 📋 What's Next:\n• Winners can be selected ANYTIME - even before the deadline!\n• You will be DM'd if selected as a winner\n• Your entry is in the pool for review\n\n🍀 **Good luck!**`)
     .setColor('#FFD700')
     .setThumbnail(interaction.user.displayAvatarURL())
     .setFooter({ text: `Entry #${giveaway.id} • BYD Official Giveaway` })
@@ -852,7 +906,7 @@ async function handleCarGiveawayModal(interaction) {
     await interaction.user.send({ 
       embeds: [new EmbedBuilder()
         .setTitle('✅ Entry Confirmed!')
-        .setDescription(`You're entered to win the **${giveaway.car_year} BYD ${giveaway.car_model}**!\n\n• Value: $${giveaway.msrp.toLocaleString()}\n• Entry Deadline: <t:${Math.floor(new Date(giveaway.end_time).getTime() / 1000)}:R>\n• Winners will be announced after the deadline\n• Your private channel: ${entryChannel}\n\n🍀 Good luck!`)
+        .setDescription(`You're entered to win the **${giveaway.car_year} BYD ${giveaway.car_model}**!\n\n• Value: $${giveaway.msrp.toLocaleString()}\n• Entry Deadline: <t:${Math.floor(new Date(giveaway.end_time).getTime() / 1000)}:R>\n• Winners can be selected ANYTIME - even before the deadline!\n• Your private channel: ${entryChannel}\n\n🍀 Good luck!`)
         .setColor('#FFD700')
         .setTimestamp()
       ] 
@@ -862,7 +916,7 @@ async function handleCarGiveawayModal(interaction) {
   }
   
   await interaction.editReply({ 
-    content: `✅ **Successfully Entered!** 🎉\n\n• ${giveaway.car_year} BYD ${giveaway.car_model}\n• Value: $${giveaway.msrp.toLocaleString()}\n• Entry Deadline: <t:${Math.floor(new Date(giveaway.end_time).getTime() / 1000)}:R>\n• Your private channel: ${entryChannel}\n\n🍀 Good luck! Winners will be announced after the deadline.` 
+    content: `✅ **Successfully Entered!** 🎉\n\n• ${giveaway.car_year} BYD ${giveaway.car_model}\n• Value: $${giveaway.msrp.toLocaleString()}\n• Entry Deadline: <t:${Math.floor(new Date(giveaway.end_time).getTime() / 1000)}:R>\n• Your private channel: ${entryChannel}\n• Winners can be selected ANYTIME!\n\n🍀 Good luck!` 
   });
   
   logger.info(`User ${interaction.user.tag} entered car giveaway ${giveaway.id} - Channel: ${entryChannel.name}`);
