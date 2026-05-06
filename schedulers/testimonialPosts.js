@@ -24,7 +24,7 @@ const winningTestimonials = [
     testimonial: 'I still can\'t believe I won! The Seal is absolutely incredible. 0-60 in 3.8 seconds and the Ocean X Blue color turns heads everywhere. The Blade Battery gives me so much confidence. Thank you BYD! 🚗⚡',
     location: 'Los Angeles, CA',
     daysAgo: 2,
-    image: `${STATIC_URL}/static/testimonial-seal.jpg`,
+    image: `${STATIC_URL}/testimonial-seal.jpg`,
   },
   {
     username: 'Tesla2BYD',
@@ -34,7 +34,7 @@ const winningTestimonials = [
     testimonial: 'Traded my Model 3 for this beauty and I have ZERO regrets! The Han\'s massage seats, Dynaudio system, and 450-mile range make every drive feel like first class. German luxury brands are officially on notice! 👑✨',
     location: 'Austin, TX',
     daysAgo: 5,
-    image: `${STATIC_URL}/static/testimonial-han.jpg`,
+    image: `${STATIC_URL}/testimonial-han.jpg`,
   },
   {
     username: 'BudgetLisa',
@@ -44,7 +44,7 @@ const winningTestimonials = [
     testimonial: 'As a single mom of 3, I never thought I\'d drive a brand new car! The Dolphin is perfect - affordable, spacious, and the kids LOVE the rotating screen. We\'ve saved $400 on gas already! Best giveaway ever! 🐬💙',
     location: 'Miami, FL',
     daysAgo: 7,
-    image: `${STATIC_URL}/static/testimonial-dolphin.jpg`,
+    image: `${STATIC_URL}/testimonial-dolphin.jpg`,
   },
   {
     username: 'RoadTripper_Steve',
@@ -54,7 +54,7 @@ const winningTestimonials = [
     testimonial: 'Won the Tang and immediately drove Route 66! 7 seats for the whole family, 390 miles range, and the V2L powered our campsite! Charging stops were quick and easy. This SUV is a road trip LEGEND! 🗺️🚙',
     location: 'Denver, CO',
     daysAgo: 3,
-    image: `${STATIC_URL}/static/testimonial-tang.jpg`,
+    image: `${STATIC_URL}/testimonial-tang.jpg`,
   },
   {
     username: 'CityCommuter_Kai',
@@ -64,7 +64,7 @@ const winningTestimonials = [
     testimonial: 'The Seagull is the ULTIMATE city car! Parks anywhere, costs pennies to charge, and the Coral Pink color gets so many compliments. Already saved $350 on gas in 2 weeks. Best commuter decision ever! 🏙️🕊️',
     location: 'Brooklyn, NY',
     daysAgo: 14,
-    image: `${STATIC_URL}/static/testimonial-seagull.jpg`,
+    image: `${STATIC_URL}/testimonial-seagull.jpg`,
   },
   {
     username: 'FleetBoss_Omar',
@@ -74,7 +74,7 @@ const winningTestimonials = [
     testimonial: 'Our delivery business was transformed overnight! 280 miles range hauls packages all day, zero fuel costs, and the 3,500 lbs payload is perfect. Already ordered 4 more for the fleet. ROI is incredible! 📦🚛',
     location: 'Chicago, IL',
     daysAgo: 10,
-    image: `${STATIC_URL}/static/testimonial-commercial.jpg`,
+    image: `${STATIC_URL}/testimonial-commercial.jpg`,
   },
   {
     username: 'Gearhead_Al',
@@ -84,7 +84,7 @@ const winningTestimonials = [
     testimonial: 'Lifelong petrolhead here - the Seal Performance converted me! 3.4 seconds to 60, launch control, and the handling is telepathic. Did a track day and embarrassed cars twice the price. BYD is the real deal! 🏎️🔥',
     location: 'Detroit, MI',
     daysAgo: 4,
-    image: `${STATIC_URL}/static/testimonial-seal-perf.jpg`,
+    image: `${STATIC_URL}/testimonial-seal-perf.jpg`,
   },
   {
     username: 'New2EV_Jen',
@@ -94,7 +94,7 @@ const winningTestimonials = [
     testimonial: 'First electric car and I\'m NEVER going back to gas! The ATTO 3\'s gym-inspired interior is so unique - guitar string door handles, dumbbell air vents! 380 miles range and the 360 camera makes parking effortless. I\'m officially an EV evangelist! ⚡🎸',
     location: 'Seattle, WA',
     daysAgo: 6,
-    image: `${STATIC_URL}/static/testimonial-atto3.jpg`,
+    image: `${STATIC_URL}/testimonial-atto3.jpg`,
   },
   {
     username: 'DadRob_Jr',
@@ -104,7 +104,7 @@ const winningTestimonials = [
     testimonial: 'Our family SUV search ended when we WON the Song Plus! 5-star safety, 400 miles range, and the panoramic roof keeps the kids entertained. My wife wants her own now. Safest, most practical car we\'ve ever owned! 👨‍👩‍👧‍👦⭐',
     location: 'Portland, OR',
     daysAgo: 8,
-    image: `${STATIC_URL}/static/testimonial-song-plus.jpg`,
+    image: `${STATIC_URL}/testimonial-song-plus.jpg`,
   },
   {
     username: 'LuxuryMarcus',
@@ -114,7 +114,7 @@ const winningTestimonials = [
     testimonial: 'Pinching myself daily! The Yangwang U8 is the most incredible vehicle on the planet. Tank turn, 1.4m water wading, drone launch, and 450 miles range. It makes my Range Rover look like a toy. BYD is the future of luxury! 👑🌊',
     location: 'Beverly Hills, CA',
     daysAgo: 15,
-    image: `${STATIC_URL}/static/testimonial-yangwang-u8.jpg`,
+    image: `${STATIC_URL}/testimonial-yangwang-u8.jpg`,
   },
   {
     username: 'AdventurePete',
@@ -124,7 +124,7 @@ const winningTestimonials = [
     testimonial: 'The Tang L took my family to places our old SUV couldn\'t dream of! 410 miles range, 7 seats, 85 cubic feet of cargo with seats down. Off-road mode handled Moab like a champ. Ultimate family adventure machine! 🏔️🚗',
     location: 'Phoenix, AZ',
     daysAgo: 12,
-    image: `${STATIC_URL}/static/testimonial-tang-l.jpg`,
+    image: `${STATIC_URL}/testimonial-tang-l.jpg`,
   },
   {
     username: 'EcoWarrior_Clara',
@@ -134,7 +134,7 @@ const winningTestimonials = [
     testimonial: 'Winning an eco-friendly EV was destiny! The Dolphin uses recycled ocean plastics in the interior and BYD\'s factories run on renewable energy. Zero emissions, guilt-free driving, and SO much fun. The planet thanks you, BYD! 🌍💚',
     location: 'Boston, MA',
     daysAgo: 9,
-    image: `${STATIC_URL}/static/testimonial-dolphin-eco.jpg`,
+    image: `${STATIC_URL}/testimonial-dolphin-eco.jpg`,
   },
   {
     username: 'SpeedQueen_Sofia',
@@ -144,7 +144,7 @@ const winningTestimonials = [
     testimonial: 'Upgraded from my BMW M5 to the Han Performance I won! 3.4 seconds, carbon fiber trim, and the Nappa leather massage seats are heaven. Gets MORE attention than my Bimmer ever did. Sorry Germany, China wins! 🏎️👸',
     location: 'Las Vegas, NV',
     daysAgo: 11,
-    image: `${STATIC_URL}/static/testimonial-han-perf.jpg`,
+    image: `${STATIC_URL}/testimonial-han-perf.jpg`,
   },
   {
     username: 'StudentDriver_Emma',
@@ -154,7 +154,7 @@ const winningTestimonials = [
     testimonial: 'College student who won a CAR! The Seagull is perfect for campus - tiny turning radius, fits ANY parking spot, and costs like $15/month to charge. My friends are all jealous. Best study break ever was entering this giveaway! 📚🚗',
     location: 'Ann Arbor, MI',
     daysAgo: 18,
-    image: `${STATIC_URL}/static/testimonial-seagull-student.jpg`,
+    image: `${STATIC_URL}/testimonial-seagull-student.jpg`,
   },
   {
     username: 'Retired_Frank',
@@ -164,7 +164,7 @@ const winningTestimonials = [
     testimonial: 'At 72, I wanted something easy to get in and out of. The ATTO 3 is PERFECT - perfect seat height, smooth ride, and I love that I never visit gas stations anymore. My grandkids think their grandpa is cool now! 👴⚡',
     location: 'Sarasota, FL',
     daysAgo: 20,
-    image: `${STATIC_URL}/static/testimonial-atto3-senior.jpg`,
+    image: `${STATIC_URL}/testimonial-atto3-senior.jpg`,
   },
   {
     username: 'Rideshare_Carlos',
@@ -174,7 +174,7 @@ const winningTestimonials = [
     testimonial: 'My Uber rating went from 4.8 to 4.98 after winning the Yuan Plus! Passengers LOVE the spacious interior and quiet ride. Fuel savings of $800/month means this car pays for itself. Best business decision I never made! 🚕💰',
     location: 'San Diego, CA',
     daysAgo: 13,
-    image: `${STATIC_URL}/static/testimonial-yuan-plus.jpg`,
+    image: `${STATIC_URL}/testimonial-yuan-plus.jpg`,
   },
   {
     username: 'YoungPro_Kevin',
@@ -184,7 +184,7 @@ const winningTestimonials = [
     testimonial: 'First big boy car and I WON it! Taking clients to lunch in the Seal is a flex. The Ocean X design, 420-mile range, and that acceleration. My Tesla-driving boss is genuinely impressed. Career AND car upgrade! 💼🚗',
     location: 'San Francisco, CA',
     daysAgo: 16,
-    image: `${STATIC_URL}/static/testimonial-seal-pro.jpg`,
+    image: `${STATIC_URL}/testimonial-seal-pro.jpg`,
   },
   {
     username: 'Outback_Explorer',
@@ -194,7 +194,7 @@ const winningTestimonials = [
     testimonial: 'Remote Australia tested, BYD approved! The Tang handled 500 miles of outback dirt roads without breaking a sweat. V2L powered our camp for 3 days. The Blade Battery didn\'t flinch in 45°C heat. Unstoppable! 🇦🇺🦘',
     location: 'Perth, Australia',
     daysAgo: 21,
-    image: `${STATIC_URL}/static/testimonial-tang-outback.jpg`,
+    image: `${STATIC_URL}/testimonial-tang-outback.jpg`,
   },
   {
     username: 'TechReviewer_Raj',
@@ -204,7 +204,7 @@ const winningTestimonials = [
     testimonial: 'I review cars for a living. When I won the Han, I was skeptical. After 1 month: the best EV I\'ve tested under $60k. Better software than Tesla, more luxurious than Mercedes EQE. My review went viral. BYD isn\'t coming - they\'re HERE! 📱🏆',
     location: 'San Jose, CA',
     daysAgo: 17,
-    image: `${STATIC_URL}/static/testimonial-han-review.jpg`,
+    image: `${STATIC_URL}/testimonial-han-review.jpg`,
   },
   {
     username: 'SingleMom_Winner',
@@ -214,7 +214,7 @@ const winningTestimonials = [
     testimonial: 'Never won anything in my life until this! The Song Plus fits my twins\' car seats perfectly, has a 5-star safety rating, and the monthly savings on gas means more for their college fund. Cried happy tears at the dealership! 👩‍👧‍👦💕',
     location: 'Atlanta, GA',
     daysAgo: 19,
-    image: `${STATIC_URL}/static/testimonial-song-mom.jpg`,
+    image: `${STATIC_URL}/testimonial-song-mom.jpg`,
   },
 ];
 
@@ -300,7 +300,7 @@ async function sendTestimonialMessage(channel, testimonial) {
   let imageValid = true;
   
   // Check if image URL is properly formatted
-  if (!imageUrl || imageUrl === `${STATIC_URL}/static/undefined` || imageUrl.includes('undefined')) {
+  if (!imageUrl || imageUrl === `${STATIC_URL}/undefined` || imageUrl.includes('undefined')) {
     imageValid = false;
     imageUrl = null;
     logger.warn(`Invalid image URL for ${testimonial.username}, posting without image`);
@@ -327,7 +327,7 @@ async function sendTestimonialMessage(channel, testimonial) {
     .setColor('#FFD700')
     .setFooter({ 
       text: '⚡ BYD Official Giveaways • Build Your Dreams • Verified Winner', 
-      iconURL: 'https://cdn.byd.com/bot/byd-logo.png' 
+      iconURL: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTcNzX4etKbXeyYAzsxPLEPQjCXCI_b0WEdZYLI0TvCNA&s' 
     })
     .setTimestamp();
 
