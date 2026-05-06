@@ -1,7 +1,6 @@
 // events/guildMemberUpdate.js
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
-const bydEmbeds = require('../modules/bydEmbeds');
-const { upsertLead, getGuildConfig } = require('../utils/database');
+const { upsertLead, getGuildConfig, updateLastFollowup } = require('../utils/database');
 const logger = require('../utils/logger');
 
 // USD testimonials (US states)
@@ -10,7 +9,9 @@ const testimonials = [
   "“ATTO 3's Blade Battery gave my family real peace of mind.” – Carlos, TX",
   "“Free home charger installation? BYD really cares.” – Luisa, NY",
   "“0‑60 in 3.8s – the Han Performance is pure adrenaline.” – Felipe, FL",
-  "“Best EV decision I ever made. And I saved thousands.” – Ahmed, CO"
+  "“Best EV decision I ever made. And I saved thousands.” – Ahmed, CO",
+  "“The Yangwang U8 is absolutely unreal – worth every penny.” – James, CA",
+  "“BYD’s customer service blew me away. Real humans who care.” – Sarah, NY"
 ];
 
 // US urgency phrases
@@ -19,7 +20,9 @@ const urgencyPhrases = [
   "🔥 Launch edition models – limited inventory!",
   "⏳ EV tax credits may phase out – lock yours now.",
   "🎁 Free Level 2 charger installation ends June 30.",
-  "📉 0.99% financing – last 10 cars at this rate."
+  "📉 0.99% financing – last 10 cars at this rate.",
+  "🏆 BYD just won 'EV of the Year' – demand is surging!",
+  "💨 Spring delivery slots filling fast – order this week!"
 ];
 
 // Lead scoring based on activity
@@ -46,25 +49,66 @@ function getTimeBasedGreeting() {
 }
 
 /**
+ * Get seasonal message based on month
+ */
+function getSeasonalMessage() {
+  const month = new Date().getMonth();
+  if (month >= 11 || month <= 1) return '❄️ Winter range protection technology included with every BYD!';
+  if (month >= 2 && month <= 4) return '🌸 Spring into savings with 0% financing for qualified leads!';
+  if (month >= 5 && month <= 7) return '☀️ Summer road trip ready – max A/C efficiency in all BYD models!';
+  return '🍂 Fall EV event – test drive any BYD model this month!';
+}
+
+/**
  * Calculate lead score based on role additions
  */
 function calculateInitialLeadScore(member) {
   let score = 10; // Base score for becoming a lead
   
   // Bonus points for other roles
-  const highValueRoles = ['VIP', 'Premium', 'Owner', 'Investor', 'Partner'];
+  const highValueRoles = ['VIP', 'Premium', 'Owner', 'Investor', 'Partner', 'Supporter'];
   for (const roleName of highValueRoles) {
     if (member.roles.cache.some(r => r.name.toLowerCase() === roleName.toLowerCase())) {
       score += 25;
+      break; // Only add once
     }
   }
   
-  // Bonus for boosting server
+  // Bonus for server booster
   if (member.premiumSince) {
     score += 15;
   }
   
-  return score;
+  // Bonus for account age (older accounts get slightly higher score)
+  const accountAgeDays = (Date.now() - member.user.createdTimestamp) / (1000 * 60 * 60 * 24);
+  if (accountAgeDays > 365) score += 10;
+  else if (accountAgeDays > 180) score += 5;
+  
+  return Math.min(score, 100); // Cap at 100
+}
+
+/**
+ * Get lead stage based on score
+ */
+function getLeadStage(score) {
+  if (score >= 80) return 'HOT';
+  if (score >= 60) return 'WARM';
+  if (score >= 40) return 'INTERESTED';
+  if (score >= 20) return 'AWARE';
+  return 'NEW';
+}
+
+/**
+ * Get emoji for lead stage
+ */
+function getLeadStageEmoji(stage) {
+  switch (stage) {
+    case 'HOT': return '🔥';
+    case 'WARM': return '🟡';
+    case 'INTERESTED': return '🔵';
+    case 'AWARE': return '🟢';
+    default: return '🆕';
+  }
 }
 
 module.exports = (client) => {
@@ -85,22 +129,29 @@ module.exports = (client) => {
 
         // Calculate lead score
         const leadScore = calculateInitialLeadScore(newMember);
+        const leadStage = getLeadStage(leadScore);
+        const stageEmoji = getLeadStageEmoji(leadStage);
 
-        // Save lead to database - FIXED: pass data as object
+        // Save lead to database
         try {
           await upsertLead(
             newMember.user.id,
             newMember.user.username,
             {
               leadScore: leadScore,
-              leadStage: leadScore >= 50 ? 'HOT' : leadScore >= 30 ? 'WARM' : 'INTERESTED',
+              leadStage: leadStage,
               lastInteraction: new Date(),
               selectedModel: null,
               step: 'lead_assigned',
-              tempData: { assignedVia: 'role', guildId: newMember.guild.id },
+              tempData: { 
+                assignedVia: 'role', 
+                guildId: newMember.guild.id,
+                assignedAt: new Date().toISOString(),
+                initialScore: leadScore
+              },
             }
           );
-          logger.debug(`Lead saved to database: ${newMember.user.tag} (Score: ${leadScore})`);
+          logger.debug(`Lead saved to database: ${newMember.user.tag} (Score: ${leadScore}, Stage: ${leadStage})`);
         } catch (dbErr) {
           logger.error('Failed to save lead to database:', dbErr);
         }
@@ -116,26 +167,30 @@ module.exports = (client) => {
               .addFields(
                 { name: 'User', value: `${newMember.user.tag} (${newMember.user.id})`, inline: true },
                 { name: 'Lead Score', value: `${leadScore} points`, inline: true },
-                { name: 'Lead Stage', value: leadScore >= 50 ? '🔥 HOT' : leadScore >= 30 ? '🟡 WARM' : '🔵 INTERESTED', inline: true },
-                { name: 'Account Created', value: `<t:${Math.floor(newMember.user.createdTimestamp / 1000)}:R>`, inline: true }
+                { name: 'Lead Stage', value: `${stageEmoji} ${leadStage}`, inline: true },
+                { name: 'Account Created', value: `<t:${Math.floor(newMember.user.createdTimestamp / 1000)}:R>`, inline: true },
+                { name: 'Joined Server', value: `<t:${Math.floor(newMember.joinedTimestamp / 1000)}:R>`, inline: true }
               )
               .setColor('#FFD700')
               .setThumbnail(newMember.user.displayAvatarURL())
               .setTimestamp();
             
-            logChannel.send({ embeds: [logEmbed] }).catch(() => {});
+            await logChannel.send({ embeds: [logEmbed] }).catch(() => {});
           }
         }
 
         // Use static URL or fallback
         const staticBase = process.env.STATIC_URL || 'https://cdn.byd.com/bot';
         const greeting = getTimeBasedGreeting();
+        const seasonalMessage = getSeasonalMessage();
+        const randomTestimonial = getRandomItem(testimonials);
+        const randomUrgency = getRandomItem(urgencyPhrases);
 
-        // Build a premium, conversion‑optimised welcome DM (USD)
+        // Build a premium, conversion‑optimised welcome DM
         const embed = new EmbedBuilder()
-          .setTitle(`⚡ ${greeting}, ${newMember.user.username}! Welcome to the BYD Elite Circle!`)
+          .setTitle(`${getLeadStageEmoji(leadStage)} ${greeting}, ${newMember.user.username}! Welcome to the BYD Elite Circle!`)
           .setDescription(
-            `You've been recognized as a **Lead** – unlocking **priority access** to:\n\n` +
+            `You've been recognized as a **${leadStage} Lead** – unlocking **priority access** to:\n\n` +
             `🔋 **Real‑time US EV Incentives**\n` +
             `• Federal tax credits up to $7,500\n` +
             `• State‑specific rebates & HOV access\n\n` +
@@ -148,15 +203,16 @@ module.exports = (client) => {
             `💬 **Personal BYD Advisor**\n` +
             `• Dedicated expert for all questions\n` +
             `• Response within 1 hour\n\n` +
-            `> *"${getRandomItem(testimonials)}"*\n\n` +
-            `**${getRandomItem(urgencyPhrases)}**\n\n` +
+            `> *"${randomTestimonial}"*\n\n` +
+            `**${randomUrgency}**\n\n` +
+            `🍀 **${seasonalMessage}**\n\n` +
             `👉 **Ready to explore?** Choose a model below and your personal advisor will reach out!`
           )
-          .setColor('#FFD700')
+          .setColor(leadScore >= 80 ? '#FF0000' : leadScore >= 60 ? '#FFA500' : '#FFD700')
           .setThumbnail(`${staticBase}/byd-logo.png`)
           .setImage(`${staticBase}/byd-lineup.jpg`)
           .setFooter({ 
-            text: `⚡ Blade Battery Technology • Trusted by 15,000+ US drivers • Your Lead Score: ${leadScore}`, 
+            text: `⚡ Blade Battery Technology • Trusted by 15,000+ US drivers • Lead Score: ${leadScore} (${leadStage})`, 
             iconURL: `${staticBase}/byd-logo.png`
           })
           .setTimestamp();
@@ -188,9 +244,10 @@ module.exports = (client) => {
             .setStyle(ButtonStyle.Primary)
             .setEmoji('👑'),
           new ButtonBuilder()
-            .setCustomId('welcome_model_commercial')
-            .setLabel('🚌 Commercial')
-            .setStyle(ButtonStyle.Secondary),
+            .setCustomId('welcome_model_yangwang')
+            .setLabel('🐉 Yangwang')
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji('⭐'),
           new ButtonBuilder()
             .setCustomId('welcome_model_notsure')
             .setLabel('❓ Help Me Choose')
@@ -202,7 +259,7 @@ module.exports = (client) => {
         const row3 = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId('action_brochure')
-            .setLabel('📄 Brochure')
+            .setLabel('📄 Digital Brochure')
             .setStyle(ButtonStyle.Secondary),
           new ButtonBuilder()
             .setCustomId('action_quote')
@@ -214,16 +271,32 @@ module.exports = (client) => {
             .setStyle(ButtonStyle.Danger)
         );
 
+        // Row 4: Additional resources
+        const row4 = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('action_incentives')
+            .setLabel('💰 EV Incentives')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId('action_compare')
+            .setLabel('📊 Compare Models')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId('action_specs')
+            .setLabel('📋 Full Specs')
+            .setStyle(ButtonStyle.Secondary)
+        );
+
         try {
           // Send the welcome DM
           await newMember.send({ 
             embeds: [embed], 
-            components: [row1, row2, row3] 
+            components: [row1, row2, row3, row4] 
           });
           
-          logger.success(`📨 Premium welcome DM sent to ${newMember.user.tag} (Lead Score: ${leadScore})`);
+          logger.success(`📨 Premium welcome DM sent to ${newMember.user.tag} (Lead Score: ${leadScore}, Stage: ${leadStage})`);
           
-          // Optional: Send a second follow-up message after 2 minutes
+          // Send a second follow-up message after 3 minutes
           setTimeout(async () => {
             try {
               const followUpEmbed = new EmbedBuilder()
@@ -233,22 +306,49 @@ module.exports = (client) => {
                   `Here's a quick tip: **Book a test drive this week** and you'll receive:\n\n` +
                   `• 🎁 Free BYD merchandise kit\n` +
                   `• 📊 Personalized cost‑savings analysis\n` +
-                  `• 🔌 Complimentary home charging assessment\n\n` +
+                  `• 🔌 Complimentary home charging assessment\n` +
+                  `• 📞 30-min consultation with a BYD specialist\n\n` +
                   `No pressure, no obligation – just a fun experience! 🚗✨\n\n` +
                   `Tap **🗓️ Book Test Drive** above to schedule yours!`
                 )
                 .setColor('#00BFFF')
-                .setFooter({ text: '⚡ BYD Blade Battery • Powering the future' });
+                .setFooter({ text: '⚡ BYD Blade Battery • Powering the future' })
+                .setTimestamp();
               
               await newMember.send({ embeds: [followUpEmbed] });
               logger.debug(`Follow-up DM sent to ${newMember.user.tag}`);
             } catch (followUpErr) {
               logger.debug(`Follow-up DM failed for ${newMember.user.tag} (likely DMs closed)`);
             }
-          }, 2 * 60 * 1000);
+          }, 3 * 60 * 1000);
+
+          // Send a third follow-up after 2 days
+          setTimeout(async () => {
+            try {
+              const reminderEmbed = new EmbedBuilder()
+                .setTitle('🚗 Still exploring BYD?')
+                .setDescription(
+                  `Hi ${newMember.user.username}! Just checking in.\n\n` +
+                  `If you have any questions about BYD vehicles, incentives, or financing, ` +
+                  `our team is here to help!\n\n` +
+                  `Feel free to:\n` +
+                  `• Reply to this DM\n` +
+                  `• Use \`/help\` in the server\n` +
+                  `• Click any button above to get started\n\n` +
+                  `We look forward to helping you find your perfect BYD! 🌟`
+                )
+                .setColor('#9B59B6')
+                .setTimestamp();
+              
+              await newMember.send({ embeds: [reminderEmbed] });
+              logger.debug(`2-day follow-up DM sent to ${newMember.user.tag}`);
+            } catch (reminderErr) {
+              logger.debug(`2-day follow-up DM failed for ${newMember.user.tag}`);
+            }
+          }, 48 * 60 * 60 * 1000);
 
         } catch (err) {
-          logger.warn(`⚠️ Could not DM ${newMember.user.tag} (DMs may be closed)`);
+          logger.warn(`⚠️ Could not DM ${newMember.user.tag} (DMs may be closed) - ${err.message}`);
           
           // Try to send a welcome message in a public channel
           try {
@@ -261,13 +361,15 @@ module.exports = (client) => {
             
             if (targetChannel) {
               const publicEmbed = new EmbedBuilder()
-                .setTitle(`👋 Welcome our newest Lead, ${newMember.user.username}!`)
+                .setTitle(`👋 Welcome our newest ${stageEmoji} Lead, ${newMember.user.username}!`)
                 .setDescription(
-                  `${newMember.user}, you've been recognized as a **Lead**!\n\n` +
-                  `Check your DMs for exclusive access, or use \`/help\` to explore our features.\n\n` +
-                  `🚗 **Browse Models** • 💰 **Get a Quote** • 🗓️ **Book a Test Drive**`
+                  `${newMember.user}, you've been recognized as a **${leadStage} Lead**!\n\n` +
+                  `We tried to send you a DM with exclusive access, but your DMs appear to be closed.\n\n` +
+                  `Please enable DMs from server members or use \`/help\` to explore our features.\n\n` +
+                  `🚗 **Browse Models** • 💰 **Get a Quote** • 🗓️ **Book a Test Drive**\n\n` +
+                  `✨ Check out <#${config?.welcome_channel_id || 'your-channel'}> to get started!`
                 )
-                .setColor('#FFD700')
+                .setColor(leadScore >= 80 ? '#FF0000' : leadScore >= 60 ? '#FFA500' : '#FFD700')
                 .setThumbnail(newMember.user.displayAvatarURL())
                 .setTimestamp();
               
@@ -283,7 +385,7 @@ module.exports = (client) => {
         }
       }
 
-      // Optional: Handle Lead role REMOVAL
+      // Handle Lead role REMOVAL
       if (hadLead && !hasLead) {
         logger.info(`👤 ${newMember.user.tag} is no longer a Lead in ${newMember.guild.name}`);
         
@@ -292,8 +394,37 @@ module.exports = (client) => {
         if (config?.ticket_logs_channel_id) {
           const logChannel = newMember.guild.channels.cache.get(config.ticket_logs_channel_id);
           if (logChannel) {
-            logChannel.send(`🔻 ${newMember.user.tag} had the Lead role removed.`).catch(() => {});
+            const removalEmbed = new EmbedBuilder()
+              .setTitle('🔻 Lead Role Removed')
+              .setDescription(`${newMember.user.tag} no longer has the Lead role`)
+              .addFields(
+                { name: 'User', value: `${newMember.user.tag} (${newMember.user.id})`, inline: true },
+                { name: 'Removed At', value: `<t:${Math.floor(Date.now() / 1000)}:R>`, inline: true }
+              )
+              .setColor('#FF0000')
+              .setThumbnail(newMember.user.displayAvatarURL())
+              .setTimestamp();
+            
+            await logChannel.send({ embeds: [removalEmbed] }).catch(() => {});
           }
+        }
+        
+        // Optionally send a DM about role removal
+        try {
+          const removalMessage = new EmbedBuilder()
+            .setTitle('🔻 Lead Role Update')
+            .setDescription(
+              `Hi ${newMember.user.username},\n\n` +
+              `Your Lead role in **${newMember.guild.name}** has been removed.\n\n` +
+              `If you believe this is an error, please contact a server administrator.\n\n` +
+              `Thank you for being part of the BYD community!`
+            )
+            .setColor('#FFA500')
+            .setTimestamp();
+          
+          await newMember.send({ embeds: [removalMessage] });
+        } catch (dmErr) {
+          logger.debug(`Could not send role removal DM to ${newMember.user.tag}`);
         }
       }
 
