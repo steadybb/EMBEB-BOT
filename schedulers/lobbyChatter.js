@@ -22,10 +22,6 @@ const CONFIG = {
   welcomeDelay: 8000,
   typingDelayRange: { min: 2000, max: 6000 },
   conversationCooldown: 300000,
-  webhookRateLimit: 400, // ms between webhook messages per channel
-  memoryCleanupInterval: 3600000, // 1 hour
-  memoryTTL: 86400000, // 24 hours
-  maxWelcomeQueueSize: 50,
 };
 
 // ============================================
@@ -177,36 +173,10 @@ function getGuildMemory(guildId) {
       activeParticipants: new Set(),
       conversationHeat: 0,
       lastActivityTime: Date.now(),
-      messageCount: 0,
     });
   }
   return conversationMemory.get(guildId);
 }
-
-// ============================================
-// MEMORY CLEANUP (Prevent memory leaks)
-// ============================================
-setInterval(() => {
-  const cutoff = Date.now() - CONFIG.memoryTTL;
-  for (const [guildId, memory] of conversationMemory.entries()) {
-    if (memory.lastActivityTime < cutoff) {
-      conversationMemory.delete(guildId);
-      learningData.delete(guildId);
-      logger.debug(`Cleaned up stale memory for guild ${guildId}`);
-    }
-  }
-}, CONFIG.memoryCleanupInterval);
-
-// ============================================
-// RACE CONDITION PREVENTION
-// ============================================
-let isProcessing = false;
-
-// ============================================
-// WEBHOOK RATE LIMITING
-// ============================================
-const webhookRateLimitMap = new Map();
-const webhookValidationCache = new Map();
 
 // ============================================
 // NATURAL RESPONSE GENERATION (Minimal emojis)
@@ -294,26 +264,11 @@ function generateNaturalResponse(persona, topic, phase, messageType, memory, tim
 }
 
 // ============================================
-// INTELLIGENT TOPIC SELECTION (Avoid repetition)
+// INTELLIGENT TOPIC SELECTION
 // ============================================
 function selectIntelligentTopic(memory, guildId) {
-  const recentCategories = memory.messages.slice(-10)
-    .map(m => m.topicCategory)
-    .filter(Boolean);
-  
-  let availableTopics = conversationTopics.filter(
-    cat => !recentCategories.includes(cat.category)
-  );
-  
-  // Fallback if all categories were recently used
-  if (availableTopics.length === 0) {
-    availableTopics = [...conversationTopics];
-  }
-  
-  const selectedCategory = weightedRandom(
-    availableTopics.map(cat => ({ item: cat, weight: cat.weight }))
-  );
-  
+  const availableTopics = [...conversationTopics];
+  const selectedCategory = getRandomItem(availableTopics);
   const selectedTopic = getRandomItem(selectedCategory.topics);
   return { category: selectedCategory.category, topic: selectedTopic };
 }
@@ -344,81 +299,33 @@ function getMessageType(phase, lastType) {
 }
 
 // ============================================
-// WEBHOOK MANAGEMENT (With validation & rate limiting)
+// WEBHOOK MANAGEMENT
 // ============================================
 const webhookClients = new Map();
 
-async function validateWebhook(url) {
-  try {
-    const response = await axios.get(url);
-    return response.status === 200;
-  } catch {
-    return false;
-  }
-}
-
 async function getWebhookClient(url) {
-  if (!url || typeof url !== 'string') {
-    throw new Error('Invalid webhook URL provided');
-  }
-  
-  // Check cache first
-  const cached = webhookValidationCache.get(url);
-  if (cached && Date.now() - cached.timestamp < 3600000) {
-    if (webhookClients.has(url)) return webhookClients.get(url);
-  }
-  
   if (webhookClients.has(url)) return webhookClients.get(url);
-  
-  // Validate URL format
-  const match = url.match(/^https:\/\/discord\.com\/api\/webhooks\/(\d+)\/(.+)$/);
-  if (!match) throw new Error('Invalid Discord webhook URL format');
-  
+  const match = url.match(/\/webhooks\/(\d+)\/(.+)$/);
+  if (!match) throw new Error('Invalid webhook URL');
   const client = { id: match[1], token: match[2], url };
   webhookClients.set(url, client);
-  webhookValidationCache.set(url, { client, timestamp: Date.now() });
-  
   return client;
 }
 
 async function sendAsPersona(wc, persona, message, retry = 0) {
-  // Rate limiting per webhook
-  const key = wc.id;
-  const now = Date.now();
-  const lastSent = webhookRateLimitMap.get(key) || 0;
-  
-  if (now - lastSent < CONFIG.webhookRateLimit) {
-    await new Promise(r => setTimeout(r, CONFIG.webhookRateLimit - (now - lastSent)));
-  }
-  
   const typingDelay = Math.random() * (CONFIG.typingDelayRange.max - CONFIG.typingDelayRange.min) + CONFIG.typingDelayRange.min;
   await new Promise(r => setTimeout(r, typingDelay));
   
   try {
-    await axios.post(wc.url, { 
-      username: persona.name, 
-      avatar_url: persona.avatar, 
-      content: message 
-    });
-    
-    webhookRateLimitMap.set(key, Date.now());
+    await axios.post(wc.url, { username: persona.name, avatar_url: persona.avatar, content: message });
     logger.debug(`💬 ${persona.name}: "${message.substring(0, 80)}${message.length > 80 ? '...' : ''}"`);
     return true;
   } catch (err) {
-    // Handle rate limiting specifically
-    if (err.response?.status === 429) {
-      const retryAfter = err.response.headers['retry-after'] || 5;
-      logger.warn(`Rate limited for webhook ${wc.id}, retrying after ${retryAfter}s`);
-      await new Promise(r => setTimeout(r, retryAfter * 1000));
-      return sendAsPersona(wc, persona, message, retry);
-    }
-    
     if (retry < CONFIG.maxRetries) {
       await new Promise(r => setTimeout(r, 1000 * (retry + 1)));
       return sendAsPersona(wc, persona, message, retry + 1);
     }
-    
-    logger.error(`Webhook failed for ${persona.name}:`, err.message);
+    logger.error(`Webhook failed:`, err.message);
     return false;
   }
 }
@@ -462,118 +369,85 @@ async function sendWelcomeMessage(guild, member, config) {
 // MAIN LOBBY CHATTER
 // ============================================
 async function runLobbyChatter(client) {
-  // Prevent concurrent execution
-  if (isProcessing) {
-    logger.debug('Previous chatter cycle still running, skipping');
-    return;
-  }
+  const hour = new Date().getHours();
+  if (hour < CONFIG.activeHoursStart || hour >= CONFIG.activeHoursEnd) return;
   
-  isProcessing = true;
+  const guilds = client.guilds.cache;
+  let sent = 0;
   
-  try {
-    const hour = new Date().getHours();
-    if (hour < CONFIG.activeHoursStart || hour >= CONFIG.activeHoursEnd) {
-      return;
-    }
-    
-    const guilds = client.guilds.cache;
-    let sent = 0;
-    
-    for (const guild of guilds.values()) {
-      try {
-        const config = await getGuildConfig(guild.id);
-        if (!config?.lobby_chatter_enabled || !config?.lobby_webhook_url) continue;
-        
-        // Check conversation cooldown
-        const mem = getGuildMemory(guild.id);
-        if (mem.lastActivityTime && (Date.now() - mem.lastActivityTime) < CONFIG.conversationCooldown) {
-          logger.debug(`Skipping guild ${guild.id} due to conversation cooldown`);
-          continue;
-        }
-        
-        let personas = config.lobby_chatter_personas || activePersonas;
-        if (typeof personas === 'string') { 
-          try { personas = JSON.parse(personas); } 
-          catch { personas = activePersonas; } 
-        }
-        if (!personas?.length) personas = activePersonas;
-        
-        const timeContext = getCurrentTimeContext();
-        const mood = analyzeConversationMood(mem.messages);
-        const isStale = (Date.now() - mem.lastActivityTime) > 7200000;
-        
-        if (isStale || !mem.currentTopic) {
-          mem.currentTopic = selectIntelligentTopic(mem, guild.id);
-          mem.conversationPhase = 'opening';
-          mem.messageCount = 0;
-        }
-        
-        // Smart persona selection
-        let avail = personas.filter(p => p.name !== mem.lastSpeaker);
-        if (timeContext.key !== 'all') {
-          avail = avail.filter(p => p.activeHours === 'all' || p.activeHours === timeContext.key);
-        }
-        if (avail.length === 0) avail = personas;
-        const persona = getRandomItem(avail);
-        
-        const msgType = getMessageType(mem.conversationPhase, mem.lastMessageType);
-        const message = generateNaturalResponse(persona, mem.currentTopic, mem.conversationPhase, msgType, mem, timeContext, mood);
-        
-        const wc = await getWebhookClient(config.lobby_webhook_url);
-        const success = await sendAsPersona(wc, persona, message);
-        
-        if (success) {
-          mem.messages.push({ 
-            persona: persona.name, 
-            message, 
-            type: msgType, 
-            topicCategory: mem.currentTopic.category,
-            timestamp: Date.now() 
-          });
-          mem.lastSpeaker = persona.name;
-          mem.lastMessageType = msgType;
-          mem.messageCount++;
-          mem.lastActivityTime = Date.now();
-          mem.activeParticipants.add(persona.name);
-          mem.conversationHeat = Math.min(100, mem.conversationHeat + 5);
-          
-          // Update conversation phase
-          if (mem.messageCount >= 10) mem.conversationPhase = 'wrapping';
-          else if (mem.messageCount >= 5) mem.conversationPhase = 'deep_dive';
-          else if (mem.messageCount >= 2) mem.conversationPhase = 'discussion';
-          
-          // Trim memory
-          if (mem.messages.length > CONFIG.maxContextMessages) {
-            mem.messages = mem.messages.slice(-CONFIG.maxContextMessages);
-          }
-          
-          sent++;
-        }
-        
-        // Natural delay between guilds
-        const isPeak = hour >= CONFIG.peakHoursStart && hour < CONFIG.peakHoursEnd;
-        const isWeekend = [0, 6].includes(new Date().getDay());
-        let delay = Math.random() * (CONFIG.maxDelay - CONFIG.minDelay) + CONFIG.minDelay;
-        if (isPeak) delay *= 0.7;
-        if (isWeekend) delay *= 1.2;
-        await new Promise(r => setTimeout(r, Math.min(delay, 600000)));
-        
-      } catch (err) {
-        logger.error(`Lobby failed for guild ${guild.id}: ${err.message}`);
-        
-        // Reset memory on persistent connection errors
-        if (err.code === 'ECONNRESET' || err.response?.status === 429) {
-          conversationMemory.delete(guild.id);
-          await new Promise(r => setTimeout(r, 5000));
-        }
+  for (const guild of guilds.values()) {
+    try {
+      const config = await getGuildConfig(guild.id);
+      if (!config?.lobby_chatter_enabled || !config?.lobby_webhook_url) continue;
+      
+      let personas = config.lobby_chatter_personas || activePersonas;
+      if (typeof personas === 'string') { 
+        try { personas = JSON.parse(personas); } 
+        catch { personas = activePersonas; } 
       }
+      if (!personas?.length) personas = activePersonas;
+      
+      const mem = getGuildMemory(guild.id);
+      const timeContext = getCurrentTimeContext();
+      const mood = analyzeConversationMood(mem.messages);
+      const isStale = (Date.now() - mem.lastActivityTime) > 7200000;
+      
+      if (isStale || !mem.currentTopic) {
+        mem.currentTopic = selectIntelligentTopic(mem, guild.id);
+        mem.conversationPhase = 'opening';
+        mem.messageCount = 0;
+      }
+      
+      // Smart persona selection
+      let avail = personas.filter(p => p.name !== mem.lastSpeaker);
+      if (timeContext.key !== 'all') {
+        avail = avail.filter(p => p.activeHours === 'all' || p.activeHours === timeContext.key);
+      }
+      if (avail.length === 0) avail = personas;
+      const persona = getRandomItem(avail);
+      
+      const msgType = getMessageType(mem.conversationPhase, mem.lastMessageType);
+      const message = generateNaturalResponse(persona, mem.currentTopic, mem.conversationPhase, msgType, mem, timeContext, mood);
+      
+      const wc = await getWebhookClient(config.lobby_webhook_url);
+      const success = await sendAsPersona(wc, persona, message);
+      
+      if (success) {
+        mem.messages.push({ persona: persona.name, message, type: msgType, timestamp: Date.now() });
+        mem.lastSpeaker = persona.name;
+        mem.lastMessageType = msgType;
+        mem.messageCount++;
+        mem.lastActivityTime = Date.now();
+        mem.activeParticipants.add(persona.name);
+        mem.conversationHeat = Math.min(100, mem.conversationHeat + 5);
+        
+        // Update conversation phase
+        if (mem.messageCount >= 10) mem.conversationPhase = 'wrapping';
+        else if (mem.messageCount >= 5) mem.conversationPhase = 'deep_dive';
+        else if (mem.messageCount >= 2) mem.conversationPhase = 'discussion';
+        
+        // Trim memory
+        if (mem.messages.length > CONFIG.maxContextMessages) {
+          mem.messages = mem.messages.slice(-CONFIG.maxContextMessages);
+        }
+        
+        sent++;
+      }
+      
+      // Natural delay
+      const isPeak = hour >= CONFIG.peakHoursStart && hour < CONFIG.peakHoursEnd;
+      const isWeekend = [0, 6].includes(new Date().getDay());
+      let delay = Math.random() * (CONFIG.maxDelay - CONFIG.minDelay) + CONFIG.minDelay;
+      if (isPeak) delay *= 0.7;
+      if (isWeekend) delay *= 1.2;
+      await new Promise(r => setTimeout(r, Math.min(delay, 600000)));
+      
+    } catch (err) { 
+      logger.error(`Lobby failed: ${err.message}`); 
     }
-    
-    if (sent > 0) logger.info(`Lobby: ${sent} messages sent`);
-    
-  } finally {
-    isProcessing = false;
   }
+  
+  if (sent > 0) logger.info(`Lobby: ${sent} messages sent`);
 }
 
 // ============================================
@@ -609,55 +483,24 @@ function resetLobbyMemory(guildId) {
   learningData.delete(guildId);
 }
 
-// ============================================
-// WELCOME QUEUE (With size limit & proper handling)
-// ============================================
+// Welcome queue
 const welcomeQueue = [];
-let welcomeProcessing = false;
 
 function queueWelcomeMessage(guildId, memberId, client) {
-  // Prevent queue overflow
-  if (welcomeQueue.length >= CONFIG.maxWelcomeQueueSize) {
-    logger.warn('Welcome queue full, dropping oldest entry');
-    welcomeQueue.shift();
-  }
-  
   welcomeQueue.push({ guildId, memberId, client });
-  
-  // Only set timeout if not already processing
-  if (!welcomeProcessing) {
-    setTimeout(() => processWelcomeQueue(), 3000);
-  }
+  setTimeout(() => processWelcomeQueue(), 3000);
 }
 
 async function processWelcomeQueue() {
-  if (welcomeProcessing) return;
-  welcomeProcessing = true;
-  
-  try {
-    while (welcomeQueue.length > 0) {
-      const { guildId, memberId, client } = welcomeQueue.shift();
-      const guild = client.guilds.cache.get(guildId);
-      const member = guild?.members.cache.get(memberId);
-      
-      if (guild && member) {
-        const config = await getGuildConfig(guild.id);
-        if (config?.lobby_chatter_enabled) {
-          await sendWelcomeMessage(guild, member, config);
-        }
-      } else {
-        logger.debug(`Skipping welcome for missing guild/member: ${guildId}/${memberId}`);
+  while (welcomeQueue.length > 0) {
+    const { guildId, memberId, client } = welcomeQueue.shift();
+    const guild = client.guilds.cache.get(guildId);
+    const member = guild?.members.cache.get(memberId);
+    if (guild && member) {
+      const config = await getGuildConfig(guild.id);
+      if (config?.lobby_chatter_enabled) {
+        await sendWelcomeMessage(guild, member, config);
       }
-      
-      // Small delay between welcome messages
-      await new Promise(r => setTimeout(r, 2000));
-    }
-  } finally {
-    welcomeProcessing = false;
-    
-    // Process any new items that arrived during processing
-    if (welcomeQueue.length > 0) {
-      setTimeout(() => processWelcomeQueue(), 3000);
     }
   }
 }
