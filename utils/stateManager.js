@@ -14,6 +14,7 @@ const CONFIG = {
   cleanupInterval: parseInt(process.env.STATE_CLEANUP_INTERVAL, 10) || 5 * 60 * 1000, // 5 minutes
   enableAnalytics: process.env.ENABLE_ANALYTICS !== 'false',
   enableScoreDecay: process.env.ENABLE_SCORE_DECAY !== 'false',
+  autoSaveInterval: parseInt(process.env.STATE_AUTO_SAVE_INTERVAL, 10) || 60000, // 1 minute
 };
 
 // ============================================
@@ -71,6 +72,18 @@ function setCache(userId, data) {
   evictCache();
 }
 
+function invalidateCache(userId) {
+  cache.delete(userId);
+  logger.debug(`Cache invalidated for ${userId}`);
+}
+
+function clearCache() {
+  cache.clear();
+  cacheHits = 0;
+  cacheMisses = 0;
+  logger.info('Cache cleared completely');
+}
+
 function getCacheStats() {
   const totalRequests = cacheHits + cacheMisses;
   return {
@@ -80,6 +93,7 @@ function getCacheStats() {
     hitRate: totalRequests > 0 ? `${((cacheHits / totalRequests) * 100).toFixed(1)}%` : 'N/A',
     maxSize: CONFIG.maxCacheSize,
     ttl: CONFIG.cacheTTL,
+    utilization: `${((cache.size / CONFIG.maxCacheSize) * 100).toFixed(1)}%`,
   };
 }
 
@@ -101,6 +115,10 @@ const leadScoreActions = {
   'follow_up_responded': 15,
   'state_update': 1,
   'interaction': 1,
+  'lead_assigned': 10,
+  'verified': 5,
+  'ticket_created': 10,
+  'giveaway_entered': 5,
 };
 
 function calculateLeadScore(currentScore, action) {
@@ -150,17 +168,39 @@ function getLeadStagePriority(stage) {
   return priorities[stage] || 0;
 }
 
+function getLeadStageEmoji(stage) {
+  const emojis = {
+    'HOT': '🔥',
+    'WARM': '🟡',
+    'INTERESTED': '🔵',
+    'AWARE': '🟢',
+    'COLD': '❄️'
+  };
+  return emojis[stage] || '👤';
+}
+
+function getLeadScoreCategory(score) {
+  if (score >= 200) return 'VIP';
+  if (score >= 100) return 'High';
+  if (score >= 50) return 'Medium';
+  if (score >= 20) return 'Low';
+  return 'Minimal';
+}
+
 // ============================================
 // ANALYTICS & TRACKING (PostgreSQL)
 // ============================================
 
 async function trackInteraction(userId, event, metadata = {}) {
   if (!CONFIG.enableAnalytics) return;
+  if (!userId) return;
   
   try {
     // Sanitize metadata to prevent JSON overflow
     const safeMetadata = { ...metadata };
-    if (safeMetadata.largeField) delete safeMetadata.largeField;
+    delete safeMetadata.largeField;
+    delete safeMetadata.password;
+    delete safeMetadata.token;
     
     await pool.query(
       `INSERT INTO interactions (user_id, event, metadata, timestamp) 
@@ -205,7 +245,7 @@ async function getInteractionStats(guildId = null, days = 7) {
       params.push(guildId); 
     }
     
-    query += ' GROUP BY event ORDER BY count DESC LIMIT 50'; // Limit to top 50 events
+    query += ' GROUP BY event ORDER BY count DESC LIMIT 50';
     
     const res = await pool.query(query, params);
     return res.rows;
@@ -228,6 +268,20 @@ async function getDailyInteractionStats(days = 7) {
   } catch (err) {
     logger.error('Failed to get daily stats:', err);
     return [];
+  }
+}
+
+async function getUserEventCount(userId, event, days = 30) {
+  try {
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const res = await pool.query(
+      'SELECT COUNT(*) as count FROM interactions WHERE user_id = $1 AND event = $2 AND timestamp > $3',
+      [userId, event, cutoff]
+    );
+    return parseInt(res.rows[0].count);
+  } catch (err) {
+    logger.error('Failed to get user event count:', err);
+    return 0;
   }
 }
 
@@ -271,6 +325,17 @@ function updateSession(state) {
 function getSessionDuration(state) {
   if (!state?.session?.startedAt) return 0;
   return Date.now() - new Date(state.session.startedAt).getTime();
+}
+
+function getSessionDurationFormatted(state) {
+  const ms = getSessionDuration(state);
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+  return `${seconds}s`;
 }
 
 // ============================================
@@ -336,6 +401,24 @@ async function getUserState(userId, username = null) {
   const state = { ...dbState };
   setCache(userId, state);
   return state;
+}
+
+async function getUserStateSummary(userId, username = null) {
+  const state = await getUserState(userId, username);
+  if (!state) return null;
+  
+  return {
+    userId,
+    username,
+    selectedModel: state.selectedModel,
+    leadScore: state.leadScore,
+    leadStage: state.leadStage,
+    leadStageEmoji: getLeadStageEmoji(state.leadStage),
+    interactions: state.interactions,
+    lastInteraction: state.lastInteraction,
+    sessionDuration: getSessionDurationFormatted(state),
+    hasActiveSession: isSessionActive(state),
+  };
 }
 
 async function updateUserState(userId, updates, username = null) {
@@ -451,6 +534,11 @@ async function bulkClearInactiveStates(daysInactive = 30) {
       [cutoff]
     );
     
+    // Also clear from cache
+    for (const row of res.rows) {
+      cache.delete(row.user_id);
+    }
+    
     logger.info(`Cleared ${res.rowCount} inactive leads (inactive for ${daysInactive} days)`);
     return res.rowCount;
   } catch (err) {
@@ -480,7 +568,7 @@ async function getLeadsByStage(leadStage, limit = 50) {
   try {
     const res = await pool.query(
       `SELECT user_id, username, selected_model, lead_score, 
-              last_interaction, interactions
+              lead_stage, last_interaction, interactions
        FROM leads 
        WHERE lead_stage = $1 
        ORDER BY lead_score DESC, last_interaction DESC
@@ -558,6 +646,24 @@ async function getLeadsByModel(model, limit = 20) {
   }
 }
 
+async function getRecentLeads(limit = 20, days = 7) {
+  try {
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const res = await pool.query(
+      `SELECT user_id, username, selected_model, lead_score, lead_stage, last_interaction
+       FROM leads 
+       WHERE last_interaction > $1
+       ORDER BY last_interaction DESC
+       LIMIT $2`,
+      [cutoff, limit]
+    );
+    return res.rows;
+  } catch (err) {
+    logger.error('Failed to get recent leads:', err);
+    return [];
+  }
+}
+
 // ============================================
 // CLEANUP & MAINTENANCE
 // ============================================
@@ -606,6 +712,7 @@ process.on('beforeExit', () => {
 module.exports = {
   // Core state management
   getUserState,
+  getUserStateSummary,
   updateUserState,
   clearUserState,
   getAllStates,
@@ -614,6 +721,8 @@ module.exports = {
   addLeadScore,
   getLeadStage,
   getLeadStagePriority,
+  getLeadStageEmoji,
+  getLeadScoreCategory,
   leadScoreActions,
   calculateLeadScore,
   applyScoreDecay,
@@ -624,20 +733,25 @@ module.exports = {
   getInteractionHistory,
   getInteractionStats,
   getDailyInteractionStats,
+  getUserEventCount,
   
   // Lead queries
   getLeadsByStage,
   getTopLeads,
   getLeadStats,
   getLeadsByModel,
+  getRecentLeads,
   
   // Session management
   generateSessionId,
   isSessionActive,
   getSessionDuration,
+  getSessionDurationFormatted,
   
   // Cache management
   getCacheStats,
+  invalidateCache,
+  clearCache,
   
   // Bulk operations
   bulkClearInactiveStates,
