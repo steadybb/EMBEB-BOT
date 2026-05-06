@@ -1,8 +1,19 @@
 // commands/admin.js
-const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags, StringSelectMenuBuilder } = require('discord.js');
+const { 
+  SlashCommandBuilder, 
+  ActionRowBuilder, 
+  ButtonBuilder, 
+  ButtonStyle, 
+  EmbedBuilder, 
+  MessageFlags, 
+  StringSelectMenuBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle
+} = require('discord.js');
 const { getGuildConfig, setGuildConfig, pool } = require('../utils/database');
 const { isAdmin } = require('../utils/permissions');
-const { getAutoPostStats } = require('../schedulers/autoPost');
+const { getAutoPostStats, postAutoContent } = require('../schedulers/autoPost');
 const { getApiStats } = require('../utils/openai');
 const logger = require('../utils/logger');
 
@@ -21,6 +32,7 @@ module.exports = {
     const guildId = interaction.guildId;
     const config = await getGuildConfig(guildId);
 
+    // Fetch stats
     let autoPostStats = null;
     let apiStats = null;
     let activeGiveaways = 0;
@@ -33,6 +45,7 @@ module.exports = {
       logger.debug('Stats not available yet:', err.message);
     }
 
+    // Format config values
     const verifyRole = config.verify_role_id ? `<@&${config.verify_role_id}>` : '❌ Not set';
     const ticketCategory = config.ticket_category_id ? `<#${config.ticket_category_id}>` : '❌ Not set';
     const staffRole = config.staff_role_id ? `<@&${config.staff_role_id}>` : '❌ Not set';
@@ -57,6 +70,7 @@ module.exports = {
       .setFooter({ text: 'Use the buttons below to configure each system.' })
       .setTimestamp();
 
+    // Add stats if available
     if (autoPostStats && autoPostStats.totalPosts > 0) {
       embed.addFields({ name: '📊 Auto Poster Statistics', value: getStatsFieldValue(autoPostStats, apiStats), inline: false });
     }
@@ -97,24 +111,180 @@ module.exports = {
     if (!interaction.customId.startsWith('admin_')) return false;
 
     if (!isAdmin(interaction.member)) {
-      return interaction.reply({ content: '❌ Only admins can use these controls.', ...EPHEMERAL });
+      await interaction.reply({ content: '❌ Only admins can use these controls.', ...EPHEMERAL });
+      return true;
     }
 
     switch (interaction.customId) {
-      case 'admin_refresh': await interaction.deferUpdate(); await this.execute(interaction); break;
-      case 'admin_stats_detail': await showDetailedStats(interaction); break;
-      case 'admin_test_autopost': await testAutoPost(interaction); break;
-      case 'admin_autopost_menu': await showAutoPostMenu(interaction); break;
-      case 'admin_verify_menu': await showVerifyMenu(interaction); break;
-      case 'admin_ticket_menu': await showTicketMenu(interaction); break;
-      case 'admin_lobby_menu': await showLobbyMenu(interaction); break;
-      case 'admin_giveaway_menu': await showGiveawayMenu(interaction); break;
-      case 'admin_autopost_toggle': await toggleAutoPost(interaction); break;
-      case 'admin_pull_all_leads': await pullAllLeads(interaction); break;
-      case 'admin_pull_active_leads': await pullActiveGiveawayLeads(interaction); break;
-      default: return false;
+      case 'admin_refresh': 
+        await interaction.deferUpdate(); 
+        await this.execute(interaction); 
+        break;
+      case 'admin_stats_detail': 
+        await showDetailedStats(interaction); 
+        break;
+      case 'admin_test_autopost': 
+        await testAutoPost(interaction); 
+        break;
+      case 'admin_autopost_menu': 
+        await showAutoPostMenu(interaction); 
+        break;
+      case 'admin_verify_menu': 
+        await showVerifyMenu(interaction); 
+        break;
+      case 'admin_ticket_menu': 
+        await showTicketMenu(interaction); 
+        break;
+      case 'admin_lobby_menu': 
+        await showLobbyMenu(interaction); 
+        break;
+      case 'admin_giveaway_menu': 
+        await showGiveawayMenu(interaction); 
+        break;
+      case 'admin_autopost_toggle': 
+        await toggleAutoPost(interaction); 
+        break;
+      case 'admin_pull_all_leads': 
+        await pullAllLeads(interaction); 
+        break;
+      case 'admin_pull_active_leads': 
+        await pullActiveGiveawayLeads(interaction); 
+        break;
+      case 'admin_toggle_verify': 
+        await toggleVerify(interaction); 
+        break;
+      case 'admin_set_verify_role': 
+        await setVerifyRole(interaction); 
+        break;
+      case 'admin_post_verify_panel': 
+        await postVerifyPanel(interaction); 
+        break;
+      case 'admin_set_ticket_category': 
+        await setTicketCategory(interaction); 
+        break;
+      case 'admin_set_ticket_staff': 
+        await setTicketStaffRole(interaction); 
+        break;
+      case 'admin_set_ticket_logs': 
+        await setTicketLogsChannel(interaction); 
+        break;
+      case 'admin_post_ticket_panel': 
+        await postTicketPanel(interaction); 
+        break;
+      case 'admin_lobby_toggle': 
+        await toggleLobby(interaction); 
+        break;
+      case 'admin_lobby_set_webhook': 
+        await setLobbyWebhook(interaction); 
+        break;
+      case 'admin_giveaway_set_pingrole': 
+        await setGiveawayPingRole(interaction); 
+        break;
+      default: 
+        return false;
     }
     return true;
+  },
+  
+  // ============================================
+  // SELECT MENU HANDLER
+  // ============================================
+  async handleSelect(interaction) {
+    if (interaction.customId === 'admin_select_giveaway_leads') {
+      await handleLeadSelect(interaction);
+      return true;
+    }
+    return false;
+  },
+  
+  // ============================================
+  // MODAL HANDLER
+  // ============================================
+  async handleModal(interaction) {
+    if (interaction.customId === 'admin_set_verify_role_modal') {
+      const roleId = interaction.fields.getTextInputValue('role_id');
+      const role = interaction.guild.roles.cache.get(roleId);
+      if (!role) {
+        await interaction.reply({ content: '❌ Invalid role ID.', ...EPHEMERAL });
+        return true;
+      }
+      const config = await getGuildConfig(interaction.guildId);
+      config.verify_role_id = role.id;
+      await setGuildConfig(interaction.guildId, config);
+      await interaction.reply({ content: `✅ Verification role set to ${role.name}.`, ...EPHEMERAL });
+      return true;
+    }
+    
+    if (interaction.customId === 'admin_set_ticket_category_modal') {
+      const categoryId = interaction.fields.getTextInputValue('category_id');
+      const category = interaction.guild.channels.cache.get(categoryId);
+      if (!category || category.type !== 4) {
+        await interaction.reply({ content: '❌ Invalid category ID. Must be a category channel.', ...EPHEMERAL });
+        return true;
+      }
+      const config = await getGuildConfig(interaction.guildId);
+      config.ticket_category_id = category.id;
+      await setGuildConfig(interaction.guildId, config);
+      await interaction.reply({ content: `✅ Ticket category set to ${category.name}.`, ...EPHEMERAL });
+      return true;
+    }
+    
+    if (interaction.customId === 'admin_set_ticket_staff_modal') {
+      const roleId = interaction.fields.getTextInputValue('role_id');
+      const role = interaction.guild.roles.cache.get(roleId);
+      if (!role) {
+        await interaction.reply({ content: '❌ Invalid role ID.', ...EPHEMERAL });
+        return true;
+      }
+      const config = await getGuildConfig(interaction.guildId);
+      config.staff_role_id = role.id;
+      await setGuildConfig(interaction.guildId, config);
+      await interaction.reply({ content: `✅ Staff role set to ${role.name}.`, ...EPHEMERAL });
+      return true;
+    }
+    
+    if (interaction.customId === 'admin_set_ticket_logs_modal') {
+      const channelId = interaction.fields.getTextInputValue('channel_id');
+      const channel = interaction.guild.channels.cache.get(channelId);
+      if (!channel || channel.type !== 0) {
+        await interaction.reply({ content: '❌ Invalid channel ID. Must be a text channel.', ...EPHEMERAL });
+        return true;
+      }
+      const config = await getGuildConfig(interaction.guildId);
+      config.ticket_logs_channel_id = channel.id;
+      await setGuildConfig(interaction.guildId, config);
+      await interaction.reply({ content: `✅ Logs channel set to ${channel.name}.`, ...EPHEMERAL });
+      return true;
+    }
+    
+    if (interaction.customId === 'admin_lobby_set_webhook_modal') {
+      const webhookUrl = interaction.fields.getTextInputValue('webhook_url');
+      if (!webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
+        await interaction.reply({ content: '❌ Invalid Discord webhook URL.', ...EPHEMERAL });
+        return true;
+      }
+      const config = await getGuildConfig(interaction.guildId);
+      config.lobby_webhook_url = webhookUrl;
+      await setGuildConfig(interaction.guildId, config);
+      await interaction.reply({ content: '✅ Lobby webhook URL set.', ...EPHEMERAL });
+      return true;
+    }
+    
+    if (interaction.customId === 'admin_giveaway_set_pingrole_modal') {
+      const roleId = interaction.fields.getTextInputValue('role_id');
+      const role = interaction.guild.roles.cache.get(roleId);
+      if (!role) {
+        await interaction.reply({ content: '❌ Invalid role ID.', ...EPHEMERAL });
+        return true;
+      }
+      const config = await getGuildConfig(interaction.guildId);
+      config.giveaway_ping_role_id = role.id;
+      await setGuildConfig(interaction.guildId, config);
+      await interaction.reply({ content: `✅ Giveaway ping role set to ${role.name}.`, ...EPHEMERAL });
+      return true;
+    }
+    
+    return false;
   }
 };
 
@@ -168,7 +338,7 @@ async function pullAllLeads(interaction) {
   }
 
   await interaction.editReply({ embeds: [embed] });
-  await interaction.followUp({ content: '📎 **CSV Export:**', files: [{ name: `all-leads.csv`, attachment: Buffer.from(csv) }], ...EPHEMERAL });
+  await interaction.followUp({ content: '📎 **CSV Export:**', files: [{ name: `all-leads-${Date.now()}.csv`, attachment: Buffer.from(csv) }], ...EPHEMERAL });
 }
 
 async function pullActiveGiveawayLeads(interaction) {
@@ -196,8 +366,6 @@ async function pullActiveGiveawayLeads(interaction) {
 }
 
 async function handleLeadSelect(interaction) {
-  if (interaction.customId !== 'admin_select_giveaway_leads') return false;
-  
   const giveawayId = parseInt(interaction.values[0]);
   const entriesRes = await pool.query('SELECT * FROM car_giveaway_entries WHERE giveaway_id = $1 ORDER BY entered_at ASC', [giveawayId]);
   const gwRes = await pool.query('SELECT * FROM car_giveaways WHERE id = $1', [giveawayId]);
@@ -210,7 +378,7 @@ async function handleLeadSelect(interaction) {
 
   const embed = new EmbedBuilder()
     .setTitle(`📋 Leads: ${giveaway.car_year} BYD ${giveaway.car_model}`)
-    .setDescription(`Total entries: **${entries.length}**\n\n${entries.map((e, i) => `**${i + 1}.** <@${e.user_id}>\n📧 ${e.user_email || 'N/A'}\n📱 ${e.user_phone || 'N/A'}\n🕐 <t:${Math.floor(new Date(e.entered_at).getTime() / 1000)}:R>`).join('\n\n')}`)
+    .setDescription(`Total entries: **${entries.length}**\n\n${entries.slice(0, 20).map((e, i) => `**${i + 1}.** <@${e.user_id}>\n📧 ${e.user_email || 'N/A'}\n📱 ${e.user_phone || 'N/A'}\n🕐 <t:${Math.floor(new Date(e.entered_at).getTime() / 1000)}:R>`).join('\n\n')}${entries.length > 20 ? `\n\n... and ${entries.length - 20} more entries` : ''}`)
     .setColor('#FFD700')
     .setTimestamp();
 
@@ -221,8 +389,7 @@ async function handleLeadSelect(interaction) {
   }
 
   await interaction.update({ embeds: [embed], components: [] });
-  await interaction.followUp({ content: '📎 **CSV Export:**', files: [{ name: `leads-${giveaway.car_model}.csv`, attachment: Buffer.from(csv) }], ...EPHEMERAL });
-  return true;
+  await interaction.followUp({ content: '📎 **CSV Export:**', files: [{ name: `leads-${giveaway.car_model.toLowerCase()}-${Date.now()}.csv`, attachment: Buffer.from(csv) }], ...EPHEMERAL });
 }
 
 // ============================================
@@ -295,11 +462,22 @@ function getHealthStatus(apiStats) {
 async function showDetailedStats(interaction) {
   const autoPostStats = getAutoPostStats();
   const apiStats = getApiStats();
-  const statsEmbed = new EmbedBuilder().setTitle('📊 Detailed System Statistics').setColor('#00BFFF').setTimestamp();
+  const statsEmbed = new EmbedBuilder()
+    .setTitle('📊 Detailed System Statistics')
+    .setColor('#00BFFF')
+    .setTimestamp();
 
   if (autoPostStats) {
     let v = '```yaml\n';
-    v += `Uptime: ${autoPostStats.uptime}\nTotal Posts: ${autoPostStats.totalPosts}\nSuccessful: ${autoPostStats.successfulPosts}\nFailed: ${autoPostStats.failedPosts}\nSuccess Rate: ${autoPostStats.successRate}\nAPI Posts: ${autoPostStats.apiPosts || 0}\nFallback Posts: ${autoPostStats.fallbackPosts || 0}\nCurrent Type: ${autoPostStats.currentType || 'N/A'}\nSchedule: ${autoPostStats.nextPostSchedule}\n`;
+    v += `Uptime: ${autoPostStats.uptime}\n`;
+    v += `Total Posts: ${autoPostStats.totalPosts}\n`;
+    v += `Successful: ${autoPostStats.successfulPosts}\n`;
+    v += `Failed: ${autoPostStats.failedPosts}\n`;
+    v += `Success Rate: ${autoPostStats.successRate}\n`;
+    v += `API Posts: ${autoPostStats.apiPosts || 0}\n`;
+    v += `Fallback Posts: ${autoPostStats.fallbackPosts || 0}\n`;
+    v += `Current Type: ${autoPostStats.currentType || 'N/A'}\n`;
+    v += `Schedule: ${autoPostStats.nextPostSchedule}\n`;
     if (autoPostStats.lastPostTime) v += `Last Post: ${new Date(autoPostStats.lastPostTime).toLocaleString()}\n`;
     v += '```';
     statsEmbed.addFields({ name: '🤖 Auto Poster', value: v, inline: false });
@@ -307,13 +485,20 @@ async function showDetailedStats(interaction) {
 
   if (apiStats) {
     let v = '```yaml\n';
-    v += `Total Requests: ${apiStats.totalRequests}\nSuccessful: ${apiStats.successfulRequests}\nFailed: ${apiStats.failedRequests}\nAPI Success Rate: ${apiStats.successRate}\nFallback Used: ${apiStats.fallbackUsed || 0} times\nFallback Posts: ${apiStats.fallbackPostsAvailable || 0} available\nPosts with Images: ${apiStats.fallbackPostsWithImages || 0}\nAvg Response Time: ${apiStats.averageResponseTime?.toFixed(0) || 'N/A'}ms\n`;
+    v += `Total Requests: ${apiStats.totalRequests}\n`;
+    v += `Successful: ${apiStats.successfulRequests}\n`;
+    v += `Failed: ${apiStats.failedRequests}\n`;
+    v += `API Success Rate: ${apiStats.successRate}\n`;
+    v += `Fallback Used: ${apiStats.fallbackUsed || 0} times\n`;
+    v += `Fallback Posts: ${apiStats.fallbackPostsAvailable || 0} available\n`;
+    v += `Posts with Images: ${apiStats.fallbackPostsWithImages || 0}\n`;
+    v += `Avg Response Time: ${apiStats.averageResponseTime?.toFixed(0) || 'N/A'}ms\n`;
     v += '```';
     statsEmbed.addFields({ name: '🔌 API Usage', value: v, inline: false });
 
     if (apiStats.models && apiStats.models.length > 0) {
       let m = '';
-      for (const model of apiStats.models) {
+      for (const model of apiStats.models.slice(0, 10)) {
         const sr = model.requests > 0 ? ((model.successes / model.requests) * 100).toFixed(0) : 0;
         const emoji = sr >= 80 ? '🟢' : sr >= 50 ? '🟡' : '🔴';
         m += `${emoji} ${model.model}\n   Requests: ${model.successes}/${model.requests} (${sr}%)\n   Avg Time: ${model.averageTime}\n\n`;
@@ -338,18 +523,23 @@ async function showDetailedStats(interaction) {
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('↩️ Back').setStyle(ButtonStyle.Secondary)
   );
 
-  if (interaction.deferred || interaction.replied) await interaction.editReply({ embeds: [statsEmbed], components: [row] });
-  else await interaction.reply({ embeds: [statsEmbed], components: [row], ...EPHEMERAL });
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({ embeds: [statsEmbed], components: [row] });
+  } else {
+    await interaction.reply({ embeds: [statsEmbed], components: [row], ...EPHEMERAL });
+  }
 }
 
 async function testAutoPost(interaction) {
   await interaction.deferReply(EPHEMERAL);
-  const { postAutoContent } = require('../schedulers/autoPost');
   try {
     const success = await postAutoContent(interaction.client);
     const stats = getAutoPostStats();
-    if (success) await interaction.editReply({ content: `✅ **Test post sent!**\n\n📊 Total Posts: ${stats.totalPosts}\nSuccess Rate: ${stats.successRate}` });
-    else await interaction.editReply({ content: '❌ Failed to send test post. Check logs.' });
+    if (success) {
+      await interaction.editReply({ content: `✅ **Test post sent!**\n\n📊 Total Posts: ${stats.totalPosts}\nSuccess Rate: ${stats.successRate}` });
+    } else {
+      await interaction.editReply({ content: '❌ Failed to send test post. Check logs.' });
+    }
   } catch (err) {
     await interaction.editReply({ content: `❌ Error: ${err.message}` });
   }
@@ -358,14 +548,20 @@ async function testAutoPost(interaction) {
 async function showAutoPostMenu(interaction) {
   const config = await getGuildConfig(interaction.guildId);
   const stats = getAutoPostStats();
-  const embed = new EmbedBuilder().setTitle('🤖 Auto Poster').setDescription(`**Enabled:** ${config.auto_post_enabled ? '🟢 Yes' : '🔴 No'}\n**Channels:** ${config.auto_post_channels?.length ? config.auto_post_channels.map(id => `<#${id}>`).join(', ') : 'None'}\n**Interval:** Every ${config.auto_post_interval_hours || 2}h\n\n**Total Posts:** ${stats?.totalPosts || 0}\n**Success Rate:** ${stats?.successRate || 'N/A'}`).setColor('#9B59B6');
+  const embed = new EmbedBuilder()
+    .setTitle('🤖 Auto Poster')
+    .setDescription(`**Enabled:** ${config.auto_post_enabled ? '🟢 Yes' : '🔴 No'}\n**Channels:** ${config.auto_post_channels?.length ? config.auto_post_channels.map(id => `<#${id}>`).join(', ') : 'None'}\n**Interval:** Every ${config.auto_post_interval_hours || 2}h\n\n**Total Posts:** ${stats?.totalPosts || 0}\n**Success Rate:** ${stats?.successRate || 'N/A'}`)
+    .setColor('#9B59B6');
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('admin_autopost_toggle').setLabel(config.auto_post_enabled ? '🔴 Disable' : '🟢 Enable').setStyle(config.auto_post_enabled ? ButtonStyle.Danger : ButtonStyle.Success),
     new ButtonBuilder().setCustomId('admin_test_autopost').setLabel('🧪 Test').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('↩️ Back').setStyle(ButtonStyle.Secondary)
   );
-  if (interaction.deferred || interaction.replied) await interaction.editReply({ embeds: [embed], components: [row] });
-  else await interaction.reply({ embeds: [embed], components: [row], ...EPHEMERAL });
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({ embeds: [embed], components: [row] });
+  } else {
+    await interaction.reply({ embeds: [embed], components: [row], ...EPHEMERAL });
+  }
 }
 
 async function toggleAutoPost(interaction) {
@@ -377,19 +573,76 @@ async function toggleAutoPost(interaction) {
 }
 
 async function showVerifyMenu(interaction) {
-  const embed = new EmbedBuilder().setTitle('✅ Verification').setDescription('Configure verification system.').setColor('#2ECC71');
+  const config = await getGuildConfig(interaction.guildId);
+  const embed = new EmbedBuilder()
+    .setTitle('✅ Verification System')
+    .setDescription(`**Status:** ${config.verify_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Role:** ${config.verify_role_id ? `<@&${config.verify_role_id}>` : '❌ Not set'}\n**Channel:** ${config.verify_channel_id ? `<#${config.verify_channel_id}>` : 'Current channel'}`)
+    .setColor('#2ECC71');
   const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('admin_toggle_verify').setLabel(config.verify_enabled ? '🔴 Disable' : '🟢 Enable').setStyle(config.verify_enabled ? ButtonStyle.Danger : ButtonStyle.Success),
     new ButtonBuilder().setCustomId('admin_set_verify_role').setLabel('📌 Set Role').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('admin_toggle_verify').setLabel('⏻ Toggle').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('admin_post_verify_panel').setLabel('📢 Post Panel').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
   );
-  if (interaction.deferred || interaction.replied) await interaction.editReply({ embeds: [embed], components: [row] });
-  else await interaction.reply({ embeds: [embed], components: [row], ...EPHEMERAL });
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({ embeds: [embed], components: [row] });
+  } else {
+    await interaction.reply({ embeds: [embed], components: [row], ...EPHEMERAL });
+  }
+}
+
+async function toggleVerify(interaction) {
+  const config = await getGuildConfig(interaction.guildId);
+  config.verify_enabled = !config.verify_enabled;
+  await setGuildConfig(interaction.guildId, config);
+  await interaction.reply({ content: `✅ Verification ${config.verify_enabled ? 'enabled' : 'disabled'}.`, ...EPHEMERAL });
+  setTimeout(() => showVerifyMenu(interaction), 500);
+}
+
+async function setVerifyRole(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('admin_set_verify_role_modal')
+    .setTitle('Set Verification Role');
+  
+  const input = new TextInputBuilder()
+    .setCustomId('role_id')
+    .setLabel('Role ID')
+    .setPlaceholder('Enter the role ID')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+  
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
+  await interaction.showModal(modal);
+}
+
+async function postVerifyPanel(interaction) {
+  const { getVerificationEmbed } = require('./verify');
+  const embed = getVerificationEmbed();
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('verify_button')
+      .setLabel('✅ Verify Me – It\'s Free')
+      .setStyle(ButtonStyle.Success)
+      .setEmoji('🔑')
+  );
+  
+  const config = await getGuildConfig(interaction.guildId);
+  let targetChannel = interaction.channel;
+  if (config.verify_channel_id) {
+    const channel = interaction.guild.channels.cache.get(config.verify_channel_id);
+    if (channel) targetChannel = channel;
+  }
+  
+  await targetChannel.send({ embeds: [embed], components: [row] });
+  await interaction.reply({ content: `✅ Verification panel posted in ${targetChannel}`, ...EPHEMERAL });
 }
 
 async function showTicketMenu(interaction) {
-  const embed = new EmbedBuilder().setTitle('🎫 Ticket System').setDescription('Configure support tickets.').setColor('#3498DB');
+  const config = await getGuildConfig(interaction.guildId);
+  const embed = new EmbedBuilder()
+    .setTitle('🎫 Ticket System')
+    .setDescription(`**Category:** ${config.ticket_category_id ? `<#${config.ticket_category_id}>` : '❌ Not set'}\n**Staff Role:** ${config.staff_role_id ? `<@&${config.staff_role_id}>` : '❌ Not set'}\n**Logs Channel:** ${config.ticket_logs_channel_id ? `<#${config.ticket_logs_channel_id}>` : '❌ Not set'}`)
+    .setColor('#3498DB');
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('admin_set_ticket_category').setLabel('📂 Category').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('admin_set_ticket_staff').setLabel('👥 Staff Role').setStyle(ButtonStyle.Primary),
@@ -397,21 +650,116 @@ async function showTicketMenu(interaction) {
     new ButtonBuilder().setCustomId('admin_post_ticket_panel').setLabel('📢 Post Panel').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
   );
-  if (interaction.deferred || interaction.replied) await interaction.editReply({ embeds: [embed], components: [row] });
-  else await interaction.reply({ embeds: [embed], components: [row], ...EPHEMERAL });
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({ embeds: [embed], components: [row] });
+  } else {
+    await interaction.reply({ embeds: [embed], components: [row], ...EPHEMERAL });
+  }
+}
+
+async function setTicketCategory(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('admin_set_ticket_category_modal')
+    .setTitle('Set Ticket Category');
+  
+  const input = new TextInputBuilder()
+    .setCustomId('category_id')
+    .setLabel('Category ID')
+    .setPlaceholder('Enter the category ID')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+  
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
+  await interaction.showModal(modal);
+}
+
+async function setTicketStaffRole(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('admin_set_ticket_staff_modal')
+    .setTitle('Set Staff Role');
+  
+  const input = new TextInputBuilder()
+    .setCustomId('role_id')
+    .setLabel('Role ID')
+    .setPlaceholder('Enter the role ID')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+  
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
+  await interaction.showModal(modal);
+}
+
+async function setTicketLogsChannel(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('admin_set_ticket_logs_modal')
+    .setTitle('Set Logs Channel');
+  
+  const input = new TextInputBuilder()
+    .setCustomId('channel_id')
+    .setLabel('Channel ID')
+    .setPlaceholder('Enter the channel ID')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+  
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
+  await interaction.showModal(modal);
+}
+
+async function postTicketPanel(interaction) {
+  const { createTicketPanelEmbed } = require('./ticket');
+  const embed = createTicketPanelEmbed();
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('create_ticket')
+      .setLabel('📩 Create Support Ticket')
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('🎫')
+  );
+  
+  await interaction.channel.send({ embeds: [embed], components: [row] });
+  await interaction.reply({ content: '✅ Ticket panel posted.', ...EPHEMERAL });
 }
 
 async function showLobbyMenu(interaction) {
   const config = await getGuildConfig(interaction.guildId);
-  const embed = new EmbedBuilder().setTitle('💬 Lobby Chatter').setDescription(`**Status:** ${config.lobby_chatter_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Webhook:** ${config.lobby_webhook_url ? '✅ Set' : '❌ Not set'}\n**Personas:** ${config.lobby_chatter_personas?.length || 9} active`).setColor('#9B59B6');
+  const embed = new EmbedBuilder()
+    .setTitle('💬 Lobby Chatter')
+    .setDescription(`**Status:** ${config.lobby_chatter_enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Webhook:** ${config.lobby_webhook_url ? '✅ Set' : '❌ Not set'}\n**Personas:** ${config.lobby_chatter_personas?.length || 9} active`)
+    .setColor('#9B59B6');
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('admin_lobby_toggle').setLabel('⏻ Toggle').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('admin_lobby_set_webhook').setLabel('🔗 Webhook').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('admin_lobby_set_personas').setLabel('👥 Personas').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
   );
-  if (interaction.deferred || interaction.replied) await interaction.editReply({ embeds: [embed], components: [row] });
-  else await interaction.reply({ embeds: [embed], components: [row], ...EPHEMERAL });
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({ embeds: [embed], components: [row] });
+  } else {
+    await interaction.reply({ embeds: [embed], components: [row], ...EPHEMERAL });
+  }
+}
+
+async function toggleLobby(interaction) {
+  const config = await getGuildConfig(interaction.guildId);
+  config.lobby_chatter_enabled = !config.lobby_chatter_enabled;
+  await setGuildConfig(interaction.guildId, config);
+  await interaction.reply({ content: `✅ Lobby chatter ${config.lobby_chatter_enabled ? 'enabled' : 'disabled'}.`, ...EPHEMERAL });
+  setTimeout(() => showLobbyMenu(interaction), 500);
+}
+
+async function setLobbyWebhook(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('admin_lobby_set_webhook_modal')
+    .setTitle('Set Lobby Webhook');
+  
+  const input = new TextInputBuilder()
+    .setCustomId('webhook_url')
+    .setLabel('Discord Webhook URL')
+    .setPlaceholder('https://discord.com/api/webhooks/...')
+    .setStyle(TextInputStyle.Url)
+    .setRequired(true);
+  
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
+  await interaction.showModal(modal);
 }
 
 async function showGiveawayMenu(interaction) {
@@ -436,8 +784,25 @@ async function showGiveawayMenu(interaction) {
     new ButtonBuilder().setCustomId('admin_refresh').setLabel('◀ Back').setStyle(ButtonStyle.Secondary)
   );
   
-  if (interaction.deferred || interaction.replied) await interaction.editReply({ embeds: [embed], components: [row1, row2] });
-  else await interaction.reply({ embeds: [embed], components: [row1, row2], ...EPHEMERAL });
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({ embeds: [embed], components: [row1, row2] });
+  } else {
+    await interaction.reply({ embeds: [embed], components: [row1, row2], ...EPHEMERAL });
+  }
 }
 
-module.exports.handleLeadSelect = handleLeadSelect;
+async function setGiveawayPingRole(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('admin_giveaway_set_pingrole_modal')
+    .setTitle('Set Giveaway Ping Role');
+  
+  const input = new TextInputBuilder()
+    .setCustomId('role_id')
+    .setLabel('Role ID')
+    .setPlaceholder('Enter the role ID')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+  
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
+  await interaction.showModal(modal);
+}
