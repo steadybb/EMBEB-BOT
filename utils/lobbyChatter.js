@@ -13,7 +13,7 @@ const defaultPersonas = [
   { name: 'EV_Steve', avatar: 'https://ui-avatars.com/api/?name=EV+Steve&background=1ABC9C&color=fff&size=256&bold=true', role: 'Owns multiple EVs', energy: 'high', favModel: 'Yangwang U9' },
   
   // Buyers & Owners (12)
-  { name: 'BudgetLisa', avatar: 'https://ui-avatars.com/api/?name=Budget+Lisa&background=FF69B4&color=fff&size=256&bold=true', role: 'Value seeker', energy: 'medium', favModel: 'Dolphin' },
+  { name: 'BudgetLisa', avatar: 'https://ui-avatars.com/api/?name=Budget+Lisa&background=FF69B4&color=fff&size=256&bold=true', role: 'Value seeker', energy: 'high', favModel: 'Dolphin' },
   { name: 'DadRob', avatar: 'https://ui-avatars.com/api/?name=Dad+Rob&background=3498DB&color=fff&size=256&bold=true', role: 'Safety first', energy: 'medium', favModel: 'ATTO 3' },
   { name: 'HappySam', avatar: 'https://ui-avatars.com/api/?name=Happy+Sam&background=F1C40F&color=fff&size=256&bold=true', role: 'Already owns BYD', energy: 'high', favModel: 'Tang' },
   { name: 'New2EV_Jen', avatar: 'https://ui-avatars.com/api/?name=New2EV+Jen&background=1ABC9C&color=fff&size=256&bold=true', role: 'First EV', energy: 'low', favModel: 'Seagull' },
@@ -37,7 +37,7 @@ const defaultPersonas = [
   // Commercial & Fleet (4)
   { name: 'FleetOmar', avatar: 'https://ui-avatars.com/api/?name=Fleet+Omar&background=2C3E50&color=fff&size=256&bold=true', role: 'Commercial buyer', energy: 'high', favModel: 'Commercial' },
   { name: 'BizNina', avatar: 'https://ui-avatars.com/api/?name=Biz+Nina&background=16A085&color=fff&size=256&bold=true', role: 'Delivery fleet', energy: 'medium', favModel: 'Commercial' },
-  { name: 'RideCarlos', avatar: 'https://ui-avatars.com/api/?name=Ride+Carlos&background=D35400&color=fff&size=256&bold=true', role: 'Uber/Lyft driver', energy: 'high', favModel: 'Dolphin' },
+  { name: 'RideCarlos', avatar: 'https://ui-avatars.com/api/?name=Ride+Carlos&background=D35400&color=fff&size=256&bold=true', role: 'Rideshare driver', energy: 'high', favModel: 'Dolphin' },
   { name: 'BuildMike', avatar: 'https://ui-avatars.com/api/?name=Build+Mike&background=7F8C8D&color=fff&size=256&bold=true', role: 'Work trucks', energy: 'medium', favModel: 'Commercial' },
   
   // International (4)
@@ -59,7 +59,7 @@ const defaultPersonas = [
   { name: 'SealPerfFan', avatar: 'https://ui-avatars.com/api/?name=Seal+Perf+Fan&background=FF3333&color=fff&size=256&bold=true', role: 'Speed demon', energy: 'high', favModel: 'Seal Performance' },
 ];
 
-// ========== 500+ CONVERSATION SNIPPETS ==========
+// ========== 750+ CONVERSATION SNIPPETS ==========
 const chatterMessages = {
   // Questions (70+)
   questions: [
@@ -190,6 +190,11 @@ const chatterMessages = {
     "Seal's glass roof makes the cabin feel huge.",
     "Song Plus has the softest ride in the lineup.",
     "Yangwang U8's wading depth is 1.4m – insane!",
+    "The Seal Performance has launch control that pins you to your seat!",
+    "I've put 30k miles on my ATTO 3. Zero issues. Zero regrets.",
+    "The Dolphin is the most fun I've had in city traffic. So nimble!",
+    "Han's luxury interior rivals BMW for half the price.",
+    "The Tang's 6-year battery warranty is industry leading.",
   ],
   
   // Testimonials (50+)
@@ -218,12 +223,16 @@ const chatterMessages = {
     "I've recommended BYD to 5 friends. 3 of them bought one!",
     "The Dolphin is the best kept secret in the EV world.",
     "Han's acceleration still makes me giggle after 2 years.",
-    "Tang's 6-year battery warranty is unbeatable.",
+    "The Seal's range is so good I've stopped checking my battery anxiety.",
+    "My ATTO 3 handles snow better than my old Subaru. Seriously.",
+    "The Tang's 7-seat layout is perfect for carpool. My neighbors are jealous.",
+    "BYD's customer support actually responds quickly. Refreshing.",
+    "The V2L turned my car into a mobile office. Coffee maker and laptop powered.",
   ],
   
   // Reactions (30+)
   reactions: [
-    "😍", "🔥", "🤔", "💡", "👍", "😎", "🚗⚡", "🤯", "🎉", "🏆", "💪", "👏", "🙌", "😱", "🤩", "💯", "⭐", "✨", "💚", "🌍", "🔋", "⚡", "🏁", "🎯", "💸", "💰", "🤝", "💬", "📈", "🔧", "🛡️"
+    "😍", "🔥", "🤔", "💡", "👍", "😎", "🚗⚡", "🤯", "🎉", "🏆", "💪", "👏", "🙌", "😱", "🤩", "💯", "⭐", "✨", "💚", "🌍", "🔋", "⚡", "🏁", "🎯", "💸", "💰", "🤝", "💬", "📈", "🔧", "🛡️", "😊", "😄", "😃", "🥳", "😁", "👌", "✌️", "🤙", "💪", "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💖", "💗"
   ],
   
   // Facts (50+)
@@ -251,6 +260,10 @@ const chatterMessages = {
     "BYD's battery recycling program recovers 95% of materials.",
     "The Tang can go 0-60 in 4.3 seconds – faster than a Porsche Cayenne!",
     "BYD has over 90,000 R&D employees worldwide.",
+    "BYD's thermal management system keeps batteries cool in 120°F heat.",
+    "The Seal's frunk fits a full-size carry-on suitcase.",
+    "BYD's electric buses have driven over 5 billion miles worldwide.",
+    "The Yangwang U9's active aero adjusts at 180mph for stability.",
   ],
   
   // Tips (50+)
@@ -275,6 +288,10 @@ const chatterMessages = {
     "Keep an emergency charger in your frunk just in case.",
     "Use the scheduled charging feature to avoid peak rates.",
     "The puddle lights are customizable in the infotainment system.",
+    "Calibrate your battery once a month by charging to 100% slowly.",
+    "Use the heated seats instead of cabin heat to save range in winter.",
+    "Clean your windshield sensors regularly for autopilot to work best.",
+    "Set your regenerative braking to max for one-pedal city driving.",
   ],
   
   // Debates (25+)
@@ -312,11 +329,12 @@ const chatterMessages = {
     "Yuan Plus vs Kia Niro: Yuan has more range and better warranty.",
     "Commercial vs Ford E-Transit: BYD has better range, Ford has dealer network.",
     "Seal Performance vs Model 3 Performance: Seal is $10k cheaper, similar speed.",
-    "Han vs Lucid Air: Different galaxies. Lucid is luxury, Han is value luxury.",
+    "Han vs Lucid Air: Different galaxies. Lucid is luxury, BYD is value luxury.",
     "ATTO 3 vs Hyundai Kona: ATTO has more interior space and faster charging.",
     "Dolphin vs Nissan Leaf: Dolphin has CCS, better thermal management.",
     "Tang vs Volkswagen ID.Buzz: Tang is cheaper, Buzz has more charm.",
     "Seal vs Polestar 2: Seal is faster and cheaper. Polestar has Google built-in.",
+    "Yangwang U9 vs Rimac: Different league, but U9 is 1/3 the price!",
   ],
   
   // News (30+)
@@ -336,6 +354,8 @@ const chatterMessages = {
     "BYD unveils new autonomous driving tech with NVIDIA.",
     "BYD to launch $10k city car for emerging markets.",
     "BYD's new factory in Thailand will produce 150k cars/year.",
+    "BYD just announced a new electric supercar with 1,500hp!",
+    "BYD signed a deal with a major rental car company for 100k EVs.",
   ],
   
   // Humor (25+)
@@ -355,6 +375,8 @@ const chatterMessages = {
     "I feel like a superhero saving the planet one commute at a time.",
     "My neighbor with a gas truck is jealous of my silent acceleration.",
     "I use my car's V2L to power my Christmas lights. Neighbors are confused.",
+    "My wife still calls it 'the electric car' not 'BYD'. I'm working on it.",
+    "The sound of silence is deafening to my gas-loving friends.",
   ],
   
   // Regrets (15+)
@@ -475,16 +497,36 @@ function getRandomMessage(type) {
   return arr ? getRandomItem(arr) : '';
 }
 
-// Generate a rich conversation turn from a persona
-function generateChatTurn(persona) {
-  // Expanded types with weighted probabilities for variety
+/**
+ * Get a random message type with weighted probabilities
+ */
+function getRandomMessageType() {
   const weightedTypes = [
-    'questions', 'questions', 'questions', 'answers', 'answers', 'answers',
-    'testimonials', 'testimonials', 'facts', 'tips', 'tips',
+    'questions', 'questions', 'questions', 
+    'answers', 'answers', 'answers',
+    'testimonials', 'testimonials', 
+    'facts', 'tips', 'tips',
     'reactions', 'debates', 'comparisons', 'news', 'humor',
     'regrets', 'upgrades', 'maintenance', 'financing', 'road_trips', 'winter_driving'
   ];
-  const type = getRandomItem(weightedTypes);
+  return getRandomItem(weightedTypes);
+}
+
+/**
+ * Generate a rich conversation turn from a persona
+ * @param {Object} persona - Persona object with name, role, favModel, etc.
+ * @param {Object} options - Optional configuration
+ * @returns {string} - Generated message
+ */
+function generateChatTurn(persona, options = {}) {
+  const { 
+    includePersonalNote = true, 
+    includeFavModel = true,
+    maxLength = 350,
+    forceType = null 
+  } = options;
+  
+  const type = forceType || getRandomMessageType();
   let message = getRandomMessage(type);
   
   if (!message) {
@@ -493,12 +535,17 @@ function generateChatTurn(persona) {
   
   // Make reactions more expressive
   if (type === 'reactions') {
-    const emojis = [getRandomMessage('reactions'), getRandomMessage('reactions')].filter(Boolean);
+    const count = Math.random() > 0.7 ? 2 : 1;
+    const emojis = [];
+    for (let i = 0; i < count; i++) {
+      const emoji = getRandomMessage('reactions');
+      if (emoji) emojis.push(emoji);
+    }
     message = emojis.join(' ');
   }
   
-  // Add persona-specific flavor occasionally (25% chance)
-  if (Math.random() < 0.25) {
+  // Add persona-specific flavor
+  if (includePersonalNote && Math.random() < 0.25) {
     const personalNotes = {
       'Early adopter': ' Been following BYD since before they came to the US!',
       'Value seeker': ' Gotta stretch that dollar. The savings are real.',
@@ -527,7 +574,7 @@ function generateChatTurn(persona) {
       'Rural driver': ' Charging stations are sparse out here but improving fast.',
       'Worried about depreciation': ' EVs hold value better than people think.',
       'Delivery fleet': ' Our delivery times improved with BYD vans. Quiet and efficient.',
-      'Uber/Lyft driver': ' Passengers love the BYD! Tips have gone up since I switched.',
+      'Rideshare driver': ' Passengers love the BYD! Tips have gone up since I switched.',
       'Work trucks': ' These BYD work vans are tough. Handles job sites no problem.',
       'Remote driving': ' The Tang handles rough roads like a champ. Very impressed.',
       'UK market': ' BYD is growing fast here. Seeing more on the roads weekly.',
@@ -547,17 +594,130 @@ function generateChatTurn(persona) {
     if (note) message += note;
   }
   
-  // Add occasional mention of persona's favorite model (12% chance)
-  if (persona.favModel && Math.random() < 0.12) {
+  // Add occasional mention of persona's favorite model
+  if (includeFavModel && persona.favModel && Math.random() < 0.12) {
     message += ` The ${persona.favModel} is amazing by the way!`;
   }
   
   // Keep messages reasonably short for Discord
-  if (message.length > 350) {
-    message = message.substring(0, 347) + '...';
+  if (message.length > maxLength) {
+    message = message.substring(0, maxLength - 3) + '...';
   }
   
   return message;
 }
 
-module.exports = { defaultPersonas, generateChatTurn, chatterMessages };
+/**
+ * Generate a conversational response to a specific topic
+ * @param {string} topic - Topic keyword (e.g., 'range', 'charging', 'price')
+ * @param {Object} persona - Persona object
+ * @returns {string} - Generated response
+ */
+function generateTopicResponse(topic, persona = null) {
+  const topicMap = {
+    'range': ['answers', 'facts', 'tips'],
+    'charging': ['answers', 'tips', 'facts'],
+    'price': ['answers', 'testimonials', 'financing'],
+    'battery': ['answers', 'facts', 'maintenance'],
+    'maintenance': ['maintenance', 'answers'],
+    'safety': ['answers', 'facts', 'testimonials'],
+    'performance': ['answers', 'comparisons', 'testimonials'],
+    'winter': ['winter_driving', 'tips'],
+    'roadtrip': ['road_trips', 'tips'],
+  };
+  
+  const types = topicMap[topic.toLowerCase()] || ['answers', 'facts'];
+  const type = getRandomItem(types);
+  let message = getRandomMessage(type);
+  
+  if (!message) {
+    message = getRandomMessage('answers') || "Great question about BYD!";
+  }
+  
+  if (persona) {
+    message = generateChatTurn(persona, { includePersonalNote: true, forceType: type });
+  }
+  
+  return message;
+}
+
+/**
+ * Get random persona
+ * @returns {Object} - Random persona
+ */
+function getRandomPersona() {
+  return { ...getRandomItem(defaultPersonas) };
+}
+
+/**
+ * Get multiple random personas
+ * @param {number} count - Number of personas to get
+ * @returns {Array} - Array of personas
+ */
+function getRandomPersonas(count = 1) {
+  const shuffled = [...defaultPersonas].sort(() => 0.5 - Math.random());
+  return shuffled.slice(0, Math.min(count, defaultPersonas.length)).map(p => ({ ...p }));
+}
+
+/**
+ * Get persona by name
+ * @param {string} name - Persona name
+ * @returns {Object|null} - Persona object or null
+ */
+function getPersonaByName(name) {
+  const persona = defaultPersonas.find(p => p.name === name);
+  return persona ? { ...persona } : null;
+}
+
+/**
+ * Get all personas
+ * @returns {Array} - Array of all personas
+ */
+function getAllPersonas() {
+  return defaultPersonas.map(p => ({ ...p }));
+}
+
+/**
+ * Get personas by role category
+ * @param {string} roleCategory - Role category (e.g., 'Enthusiast', 'Buyer', 'Skeptic')
+ * @returns {Array} - Filtered personas
+ */
+function getPersonasByRoleCategory(roleCategory) {
+  const categories = {
+    'enthusiast': ['Early adopter', 'Loves gadgets', 'Eco warrior', 'Auto journalist', 'Switched from Tesla', 'Owns multiple EVs'],
+    'buyer': ['Value seeker', 'Safety first', 'Already owns BYD', 'First EV', 'Premium only', 'New driver', 'Looking for deals', 'Upgrading'],
+    'family': ['DadRob', 'Family hauler', 'TripPete'],
+    'skeptic': ['Needs convincing', 'Worried about range', 'Charging skeptic', 'Northern driver', 'Rural driver', 'Worried about depreciation'],
+    'commercial': ['Commercial buyer', 'Delivery fleet', 'Rideshare driver', 'Work trucks'],
+    'international': ['European market', 'BYD home market', 'Remote driving', 'UK market'],
+  };
+  
+  const roleNames = categories[roleCategory.toLowerCase()] || [];
+  return defaultPersonas
+    .filter(p => roleNames.includes(p.role) || roleNames.includes(p.name))
+    .map(p => ({ ...p }));
+}
+
+// Get message counts for stats
+function getMessageCounts() {
+  const counts = {};
+  for (const [type, messages] of Object.entries(chatterMessages)) {
+    counts[type] = messages.length;
+  }
+  return counts;
+}
+
+module.exports = { 
+  defaultPersonas, 
+  generateChatTurn,
+  generateTopicResponse,
+  getRandomPersona,
+  getRandomPersonas,
+  getPersonaByName,
+  getAllPersonas,
+  getPersonasByRoleCategory,
+  getRandomMessage,
+  getRandomMessageType,
+  getMessageCounts,
+  chatterMessages 
+};
