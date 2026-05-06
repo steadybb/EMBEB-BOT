@@ -38,6 +38,7 @@ const namedColors = {
   seagull_orange: 0xFF6600,
   tang_purple: 0x9933CC,
   yangwang_black: 0x1A1A1A,
+  yangwang_gold: 0xFFD700,
   
   // Discord Default
   discord: 0x5865F2,
@@ -53,6 +54,8 @@ const DISCLAIMERS = {
   prices: '💰 Prices and availability subject to change without notice.',
   specs: '⚙️ Specifications may vary by region.',
   eco: '🌱 Environmental impact figures are estimates.',
+  giveaway: '🎁 No purchase necessary. Void where prohibited. 18+ only.',
+  test_drive: '🚗 Test drives subject to availability. Valid drivers license required.',
 };
 
 // ============================================
@@ -83,7 +86,7 @@ const templates = {
       { name: '⏱️ Duration', value: '45-60 minutes', inline: true },
       { name: '💰 Cost', value: 'Free!', inline: true },
     ],
-    footer: { text: 'A BYD advisor will contact you to confirm within 24 hours' },
+    footer: { text: `A BYD advisor will contact you to confirm within 24 hours • ${DISCLAIMERS.test_drive}` },
     timestamp: true,
   }),
 
@@ -161,7 +164,7 @@ const templates = {
    */
   giveaway: (prize, endTime, winners) => ({
     title: `🎁 GIVEAWAY: ${prize}`,
-    description: `React with 🎉 to enter!\n\n**Ends:** <t:${Math.floor(endTime / 1000)}:R>\n**Winners:** ${winners}\n\n${DISCLAIMERS.automated}`,
+    description: `React with 🎉 to enter!\n\n**Ends:** <t:${Math.floor(endTime / 1000)}:R>\n**Winners:** ${winners}\n\n${DISCLAIMERS.giveaway}`,
     color: 'byd_gold',
     footer: { text: 'Good luck! 🍀' },
     timestamp: true,
@@ -172,14 +175,14 @@ const templates = {
    */
   carGiveaway: (data) => ({
     title: `🚗 CAR GIVEAWAY: BYD ${data.model}`,
-    description: `Win a brand new BYD ${data.model}!\n\n**Value:** $${data.msrp?.toLocaleString()}\n**Color:** ${data.color}\n**Shipping:** Included\n**Ends:** <t:${Math.floor(data.endTime / 1000)}:R>\n\n${DISCLAIMERS.automated}`,
+    description: `Win a brand new BYD ${data.model}!\n\n**Value:** $${data.msrp?.toLocaleString()}\n**Color:** ${data.color}\n**Shipping:** Included\n**Ends:** <t:${Math.floor(data.endTime / 1000)}:R>\n\n${DISCLAIMERS.giveaway}`,
     color: 'byd_gold',
     image: data.image ? { url: data.image } : undefined,
     fields: [
       { name: '🏆 Winners', value: `${data.winners}`, inline: true },
       { name: '💵 Entry Fee', value: data.entryFee ? `$${data.entryFee}` : 'Free', inline: true },
       { name: '📋 Requirements', value: '• Must be 18+\n• Valid driver\'s license\n• Legal resident', inline: false },
-      { name: '⚠️ Disclaimer', value: 'No purchase necessary to enter or win. Void where prohibited.', inline: false },
+      { name: '⚠️ Disclaimer', value: DISCLAIMERS.giveaway, inline: false },
     ],
     footer: { text: 'Enter now for your chance to win!' },
     timestamp: true,
@@ -213,7 +216,64 @@ const templates = {
     footer: { text: `${DISCLAIMERS.automated} • Stats refresh every 6h` },
     timestamp: true,
   }),
+
+  /**
+   * Info embed for general information
+   */
+  info: (title, description, color = 'info') => ({
+    title: `ℹ️ ${title}`,
+    description: description,
+    color: color,
+    footer: { text: DISCLAIMERS.automated },
+    timestamp: true,
+  }),
+
+  /**
+   * Warning embed
+   */
+  warning: (title, description) => ({
+    title: `⚠️ ${title}`,
+    description: description,
+    color: 'warning',
+    footer: { text: DISCLAIMERS.automated },
+    timestamp: true,
+  }),
+
+  /**
+   * Model spotlight embed
+   */
+  modelSpotlight: (model, specs) => ({
+    title: `🚗 BYD ${model} Spotlight`,
+    description: specs.description || `Check out the amazing BYD ${model}!`,
+    color: getModelColor(model),
+    thumbnail: specs.image ? { url: specs.image } : undefined,
+    fields: [
+      { name: '💰 Price', value: specs.price || 'Contact for pricing', inline: true },
+      { name: '⚡ Range', value: specs.range || 'N/A', inline: true },
+      { name: '🔋 Battery', value: specs.battery || 'Blade Battery', inline: true },
+      { name: '🏎️ 0-60', value: specs.zeroToSixty || 'N/A', inline: true },
+      { name: '🛡️ Warranty', value: specs.warranty || '8 years / 120,000 miles', inline: true },
+      { name: '🎨 Colors', value: specs.colors ? specs.colors.join(', ') : 'Multiple options', inline: false },
+    ],
+    footer: { text: `⚡ BYD ${model} • Build Your Dreams` },
+    timestamp: true,
+  }),
 };
+
+// Helper to get model color
+function getModelColor(model) {
+  const modelColors = {
+    'Seal': 'seal_blue',
+    'ATTO 3': 'atto_green',
+    'Dolphin': 'dolphin_cyan',
+    'Han': 'han_red',
+    'Seagull': 'seagull_orange',
+    'Tang': 'tang_purple',
+    'Yangwang U8': 'yangwang_black',
+    'Yangwang U9': 'yangwang_gold',
+  };
+  return modelColors[model] || 'byd_blue';
+}
 
 // ============================================
 // HELPER FUNCTIONS
@@ -299,7 +359,7 @@ function truncateString(str, maxLength = 1024) {
  * @param {number} currentPage - Current page index (0-based)
  * @param {number} totalPages - Total number of pages
  * @param {string} customIdPrefix - Prefix for button custom IDs
- * @returns {ActionRowBuilder} - Button row
+ * @returns {ActionRowBuilder|null} - Button row or null if single page
  */
 function buildPaginationRow(currentPage, totalPages, customIdPrefix = 'page') {
   const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
@@ -323,6 +383,31 @@ function buildPaginationRow(currentPage, totalPages, customIdPrefix = 'page') {
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(currentPage >= totalPages - 1),
   );
+}
+
+/**
+ * Build a simple action row with buttons
+ * @param {Array} buttons - Array of button configs { customId, label, style, emoji }
+ * @returns {ActionRowBuilder}
+ */
+function buildActionRow(buttons) {
+  const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+  
+  const row = new ActionRowBuilder();
+  for (const btn of buttons) {
+    const button = new ButtonBuilder()
+      .setCustomId(btn.customId)
+      .setLabel(btn.label)
+      .setStyle(ButtonStyle[btn.style] || ButtonStyle.Secondary);
+    
+    if (btn.emoji) button.setEmoji(btn.emoji);
+    if (btn.disabled) button.setDisabled(true);
+    if (btn.url) button.setURL(btn.url);
+    
+    row.addComponents(button);
+  }
+  
+  return row;
 }
 
 /**
@@ -351,6 +436,39 @@ function validateEmbedSize(embed) {
   }
   
   return true;
+}
+
+/**
+ * Get embed size summary
+ * @param {EmbedBuilder} embed - The embed to analyze
+ * @returns {Object} - Size metrics
+ */
+function getEmbedSize(embed) {
+  let totalLength = 0;
+  let titleLength = embed.data.title?.length || 0;
+  let descriptionLength = embed.data.description?.length || 0;
+  let footerLength = embed.data.footer?.text?.length || 0;
+  let authorLength = embed.data.author?.name?.length || 0;
+  let fieldsLength = 0;
+  
+  if (embed.data.fields) {
+    for (const field of embed.data.fields) {
+      fieldsLength += (field.name?.length || 0) + (field.value?.length || 0);
+    }
+  }
+  
+  totalLength = titleLength + descriptionLength + footerLength + authorLength + fieldsLength;
+  
+  return {
+    total: totalLength,
+    title: titleLength,
+    description: descriptionLength,
+    footer: footerLength,
+    author: authorLength,
+    fields: fieldsLength,
+    max: 6000,
+    withinLimit: totalLength <= 6000,
+  };
 }
 
 // ============================================
@@ -562,6 +680,37 @@ function maintenanceEmbed(duration = 15, details = 'System upgrades') {
   return buildEmbed(templates.maintenance(duration, details));
 }
 
+/**
+ * Build an info embed.
+ * @param {string} title - Info title
+ * @param {string} description - Info description
+ * @param {string} color - Color name
+ * @returns {EmbedBuilder}
+ */
+function infoEmbed(title, description, color = 'info') {
+  return buildEmbed(templates.info(title, description, color));
+}
+
+/**
+ * Build a warning embed.
+ * @param {string} title - Warning title
+ * @param {string} description - Warning description
+ * @returns {EmbedBuilder}
+ */
+function warningEmbed(title, description) {
+  return buildEmbed(templates.warning(title, description));
+}
+
+/**
+ * Build a model spotlight embed.
+ * @param {string} model - Model name
+ * @param {Object} specs - Model specifications
+ * @returns {EmbedBuilder}
+ */
+function modelSpotlightEmbed(model, specs) {
+  return buildEmbed(templates.modelSpotlight(model, specs));
+}
+
 // ============================================
 // EXPORTS
 // ============================================
@@ -575,8 +724,14 @@ module.exports.autoPost = autoPostEmbed;
 module.exports.quote = quoteEmbed;
 module.exports.stats = statsEmbed;
 module.exports.maintenance = maintenanceEmbed;
+module.exports.info = infoEmbed;
+module.exports.warning = warningEmbed;
+module.exports.modelSpotlight = modelSpotlightEmbed;
 module.exports.buildPaginationRow = buildPaginationRow;
+module.exports.buildActionRow = buildActionRow;
 module.exports.replacePlaceholders = replacePlaceholders;
 module.exports.parseColor = parseColor;
 module.exports.validateEmbedSize = validateEmbedSize;
 module.exports.truncateString = truncateString;
+module.exports.getEmbedSize = getEmbedSize;
+module.exports.getModelColor = getModelColor;
