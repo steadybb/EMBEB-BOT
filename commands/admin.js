@@ -19,6 +19,60 @@ const logger = require('../utils/logger');
 
 const EPHEMERAL = { flags: MessageFlags.Ephemeral };
 
+// Helper function for verification embed
+function getVerificationEmbed() {
+  return new EmbedBuilder()
+    .setTitle('⚡ Welcome to the BYD Community')
+    .setDescription(
+      `Before you explore test drives, exclusive offers, and owner discussions, we need a quick verification — it helps keep our community safe and spam‑free.\n\n` +
+      `**Click the button below** to get instant access. You'll also unlock:\n` +
+      `• 🔒 Private test drive booking\n` +
+      `• 💰 Real‑time EV incentives (federal + state rebates)\n` +
+      `• 🎫 Priority support tickets\n` +
+      `• 📊 Exclusive owner statistics\n` +
+      `• 🎁 Early access to limited‑edition BYD drops\n\n` +
+      `✨ Verified members get **priority test drive scheduling** and **exclusive event invites**.`
+    )
+    .setColor('#00BFFF')
+    .setThumbnail('https://cdn.byd.com/bot/byd-logo.png')
+    .setFooter({ 
+      text: '⚡ Blade Battery Technology • Trusted by 15,000+ drivers', 
+      iconURL: 'https://cdn.byd.com/bot/byd-logo.png' 
+    })
+    .setTimestamp();
+}
+
+// Helper function for ticket panel embed
+function createTicketPanelEmbed() {
+  return new EmbedBuilder()
+    .setTitle('🎫 BYD Concierge – Priority Support')
+    .setDescription(
+      `Need help with your BYD? Whether it's a test drive, paperwork, or technical question, our team is here for you.\n\n` +
+      `**Available Support Categories:**\n` +
+      `ℹ️ **General Support**\n` +
+      `🚗 **Test Drive Booking**\n` +
+      `💰 **Sales Inquiry**\n` +
+      `🔧 **Technical Support**\n` +
+      `📄 **Paperwork / Documentation**\n` +
+      `⚠️ **Complaint / Issue**\n\n` +
+      `**How it works:**\n` +
+      `1️⃣ Click the button below\n` +
+      `2️⃣ Select your issue category\n` +
+      `3️⃣ Choose priority level\n` +
+      `4️⃣ Describe your issue\n` +
+      `5️⃣ A staff member will assist you shortly\n\n` +
+      `⏰ **Response Time:** Within 1 hour (business days)\n` +
+      `🔒 Your conversation is encrypted and only visible to you and our staff.`
+    )
+    .setColor('#00BFFF')
+    .setThumbnail('https://cdn.byd.com/bot/byd-logo.png')
+    .setFooter({ 
+      text: '⚡ BYD Blade Battery | Trusted by 15,000+ EV drivers', 
+      iconURL: 'https://cdn.byd.com/bot/byd-logo.png' 
+    })
+    .setTimestamp();
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('admin')
@@ -50,7 +104,6 @@ module.exports = {
     const ticketCategory = config.ticket_category_id ? `<#${config.ticket_category_id}>` : '❌ Not set';
     const staffRole = config.staff_role_id ? `<@&${config.staff_role_id}>` : '❌ Not set';
     const logsChannel = config.ticket_logs_channel_id ? `<#${config.ticket_logs_channel_id}>` : '❌ Not set';
-    const autoPostEnabled = config.auto_post_enabled ? '🟢 Enabled' : '🔴 Disabled';
     const autoPostChannels = config.auto_post_channels?.length ? config.auto_post_channels.map(id => `<#${id}>`).join(', ') : 'None';
     const lobbyStatus = config.lobby_chatter_enabled ? '🟢 Enabled' : '🔴 Disabled';
     const lobbyWebhook = config.lobby_webhook_url ? '✅ Set' : '❌ Not set';
@@ -616,7 +669,6 @@ async function setVerifyRole(interaction) {
 }
 
 async function postVerifyPanel(interaction) {
-  const { getVerificationEmbed } = require('./verify');
   const embed = getVerificationEmbed();
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -706,7 +758,6 @@ async function setTicketLogsChannel(interaction) {
 }
 
 async function postTicketPanel(interaction) {
-  const { createTicketPanelEmbed } = require('./ticket');
   const embed = createTicketPanelEmbed();
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
