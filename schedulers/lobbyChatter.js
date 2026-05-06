@@ -9,65 +9,49 @@ const { getRandomItem, getRandomItems, weightedRandom } = require('../utils/help
 // INTELLIGENT CONFIGURATION
 // ============================================
 const CONFIG = {
-  schedule: process.env.LOBBY_CHATTER_SCHEDULE || '*/4 * * * *',
-  minDelay: 45000,
-  maxDelay: 420000,
-  activeHoursStart: 8,
-  activeHoursEnd: 23,
+  schedule: process.env.LOBBY_CHATTER_SCHEDULE || '*/5 * * * *',
+  minDelay: 60000,
+  maxDelay: 480000,
+  activeHoursStart: 9,
+  activeHoursEnd: 22,
   peakHoursStart: 19,
-  peakHoursEnd: 22,
-  weekendMultiplier: 1.3,
-  maxContextMessages: 200,
+  peakHoursEnd: 21,
+  weekendMultiplier: 1.2,
+  maxContextMessages: 150,
   maxRetries: 3,
-  welcomeDelay: 5000,
-  typingDelayRange: { min: 1500, max: 5000 },
+  welcomeDelay: 8000,
+  typingDelayRange: { min: 2000, max: 6000 },
   conversationCooldown: 300000,
-  learningRate: 0.1,
+  webhookRateLimit: 400, // ms between webhook messages per channel
+  memoryCleanupInterval: 3600000, // 1 hour
+  memoryTTL: 86400000, // 24 hours
+  maxWelcomeQueueSize: 50,
 };
 
 // ============================================
-// SENTIMENT & MOOD SYSTEM
-// ============================================
-const moods = {
-  excited: { emoji: '🎉', weight: 0.15, triggers: ['new', 'love', 'amazing', 'incredible'] },
-  curious: { emoji: '🤔', weight: 0.25, triggers: ['how', 'what', 'why', 'which'] },
-  helpful: { emoji: '💡', weight: 0.25, triggers: ['help', 'advice', 'tip', 'recommend'] },
-  passionate: { emoji: '🔥', weight: 0.15, triggers: ['best', 'awesome', 'love', 'favorite'] },
-  casual: { emoji: '😎', weight: 0.20, triggers: ['cool', 'nice', 'yeah', 'ok'] },
-};
-
-// ============================================
-// ADVANCED TIME-AWARE CONTEXT
+// TIME-AWARE CONTEXT (Reduced emojis)
 // ============================================
 const timeContexts = {
   morning: {
     hourRange: [5, 12],
-    emoji: '🌅',
-    greetings: ['Good morning', 'Rise and shine', 'Morning everyone'],
-    topics: ['morning commute', 'breakfast charging', 'day ahead planning'],
+    greetings: ['Good morning', 'Morning', 'Hey good morning'],
   },
   afternoon: {
     hourRange: [12, 17],
-    emoji: '☀️',
-    greetings: ['Good afternoon', 'Hey everyone', 'Afternoon crew'],
-    topics: ['lunch break charging', 'midday thoughts', 'afternoon productivity'],
+    greetings: ['Good afternoon', 'Hey everyone', 'Afternoon'],
   },
   evening: {
     hourRange: [17, 21],
-    emoji: '🌙',
-    greetings: ['Good evening', 'Evening everyone', 'Sunset squad'],
-    topics: ['evening charging', 'day recap', 'night driving tips'],
+    greetings: ['Good evening', 'Evening', 'Hey all'],
   },
   night: {
     hourRange: [21, 24],
-    emoji: '🌃',
-    greetings: ['Late night crew', 'Night owls', 'Quiet hours'],
-    topics: ['night charging rates', 'late night research', 'EV dreams'],
+    greetings: ['Hey night owls', 'Late night', 'Evening'],
   },
 };
 
 // ============================================
-// ENHANCED PERSONAS WITH PSYCHOLOGICAL PROFILES
+// ENHANCED PERSONAS - More natural speaking
 // ============================================
 const activePersonas = [
   { 
@@ -75,133 +59,117 @@ const activePersonas = [
     avatar: 'https://ui-avatars.com/api/?name=Tesla+2+BYD&background=00BFFF&color=fff&size=256&bold=true',
     role: 'EV Expert',
     traits: { openness: 0.9, agreeableness: 0.6, neuroticism: 0.2 },
-    expertise: 'technical',
     speakingStyle: 'analytical',
-    catchphrases: ['the data shows', 'statistically speaking', 'research indicates'],
+    catchphrases: ['the data shows', 'from what I\'ve seen', 'research indicates'],
     activeHours: 'all',
-    responseStyle: 'thoughtful',
   },
   { 
     name: 'Seal_Driver', 
     avatar: 'https://ui-avatars.com/api/?name=Seal+Driver&background=0066CC&color=fff&size=256&bold=true',
     role: 'Seal Owner',
     traits: { openness: 0.7, agreeableness: 0.8, neuroticism: 0.3 },
-    expertise: 'owner',
     speakingStyle: 'passionate',
-    catchphrases: ['I love my', 'best decision', 'never going back'],
+    catchphrases: ['I love my', 'best decision', 'honestly'],
     activeHours: 'evening',
-    responseStyle: 'emotional',
   },
   { 
     name: 'EcoMom', 
     avatar: 'https://ui-avatars.com/api/?name=Eco+Mom&background=FF69B4&color=fff&size=256&bold=true',
     role: 'Family Driver',
     traits: { openness: 0.6, agreeableness: 0.9, neuroticism: 0.4 },
-    expertise: 'family',
     speakingStyle: 'practical',
-    catchphrases: ['for the kids', 'safety first', 'peace of mind'],
+    catchphrases: ['for our family', 'the kids love', 'it really works'],
     activeHours: 'afternoon',
-    responseStyle: 'caring',
   },
   { 
     name: 'VoltGeek', 
     avatar: 'https://ui-avatars.com/api/?name=Volt+Geek&background=9B59B6&color=fff&size=256&bold=true',
     role: 'Tech Reviewer',
     traits: { openness: 0.95, agreeableness: 0.5, neuroticism: 0.1 },
-    expertise: 'technical',
     speakingStyle: 'analytical',
-    catchphrases: ['benchmarked', 'efficiency metrics', 'specs show'],
+    catchphrases: ['numbers show', 'efficiency wise', 'the specs indicate'],
     activeHours: 'night',
-    responseStyle: 'detailed',
   },
   { 
     name: 'CityEV', 
     avatar: 'https://ui-avatars.com/api/?name=City+EV&background=2ECC71&color=fff&size=256&bold=true',
     role: 'City Driver',
     traits: { openness: 0.6, agreeableness: 0.7, neuroticism: 0.3 },
-    expertise: 'urban',
     speakingStyle: 'casual',
-    catchphrases: ['downtown', 'parking is', 'city driving'],
+    catchphrases: ['around town', 'city driving is', 'parking is'],
     activeHours: 'day',
-    responseStyle: 'concise',
   },
   { 
     name: 'RoadTripper', 
     avatar: 'https://ui-avatars.com/api/?name=Road+Tripper&background=E67E22&color=fff&size=256&bold=true',
     role: 'Long Distance Driver',
     traits: { openness: 0.8, agreeableness: 0.7, neuroticism: 0.2 },
-    expertise: 'touring',
     speakingStyle: 'adventurous',
-    catchphrases: ['road trip', 'cross country', 'destination charging'],
+    catchphrases: ['on the road', 'long distance', 'cross country'],
     activeHours: 'weekend',
-    responseStyle: 'enthusiastic',
   },
   { 
-    name: 'EV_Philosopher',
-    avatar: 'https://ui-avatars.com/api/?name=EV+Philosopher&background=8E44AD&color=fff&size=256&bold=true',
-    role: 'EV Philosopher',
-    traits: { openness: 0.9, agreeableness: 0.7, neuroticism: 0.1 },
-    expertise: 'big picture',
-    speakingStyle: 'thoughtful',
-    catchphrases: ['the future is', 'we\'re witnessing', 'this changes everything'],
-    activeHours: 'night',
-    responseStyle: 'philosophical',
+    name: 'PracticalPete', 
+    avatar: 'https://ui-avatars.com/api/?name=Practical+Pete&background=7F8C8D&color=fff&size=256&bold=true',
+    role: 'Practical Buyer',
+    traits: { openness: 0.5, agreeableness: 0.8, neuroticism: 0.3 },
+    speakingStyle: 'down-to-earth',
+    catchphrases: ['honestly', 'real talk', 'to be fair'],
+    activeHours: 'all',
   },
 ];
 
 // ============================================
-// INTELLIGENT TOPIC DATABASE WITH WEIGHTS
+// NATURAL TOPIC DATABASE
 // ============================================
 const conversationTopics = [
   { category: 'ev_tech', weight: 1.2, topics: [
-    'Blade Battery safety innovations',
-    '800V architecture advantages',
-    'Battery thermal management systems',
-    'Regenerative braking efficiency',
-    'V2L / V2G technology potential',
+    'Blade Battery safety testing',
+    '800V charging architecture',
+    'battery thermal management',
+    'regenerative braking efficiency',
+    'V2L and V2G potential',
   ]},
   { category: 'model_discussion', weight: 1.5, topics: [
     'Seal Performance vs Model 3',
     'ATTO 3 interior quality',
-    'Dolphin city driving experience',
-    'Han luxury features value',
+    'Dolphin city driving',
+    'Han luxury features',
     'Yangwang U8 off-road capability',
   ]},
   { category: 'ownership', weight: 1.3, topics: [
-    'Home charging installation tips',
-    'Long-term maintenance costs',
-    'Winter range optimization',
-    'Software update experiences',
-    'Road trip charging strategies',
+    'home charger installation',
+    'maintenance costs over time',
+    'winter range impact',
+    'software update experiences',
+    'road trip charging strategies',
   ]},
   { category: 'buying_advice', weight: 1.4, topics: [
-    'EV tax credit qualification 2026',
-    'Financing vs leasing analysis',
-    'Trade-in negotiation tips',
-    'First-time EV owner checklist',
-    'Total cost of ownership breakdown',
+    'EV tax credit eligibility',
+    'financing vs leasing',
+    'trade-in negotiation',
+    'first-time EV owner tips',
+    'total cost of ownership',
   ]},
   { category: 'industry', weight: 1.0, topics: [
-    'BYD vs Tesla market dynamics',
-    'Charging network expansion',
-    'New battery technologies',
-    'Government policy impacts',
-    'Global EV adoption trends',
+    'BYD vs Tesla competition',
+    'charging network expansion',
+    'battery tech breakthroughs',
+    'government EV policies',
+    'EV adoption trends',
   ]},
 ];
 
 // ============================================
-// INTELLIGENT CONVERSATION MEMORY
+// CONVERSATION MEMORY
 // ============================================
 const conversationMemory = new Map();
-const learningData = new Map(); // For adaptive learning
+const learningData = new Map();
 
 function getGuildMemory(guildId) {
   if (!conversationMemory.has(guildId)) {
     conversationMemory.set(guildId, { 
       messages: [],
-      topicsDiscussed: new Map(),
-      participantProfiles: new Map(),
       currentTopic: null,
       lastSpeaker: null,
       lastMessageType: null,
@@ -209,33 +177,39 @@ function getGuildMemory(guildId) {
       activeParticipants: new Set(),
       conversationHeat: 0,
       lastActivityTime: Date.now(),
-      successfulTopics: new Map(),
-      mood: 'casual',
+      messageCount: 0,
     });
   }
   return conversationMemory.get(guildId);
 }
 
-function updateConversationLearning(guildId, topic, wasEngaging) {
-  const data = learningData.get(guildId) || new Map();
-  const current = data.get(topic) || { count: 0, engagement: 0 };
-  current.count++;
-  if (wasEngaging) current.engagement++;
-  data.set(topic, current);
-  learningData.set(guildId, data);
-}
-
-function getTopicWeight(guildId, topic) {
-  const data = learningData.get(guildId);
-  if (!data) return 1.0;
-  const stats = data.get(topic);
-  if (!stats || stats.count < 3) return 1.0;
-  const engagementRate = stats.engagement / stats.count;
-  return 0.5 + engagementRate;
-}
+// ============================================
+// MEMORY CLEANUP (Prevent memory leaks)
+// ============================================
+setInterval(() => {
+  const cutoff = Date.now() - CONFIG.memoryTTL;
+  for (const [guildId, memory] of conversationMemory.entries()) {
+    if (memory.lastActivityTime < cutoff) {
+      conversationMemory.delete(guildId);
+      learningData.delete(guildId);
+      logger.debug(`Cleaned up stale memory for guild ${guildId}`);
+    }
+  }
+}, CONFIG.memoryCleanupInterval);
 
 // ============================================
-// CONTEXTUAL RESPONSE GENERATION ENGINE
+// RACE CONDITION PREVENTION
+// ============================================
+let isProcessing = false;
+
+// ============================================
+// WEBHOOK RATE LIMITING
+// ============================================
+const webhookRateLimitMap = new Map();
+const webhookValidationCache = new Map();
+
+// ============================================
+// NATURAL RESPONSE GENERATION (Minimal emojis)
 // ============================================
 
 function analyzeConversationMood(messages) {
@@ -246,12 +220,10 @@ function analyzeConversationMood(messages) {
   for (const msg of recentMessages) {
     if (msg.message.includes('!')) excitementScore += 0.2;
     if (msg.message.includes('?')) questionScore += 0.3;
-    if (msg.message.includes('🔥') || msg.message.includes('🎉')) excitementScore += 0.3;
   }
   
   if (excitementScore > 0.6) return 'excited';
   if (questionScore > 0.8) return 'curious';
-  if (excitementScore < 0.2 && questionScore < 0.3) return 'casual';
   return 'balanced';
 }
 
@@ -265,79 +237,81 @@ function getCurrentTimeContext() {
   return timeContexts.evening;
 }
 
-function generateIntelligentResponse(persona, topic, phase, messageType, memory, timeContext, mood) {
+function generateNaturalResponse(persona, topic, phase, messageType, memory, timeContext, mood) {
   const topicName = topic?.topic || 'electric vehicles';
-  const lastMessages = memory.messages.slice(-5);
   const timeGreeting = getRandomItem(timeContext.greetings);
   const isWeekend = [0, 6].includes(new Date().getDay());
   
-  // Dynamic response templates based on phase and mood
+  // Natural response templates - minimal emojis
   const responseTemplates = {
     opening: {
-      excited: [`${timeGreeting}! ⚡ So hyped about ${topicName}! Anyone else? 🎉`],
-      curious: [`${timeGreeting}! 👋 Quick question - what's everyone's take on ${topicName}? 🤔`],
-      casual: [`${timeGreeting} everyone! 🌟 ${topicName} crossed my mind today. Thoughts?`],
+      casual: [`${timeGreeting}. Been thinking about ${topicName} lately. Anyone else?`],
+      curious: [`${timeGreeting}. Quick question about ${topicName} - what do you all think?`],
     },
     discussion: {
-      excited: [`This ${topicName} discussion is 🔥! ${persona.catchphrases[0]} ${getRandomItem(['mind-blowing', 'game-changing', 'incredible'])}!`],
-      curious: [`Building on that ${topicName} point - has anyone considered ${getRandomItem(['the long-term', 'the cost perspective', 'the environmental impact'])}?`],
-      helpful: [`Great ${topicName} insights! To add ${getRandomItem(['a tip', 'some data', 'my experience'])}...`],
+      agreeing: [`That's a good point about ${topicName}. I've noticed the same thing.`],
+      adding: [`Adding to what was said about ${topicName} - I've found that...`],
+      questioning: [`Interesting take on ${topicName}. Has anyone considered the long-term aspect?`],
     },
     deep_dive: {
-      analytical: [`Let me dive deeper into ${topicName}. ${getRandomItem(['The key factor is', 'What\'s interesting is', 'Research shows'])}...`],
-      passionate: [`I could talk about ${topicName} all day! ${persona.catchphrases[1]} ${getRandomItem(['by a mile', 'without question', 'any day of the week'])}!`],
+      analytical: [`Looking deeper at ${topicName}. One thing that stands out is...`],
+      experiential: [`From my experience with ${topicName}, the key factor seems to be...`],
     },
     wrapping: {
-      thoughtful: [`This ${topicName} conversation has been ${getRandomItem(['illuminating', 'thought-provoking', 'genuinely helpful'])}. Thanks everyone! 🙏`],
-      casual: [`Great chat about ${topicName}! Catch you all ${getRandomItem(['later', 'tomorrow', 'next time'])}! 👋`],
+      closing: [`Good discussion on ${topicName}. Lots of useful perspectives here.`],
+      farewell: [`Alright, that's all from me on ${topicName}. Catch you all later.`],
     },
     reaction: {
-      agree: [`${getRandomItem(['💯', 'Exactly!', 'This!', 'Couldn\'t agree more', '🎯'])}`],
-      thoughtful: [`${getRandomItem(['Hmm', 'Interesting point', 'Never thought of that', 'Good perspective'])} 🤔`],
+      agreement: [`Agreed.`, `Same here.`, `That makes sense.`, `Good point.`],
+      thoughtful: [`Interesting.`, `Hadn't thought of that.`, `Fair take.`],
     },
   };
   
-  // Select appropriate template based on context
   const phaseKey = phase === 'heated' ? 'discussion' : phase;
-  const moodKey = mood === 'balanced' ? (persona.speakingStyle === 'analytical' ? 'analytical' : mood) : mood;
-  
   let templates = responseTemplates[phaseKey] || responseTemplates.discussion;
-  let templateSet = templates[moodKey] || templates.casual || templates;
+  let templateSet = Object.values(templates)[0];
+  
+  // Select appropriate template based on mood and messageType
+  if (messageType === 'question' && templates.questioning) templateSet = templates.questioning;
+  if (messageType === 'answer' && templates.adding) templateSet = templates.adding;
+  if (messageType === 'reaction') templateSet = responseTemplates.reaction.agreement;
+  if (messageType === 'thoughtful') templateSet = responseTemplates.reaction.thoughtful;
   
   let message = getRandomItem(templateSet);
   
-  // Add personality flair
-  if (Math.random() < 0.3 && persona.catchphrases) {
-    message = message.replace(persona.catchphrases[0], getRandomItem(persona.catchphrases));
+  // Add personality flair occasionally
+  if (Math.random() < 0.25 && persona.catchphrases) {
+    message = `${getRandomItem(persona.catchphrases)}. ${message.toLowerCase()}`;
   }
   
-  // Add time context emoji
-  if (Math.random() < 0.2) {
-    message = `${timeContext.emoji} ${message}`;
-  }
-  
-  // Add weekend vibe
-  if (isWeekend && Math.random() < 0.15) {
-    message = `🏖️ ${message}`;
+  // Very rare emoji (only 5% of messages)
+  if (Math.random() < 0.05) {
+    const rareEmojis = ['👍', '👌', '💡', '🔥'];
+    message = `${message} ${getRandomItem(rareEmojis)}`;
   }
   
   return message;
 }
 
 // ============================================
-// INTELLIGENT TOPIC SELECTION
+// INTELLIGENT TOPIC SELECTION (Avoid repetition)
 // ============================================
 function selectIntelligentTopic(memory, guildId) {
-  // Weighted selection based on past engagement
-  const availableTopics = [...conversationTopics];
-  const weights = availableTopics.map(topic => {
-    const topicWeight = getTopicWeight(guildId, topic.category);
-    return topic.weight * topicWeight;
-  });
+  const recentCategories = memory.messages.slice(-10)
+    .map(m => m.topicCategory)
+    .filter(Boolean);
+  
+  let availableTopics = conversationTopics.filter(
+    cat => !recentCategories.includes(cat.category)
+  );
+  
+  // Fallback if all categories were recently used
+  if (availableTopics.length === 0) {
+    availableTopics = [...conversationTopics];
+  }
   
   const selectedCategory = weightedRandom(
-    availableTopics.map((t, i) => ({ ...t, weight: weights[i] })),
-    'weight'
+    availableTopics.map(cat => ({ item: cat, weight: cat.weight }))
   );
   
   const selectedTopic = getRandomItem(selectedCategory.topics);
@@ -345,21 +319,19 @@ function selectIntelligentTopic(memory, guildId) {
 }
 
 // ============================================
-// CONTEXT-AWARE MESSAGE TYPE SELECTION
+// MESSAGE TYPE SELECTION
 // ============================================
 const messageTypeWeights = {
-  opening: { question: 0.4, greeting: 0.3, fact: 0.2, icebreaker: 0.1 },
-  discussion: { question: 0.3, answer: 0.2, opinion: 0.2, reaction: 0.15, insight: 0.1, comparison: 0.05 },
-  deep_dive: { analysis: 0.35, technical: 0.25, insight: 0.2, data_share: 0.2 },
-  heated: { debate: 0.4, opinion: 0.3, reaction: 0.2, fact: 0.1 },
-  wrapping: { summary: 0.4, closing: 0.3, testimonial: 0.2, reaction: 0.1 },
+  opening: { question: 0.5, statement: 0.3, greeting: 0.2 },
+  discussion: { question: 0.35, answer: 0.3, opinion: 0.2, reaction: 0.15 },
+  deep_dive: { analysis: 0.4, insight: 0.35, technical: 0.25 },
+  wrapping: { closing: 0.5, summary: 0.3, farewell: 0.2 },
 };
 
-function getIntelligentMessageType(phase, lastType) {
+function getMessageType(phase, lastType) {
   const weights = messageTypeWeights[phase] || messageTypeWeights.discussion;
   const types = Object.entries(weights);
   
-  // Reduce chance of repeating the same type
   const filtered = types.filter(([type]) => type !== lastType);
   const totalWeight = filtered.reduce((sum, [, weight]) => sum + weight, 0);
   
@@ -368,73 +340,117 @@ function getIntelligentMessageType(phase, lastType) {
     random -= weight;
     if (random <= 0) return type;
   }
-  return filtered[0]?.[0] || 'reaction';
+  return filtered[0]?.[0] || 'statement';
 }
 
 // ============================================
-// WEBHOOK MANAGEMENT
+// WEBHOOK MANAGEMENT (With validation & rate limiting)
 // ============================================
 const webhookClients = new Map();
 
+async function validateWebhook(url) {
+  try {
+    const response = await axios.get(url);
+    return response.status === 200;
+  } catch {
+    return false;
+  }
+}
+
 async function getWebhookClient(url) {
+  if (!url || typeof url !== 'string') {
+    throw new Error('Invalid webhook URL provided');
+  }
+  
+  // Check cache first
+  const cached = webhookValidationCache.get(url);
+  if (cached && Date.now() - cached.timestamp < 3600000) {
+    if (webhookClients.has(url)) return webhookClients.get(url);
+  }
+  
   if (webhookClients.has(url)) return webhookClients.get(url);
-  const match = url.match(/\/webhooks\/(\d+)\/(.+)$/);
-  if (!match) throw new Error('Invalid webhook URL');
+  
+  // Validate URL format
+  const match = url.match(/^https:\/\/discord\.com\/api\/webhooks\/(\d+)\/(.+)$/);
+  if (!match) throw new Error('Invalid Discord webhook URL format');
+  
   const client = { id: match[1], token: match[2], url };
   webhookClients.set(url, client);
+  webhookValidationCache.set(url, { client, timestamp: Date.now() });
+  
   return client;
 }
 
 async function sendAsPersona(wc, persona, message, retry = 0) {
+  // Rate limiting per webhook
+  const key = wc.id;
+  const now = Date.now();
+  const lastSent = webhookRateLimitMap.get(key) || 0;
+  
+  if (now - lastSent < CONFIG.webhookRateLimit) {
+    await new Promise(r => setTimeout(r, CONFIG.webhookRateLimit - (now - lastSent)));
+  }
+  
   const typingDelay = Math.random() * (CONFIG.typingDelayRange.max - CONFIG.typingDelayRange.min) + CONFIG.typingDelayRange.min;
   await new Promise(r => setTimeout(r, typingDelay));
   
   try {
-    await axios.post(wc.url, { username: persona.name, avatar_url: persona.avatar, content: message });
+    await axios.post(wc.url, { 
+      username: persona.name, 
+      avatar_url: persona.avatar, 
+      content: message 
+    });
+    
+    webhookRateLimitMap.set(key, Date.now());
     logger.debug(`💬 ${persona.name}: "${message.substring(0, 80)}${message.length > 80 ? '...' : ''}"`);
     return true;
   } catch (err) {
+    // Handle rate limiting specifically
+    if (err.response?.status === 429) {
+      const retryAfter = err.response.headers['retry-after'] || 5;
+      logger.warn(`Rate limited for webhook ${wc.id}, retrying after ${retryAfter}s`);
+      await new Promise(r => setTimeout(r, retryAfter * 1000));
+      return sendAsPersona(wc, persona, message, retry);
+    }
+    
     if (retry < CONFIG.maxRetries) {
       await new Promise(r => setTimeout(r, 1000 * (retry + 1)));
       return sendAsPersona(wc, persona, message, retry + 1);
     }
-    logger.error(`Webhook failed:`, err.message);
+    
+    logger.error(`Webhook failed for ${persona.name}:`, err.message);
     return false;
   }
 }
 
 // ============================================
-// WELCOME MESSAGES
+// WELCOME MESSAGES (Natural, minimal emojis)
 // ============================================
-const welcomeMessages = {
-  personalized: [
-    "Hey {{user}}! 👋 Welcome to the BYD family! What brings you here today?",
-    "Welcome {{user}}! 🚗⚡ Another EV enthusiast joins the conversation! Tell us about yourself!",
-    "Hey {{user}}! 🎉 So glad you found us! Are you team Seal, ATTO, or Dolphin?",
-    "Welcome aboard {{user}}! 🌟 Have any questions about going electric? We're here to help!",
-  ],
-};
+const welcomeMessages = [
+  "Hey {{user}}, welcome to the BYD community. What brings you here?",
+  "Welcome {{user}}. Another EV enthusiast joins the conversation.",
+  "Hey {{user}}, glad you found us. Have any EV questions?",
+  "Welcome aboard {{user}}. Feel free to ask about anything EV related.",
+  "Hey {{user}}, nice to have you here. What BYD models are you interested in?",
+];
 
-function getIntelligentWelcomeMessage(member) {
-  const base = getRandomItem(welcomeMessages.personalized);
+function getNaturalWelcomeMessage(member) {
+  const base = getRandomItem(welcomeMessages);
   return base.replace('{{user}}', member.displayName);
 }
 
-// ============================================
-// WELCOME MESSAGE FOR NEW MEMBERS
-// ============================================
 async function sendWelcomeMessage(guild, member, config) {
   if (!config?.lobby_webhook_url) return false;
   
   try {
     await new Promise(r => setTimeout(r, CONFIG.welcomeDelay));
     
-    const welcomeMessage = getIntelligentWelcomeMessage(member);
+    const welcomeMessage = getNaturalWelcomeMessage(member);
     const persona = getRandomItem(activePersonas.filter(p => p.activeHours === 'all' || p.activeHours === getCurrentTimeContext().key));
     const wc = await getWebhookClient(config.lobby_webhook_url);
     const success = await sendAsPersona(wc, persona, welcomeMessage);
     
-    if (success) logger.info(`👋 Intelligent welcome sent to ${member.user.tag}`);
+    if (success) logger.info(`Welcome message sent to ${member.user.tag}`);
     return success;
   } catch (err) {
     logger.error(`Failed to send welcome: ${err.message}`);
@@ -443,88 +459,121 @@ async function sendWelcomeMessage(guild, member, config) {
 }
 
 // ============================================
-// MAIN INTELLIGENT LOBBY CHATTER
+// MAIN LOBBY CHATTER
 // ============================================
 async function runLobbyChatter(client) {
-  const hour = new Date().getHours();
-  if (hour < CONFIG.activeHoursStart || hour >= CONFIG.activeHoursEnd) return;
-  
-  const guilds = client.guilds.cache;
-  let sent = 0;
-  
-  for (const guild of guilds.values()) {
-    try {
-      const config = await getGuildConfig(guild.id);
-      if (!config?.lobby_chatter_enabled || !config?.lobby_webhook_url) continue;
-      
-      let personas = config.lobby_chatter_personas || activePersonas;
-      if (typeof personas === 'string') { 
-        try { personas = JSON.parse(personas); } 
-        catch { personas = activePersonas; } 
-      }
-      if (!personas?.length) personas = activePersonas;
-      
-      const mem = getGuildMemory(guild.id);
-      const timeContext = getCurrentTimeContext();
-      const mood = analyzeConversationMood(mem.messages);
-      const isStale = (Date.now() - mem.lastActivityTime) > 3600000;
-      
-      if (isStale || !mem.currentTopic) {
-        mem.currentTopic = selectIntelligentTopic(mem, guild.id);
-        mem.conversationPhase = 'opening';
-        mem.messageCount = 0;
-      }
-      
-      // Smart persona selection
-      let avail = personas.filter(p => p.name !== mem.lastSpeaker);
-      if (timeContext.key !== 'all') {
-        avail = avail.filter(p => p.activeHours === 'all' || p.activeHours === timeContext.key);
-      }
-      if (avail.length === 0) avail = personas;
-      const persona = getRandomItem(avail);
-      
-      const msgType = getIntelligentMessageType(mem.conversationPhase, mem.lastMessageType);
-      const message = generateIntelligentResponse(persona, mem.currentTopic, mem.conversationPhase, msgType, mem, timeContext, mood);
-      
-      const wc = await getWebhookClient(config.lobby_webhook_url);
-      const success = await sendAsPersona(wc, persona, message);
-      
-      if (success) {
-        mem.messages.push({ persona: persona.name, message, type: msgType, timestamp: Date.now() });
-        mem.lastSpeaker = persona.name;
-        mem.lastMessageType = msgType;
-        mem.messageCount++;
-        mem.lastActivityTime = Date.now();
-        mem.activeParticipants.add(persona.name);
-        mem.conversationHeat = Math.min(100, mem.conversationHeat + 5);
-        
-        // Update conversation phase
-        if (mem.messageCount >= 12) mem.conversationPhase = 'wrapping';
-        else if (mem.messageCount >= 6) mem.conversationPhase = 'deep_dive';
-        else if (mem.messageCount >= 3) mem.conversationPhase = 'discussion';
-        
-        // Trim memory
-        if (mem.messages.length > CONFIG.maxContextMessages) {
-          mem.messages = mem.messages.slice(-CONFIG.maxContextMessages);
-        }
-        
-        sent++;
-      }
-      
-      // Natural delay between messages
-      const isPeak = hour >= CONFIG.peakHoursStart && hour < CONFIG.peakHoursEnd;
-      const isWeekend = [0, 6].includes(new Date().getDay());
-      let delay = Math.random() * (CONFIG.maxDelay - CONFIG.minDelay) + CONFIG.minDelay;
-      if (isPeak) delay *= 0.6;
-      if (isWeekend) delay *= 1.3;
-      await new Promise(r => setTimeout(r, Math.min(delay, 600000)));
-      
-    } catch (err) { 
-      logger.error(`Lobby failed: ${err.message}`); 
-    }
+  // Prevent concurrent execution
+  if (isProcessing) {
+    logger.debug('Previous chatter cycle still running, skipping');
+    return;
   }
   
-  if (sent > 0) logger.info(`💬 Lobby: ${sent} intelligent messages sent`);
+  isProcessing = true;
+  
+  try {
+    const hour = new Date().getHours();
+    if (hour < CONFIG.activeHoursStart || hour >= CONFIG.activeHoursEnd) {
+      return;
+    }
+    
+    const guilds = client.guilds.cache;
+    let sent = 0;
+    
+    for (const guild of guilds.values()) {
+      try {
+        const config = await getGuildConfig(guild.id);
+        if (!config?.lobby_chatter_enabled || !config?.lobby_webhook_url) continue;
+        
+        // Check conversation cooldown
+        const mem = getGuildMemory(guild.id);
+        if (mem.lastActivityTime && (Date.now() - mem.lastActivityTime) < CONFIG.conversationCooldown) {
+          logger.debug(`Skipping guild ${guild.id} due to conversation cooldown`);
+          continue;
+        }
+        
+        let personas = config.lobby_chatter_personas || activePersonas;
+        if (typeof personas === 'string') { 
+          try { personas = JSON.parse(personas); } 
+          catch { personas = activePersonas; } 
+        }
+        if (!personas?.length) personas = activePersonas;
+        
+        const timeContext = getCurrentTimeContext();
+        const mood = analyzeConversationMood(mem.messages);
+        const isStale = (Date.now() - mem.lastActivityTime) > 7200000;
+        
+        if (isStale || !mem.currentTopic) {
+          mem.currentTopic = selectIntelligentTopic(mem, guild.id);
+          mem.conversationPhase = 'opening';
+          mem.messageCount = 0;
+        }
+        
+        // Smart persona selection
+        let avail = personas.filter(p => p.name !== mem.lastSpeaker);
+        if (timeContext.key !== 'all') {
+          avail = avail.filter(p => p.activeHours === 'all' || p.activeHours === timeContext.key);
+        }
+        if (avail.length === 0) avail = personas;
+        const persona = getRandomItem(avail);
+        
+        const msgType = getMessageType(mem.conversationPhase, mem.lastMessageType);
+        const message = generateNaturalResponse(persona, mem.currentTopic, mem.conversationPhase, msgType, mem, timeContext, mood);
+        
+        const wc = await getWebhookClient(config.lobby_webhook_url);
+        const success = await sendAsPersona(wc, persona, message);
+        
+        if (success) {
+          mem.messages.push({ 
+            persona: persona.name, 
+            message, 
+            type: msgType, 
+            topicCategory: mem.currentTopic.category,
+            timestamp: Date.now() 
+          });
+          mem.lastSpeaker = persona.name;
+          mem.lastMessageType = msgType;
+          mem.messageCount++;
+          mem.lastActivityTime = Date.now();
+          mem.activeParticipants.add(persona.name);
+          mem.conversationHeat = Math.min(100, mem.conversationHeat + 5);
+          
+          // Update conversation phase
+          if (mem.messageCount >= 10) mem.conversationPhase = 'wrapping';
+          else if (mem.messageCount >= 5) mem.conversationPhase = 'deep_dive';
+          else if (mem.messageCount >= 2) mem.conversationPhase = 'discussion';
+          
+          // Trim memory
+          if (mem.messages.length > CONFIG.maxContextMessages) {
+            mem.messages = mem.messages.slice(-CONFIG.maxContextMessages);
+          }
+          
+          sent++;
+        }
+        
+        // Natural delay between guilds
+        const isPeak = hour >= CONFIG.peakHoursStart && hour < CONFIG.peakHoursEnd;
+        const isWeekend = [0, 6].includes(new Date().getDay());
+        let delay = Math.random() * (CONFIG.maxDelay - CONFIG.minDelay) + CONFIG.minDelay;
+        if (isPeak) delay *= 0.7;
+        if (isWeekend) delay *= 1.2;
+        await new Promise(r => setTimeout(r, Math.min(delay, 600000)));
+        
+      } catch (err) {
+        logger.error(`Lobby failed for guild ${guild.id}: ${err.message}`);
+        
+        // Reset memory on persistent connection errors
+        if (err.code === 'ECONNRESET' || err.response?.status === 429) {
+          conversationMemory.delete(guild.id);
+          await new Promise(r => setTimeout(r, 5000));
+        }
+      }
+    }
+    
+    if (sent > 0) logger.info(`Lobby: ${sent} messages sent`);
+    
+  } finally {
+    isProcessing = false;
+  }
 }
 
 // ============================================
@@ -540,7 +589,7 @@ function startLobbyChatterScheduler(client) {
     await runLobbyChatter(client); 
   });
   
-  logger.ready(`🧠 Intelligent lobby chatter started (${CONFIG.schedule})`);
+  logger.ready(`Lobby chatter started (${CONFIG.schedule})`);
 }
 
 function getLobbyStats(guildId) {
@@ -552,7 +601,6 @@ function getLobbyStats(guildId) {
     heat: m.conversationHeat,
     lastSpeaker: m.lastSpeaker,
     activeParticipants: Array.from(m.activeParticipants),
-    dailyActivity: m.dailyMessageCount,
   };
 }
 
@@ -561,24 +609,55 @@ function resetLobbyMemory(guildId) {
   learningData.delete(guildId);
 }
 
-// Welcome queue
+// ============================================
+// WELCOME QUEUE (With size limit & proper handling)
+// ============================================
 const welcomeQueue = [];
+let welcomeProcessing = false;
 
 function queueWelcomeMessage(guildId, memberId, client) {
+  // Prevent queue overflow
+  if (welcomeQueue.length >= CONFIG.maxWelcomeQueueSize) {
+    logger.warn('Welcome queue full, dropping oldest entry');
+    welcomeQueue.shift();
+  }
+  
   welcomeQueue.push({ guildId, memberId, client });
-  setTimeout(() => processWelcomeQueue(), 3000);
+  
+  // Only set timeout if not already processing
+  if (!welcomeProcessing) {
+    setTimeout(() => processWelcomeQueue(), 3000);
+  }
 }
 
 async function processWelcomeQueue() {
-  while (welcomeQueue.length > 0) {
-    const { guildId, memberId, client } = welcomeQueue.shift();
-    const guild = client.guilds.cache.get(guildId);
-    const member = guild?.members.cache.get(memberId);
-    if (guild && member) {
-      const config = await getGuildConfig(guild.id);
-      if (config?.lobby_chatter_enabled) {
-        await sendWelcomeMessage(guild, member, config);
+  if (welcomeProcessing) return;
+  welcomeProcessing = true;
+  
+  try {
+    while (welcomeQueue.length > 0) {
+      const { guildId, memberId, client } = welcomeQueue.shift();
+      const guild = client.guilds.cache.get(guildId);
+      const member = guild?.members.cache.get(memberId);
+      
+      if (guild && member) {
+        const config = await getGuildConfig(guild.id);
+        if (config?.lobby_chatter_enabled) {
+          await sendWelcomeMessage(guild, member, config);
+        }
+      } else {
+        logger.debug(`Skipping welcome for missing guild/member: ${guildId}/${memberId}`);
       }
+      
+      // Small delay between welcome messages
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  } finally {
+    welcomeProcessing = false;
+    
+    // Process any new items that arrived during processing
+    if (welcomeQueue.length > 0) {
+      setTimeout(() => processWelcomeQueue(), 3000);
     }
   }
 }
