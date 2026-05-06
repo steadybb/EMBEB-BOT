@@ -3,329 +3,372 @@ const cron = require('node-cron');
 const axios = require('axios');
 const logger = require('../utils/logger');
 const { getGuildConfig } = require('../utils/database');
-const { getRandomItem } = require('../utils/helpers');
+const { getRandomItem, getRandomItems, weightedRandom } = require('../utils/helpers');
 
 // ============================================
-// CONFIGURATION
+// INTELLIGENT CONFIGURATION
 // ============================================
 const CONFIG = {
-  schedule: process.env.LOBBY_CHATTER_SCHEDULE || '*/3 * * * *',
+  schedule: process.env.LOBBY_CHATTER_SCHEDULE || '*/4 * * * *',
   minDelay: 45000,
-  maxDelay: 180000,
-  maxContextMessages: 100,
+  maxDelay: 420000,
+  activeHoursStart: 8,
+  activeHoursEnd: 23,
+  peakHoursStart: 19,
+  peakHoursEnd: 22,
+  weekendMultiplier: 1.3,
+  maxContextMessages: 200,
   maxRetries: 3,
   welcomeDelay: 5000,
-  activeHoursStart: 8,
-  activeHoursEnd: 22,
+  typingDelayRange: { min: 1500, max: 5000 },
+  conversationCooldown: 300000,
+  learningRate: 0.1,
 };
 
 // ============================================
-// WELCOME MESSAGES FOR NEW MEMBERS
+// SENTIMENT & MOOD SYSTEM
 // ============================================
-const welcomeMessages = {
-  friendly: [
-    "Hey {{user}}! Welcome to the BYD family! 🚗⚡",
-    "Welcome {{user}}! Glad to have you here! 🙌",
-    "Hey hey {{user}}! Pull up a chair and join the EV conversation! 🪑⚡",
-    "Yay you made it, {{user}}! Wave to say hi! 👋",
-    "Welcome {{user}}! Another EV enthusiast joins the crew! 🎉",
-  ],
-  informative: [
-    "Welcome {{user}}! 👋 Ask away if you have any BYD questions!",
-    "Hey {{user}}! We talk EVs, BYD news, and charging tips here. Make yourself at home! 🏡",
-    "Welcome {{user}}! Check out <#test-drive> to book a test drive! 📅",
-    "Hey {{user}}! 👋 Use `/quote` to see instant EV incentives with federal/state credits! 💰",
-  ],
-  enthusiastic: [
-    "⚡⚡⚡ Welcome {{user}} to the BYD revolution! ⚡⚡⚡",
-    "🚀 {{user}} just joined the EV club! Let's gooo! 🚀",
-    "🎉 A wild BYD enthusiast appears! Welcome {{user}}! 🎉",
-    "💚⚡ Welcome to the future of driving, {{user}}! ⚡💚",
-  ],
-  personalized: [
-    "Hi {{user}}! Great to see you here. What brings you to BYD? 🤔",
-    "{{user}}! Welcome to the community. First EV or upgrading? 🔋",
-    "Hey {{user}}! 👋 Are you Team Seal, Team ATTO, or Team Dolphin? 🐬🦭⚔️",
-    "Welcome {{user}}! Dreaming of a Yangwang U9 or keeping it practical with a Seagull? 🕊️✨",
-  ],
+const moods = {
+  excited: { emoji: '🎉', weight: 0.15, triggers: ['new', 'love', 'amazing', 'incredible'] },
+  curious: { emoji: '🤔', weight: 0.25, triggers: ['how', 'what', 'why', 'which'] },
+  helpful: { emoji: '💡', weight: 0.25, triggers: ['help', 'advice', 'tip', 'recommend'] },
+  passionate: { emoji: '🔥', weight: 0.15, triggers: ['best', 'awesome', 'love', 'favorite'] },
+  casual: { emoji: '😎', weight: 0.20, triggers: ['cool', 'nice', 'yeah', 'ok'] },
 };
 
-function getRandomWelcomeMessage() {
-  const allMessages = [
-    ...welcomeMessages.friendly,
-    ...welcomeMessages.informative,
-    ...welcomeMessages.enthusiastic,
-    ...welcomeMessages.personalized,
-  ];
-  return getRandomItem(allMessages);
-}
+// ============================================
+// ADVANCED TIME-AWARE CONTEXT
+// ============================================
+const timeContexts = {
+  morning: {
+    hourRange: [5, 12],
+    emoji: '🌅',
+    greetings: ['Good morning', 'Rise and shine', 'Morning everyone'],
+    topics: ['morning commute', 'breakfast charging', 'day ahead planning'],
+  },
+  afternoon: {
+    hourRange: [12, 17],
+    emoji: '☀️',
+    greetings: ['Good afternoon', 'Hey everyone', 'Afternoon crew'],
+    topics: ['lunch break charging', 'midday thoughts', 'afternoon productivity'],
+  },
+  evening: {
+    hourRange: [17, 21],
+    emoji: '🌙',
+    greetings: ['Good evening', 'Evening everyone', 'Sunset squad'],
+    topics: ['evening charging', 'day recap', 'night driving tips'],
+  },
+  night: {
+    hourRange: [21, 24],
+    emoji: '🌃',
+    greetings: ['Late night crew', 'Night owls', 'Quiet hours'],
+    topics: ['night charging rates', 'late night research', 'EV dreams'],
+  },
+};
 
 // ============================================
-// ENHANCED PERSONAS (15 unique personalities)
+// ENHANCED PERSONAS WITH PSYCHOLOGICAL PROFILES
 // ============================================
 const activePersonas = [
-  { name: 'Tesla2BYD', avatar: 'https://ui-avatars.com/api/?name=Tesla+2+BYD&background=00BFFF&color=fff&size=256&bold=true', role: 'EV Expert', energy: 'high', expertise: 'technical', style: 'factual' },
-  { name: 'Seal_Driver', avatar: 'https://ui-avatars.com/api/?name=Seal+Driver&background=0066CC&color=fff&size=256&bold=true', role: 'Seal Owner', energy: 'high', expertise: 'owner', style: 'passionate' },
-  { name: 'EcoMom', avatar: 'https://ui-avatars.com/api/?name=Eco+Mom&background=FF69B4&color=fff&size=256&bold=true', role: 'Family Driver', energy: 'medium', expertise: 'family', style: 'practical' },
-  { name: 'VoltGeek', avatar: 'https://ui-avatars.com/api/?name=Volt+Geek&background=9B59B6&color=fff&size=256&bold=true', role: 'Tech Reviewer', energy: 'high', expertise: 'technical', style: 'analytical' },
-  { name: 'CityEV', avatar: 'https://ui-avatars.com/api/?name=City+EV&background=2ECC71&color=fff&size=256&bold=true', role: 'City Driver', energy: 'medium', expertise: 'urban', style: 'casual' },
-  { name: 'RoadTripper', avatar: 'https://ui-avatars.com/api/?name=Road+Tripper&background=E67E22&color=fff&size=256&bold=true', role: 'Long Distance Driver', energy: 'high', expertise: 'touring', style: 'adventurous' },
-  { name: 'New2EV', avatar: 'https://ui-avatars.com/api/?name=New+2+EV&background=1ABC9C&color=fff&size=256&bold=true', role: 'First Time Buyer', energy: 'low', expertise: 'newbie', style: 'curious' },
-  { name: 'FleetBoss', avatar: 'https://ui-avatars.com/api/?name=Fleet+Boss&background=34495E&color=fff&size=256&bold=true', role: 'Commercial Buyer', energy: 'medium', expertise: 'commercial', style: 'professional' },
-  { name: 'Gearhead_Al', avatar: 'https://ui-avatars.com/api/?name=Gearhead+Al&background=C0392B&color=fff&size=256&bold=true', role: 'Car Enthusiast', energy: 'high', expertise: 'mechanical', style: 'technical' },
-  { name: 'BYD_Fan', avatar: 'https://ui-avatars.com/api/?name=BYD+Fan&background=FF6600&color=fff&size=256&bold=true', role: 'BYD Enthusiast', energy: 'high', expertise: 'brand', style: 'enthusiastic' },
-  { name: 'ChargePro', avatar: 'https://ui-avatars.com/api/?name=Charge+Pro&background=33CC99&color=fff&size=256&bold=true', role: 'Charging Expert', energy: 'medium', expertise: 'charging', style: 'helpful' },
-  { name: 'ValueHunter', avatar: 'https://ui-avatars.com/api/?name=Value+Hunter&background=8E44AD&color=fff&size=256&bold=true', role: 'Deal Seeker', energy: 'medium', expertise: 'financial', style: 'practical' },
-  { name: 'EV_Advocate', avatar: 'https://ui-avatars.com/api/?name=EV+Advocate&background=27AE60&color=fff&size=256&bold=true', role: 'EV Advocate', energy: 'high', expertise: 'policy', style: 'persuasive' },
-  { name: 'Tech_Explorer', avatar: 'https://ui-avatars.com/api/?name=Tech+Explorer&background=2980B9&color=fff&size=256&bold=true', role: 'Tech Explorer', energy: 'high', expertise: 'innovation', style: 'curious' },
-  { name: 'Practical_Pete', avatar: 'https://ui-avatars.com/api/?name=Practical+Pete&background=7F8C8D&color=fff&size=256&bold=true', role: 'Practical Buyer', energy: 'medium', expertise: 'value', style: 'down-to-earth' },
+  { 
+    name: 'Tesla2BYD', 
+    avatar: 'https://ui-avatars.com/api/?name=Tesla+2+BYD&background=00BFFF&color=fff&size=256&bold=true',
+    role: 'EV Expert',
+    traits: { openness: 0.9, agreeableness: 0.6, neuroticism: 0.2 },
+    expertise: 'technical',
+    speakingStyle: 'analytical',
+    catchphrases: ['the data shows', 'statistically speaking', 'research indicates'],
+    activeHours: 'all',
+    responseStyle: 'thoughtful',
+  },
+  { 
+    name: 'Seal_Driver', 
+    avatar: 'https://ui-avatars.com/api/?name=Seal+Driver&background=0066CC&color=fff&size=256&bold=true',
+    role: 'Seal Owner',
+    traits: { openness: 0.7, agreeableness: 0.8, neuroticism: 0.3 },
+    expertise: 'owner',
+    speakingStyle: 'passionate',
+    catchphrases: ['I love my', 'best decision', 'never going back'],
+    activeHours: 'evening',
+    responseStyle: 'emotional',
+  },
+  { 
+    name: 'EcoMom', 
+    avatar: 'https://ui-avatars.com/api/?name=Eco+Mom&background=FF69B4&color=fff&size=256&bold=true',
+    role: 'Family Driver',
+    traits: { openness: 0.6, agreeableness: 0.9, neuroticism: 0.4 },
+    expertise: 'family',
+    speakingStyle: 'practical',
+    catchphrases: ['for the kids', 'safety first', 'peace of mind'],
+    activeHours: 'afternoon',
+    responseStyle: 'caring',
+  },
+  { 
+    name: 'VoltGeek', 
+    avatar: 'https://ui-avatars.com/api/?name=Volt+Geek&background=9B59B6&color=fff&size=256&bold=true',
+    role: 'Tech Reviewer',
+    traits: { openness: 0.95, agreeableness: 0.5, neuroticism: 0.1 },
+    expertise: 'technical',
+    speakingStyle: 'analytical',
+    catchphrases: ['benchmarked', 'efficiency metrics', 'specs show'],
+    activeHours: 'night',
+    responseStyle: 'detailed',
+  },
+  { 
+    name: 'CityEV', 
+    avatar: 'https://ui-avatars.com/api/?name=City+EV&background=2ECC71&color=fff&size=256&bold=true',
+    role: 'City Driver',
+    traits: { openness: 0.6, agreeableness: 0.7, neuroticism: 0.3 },
+    expertise: 'urban',
+    speakingStyle: 'casual',
+    catchphrases: ['downtown', 'parking is', 'city driving'],
+    activeHours: 'day',
+    responseStyle: 'concise',
+  },
+  { 
+    name: 'RoadTripper', 
+    avatar: 'https://ui-avatars.com/api/?name=Road+Tripper&background=E67E22&color=fff&size=256&bold=true',
+    role: 'Long Distance Driver',
+    traits: { openness: 0.8, agreeableness: 0.7, neuroticism: 0.2 },
+    expertise: 'touring',
+    speakingStyle: 'adventurous',
+    catchphrases: ['road trip', 'cross country', 'destination charging'],
+    activeHours: 'weekend',
+    responseStyle: 'enthusiastic',
+  },
+  { 
+    name: 'EV_Philosopher',
+    avatar: 'https://ui-avatars.com/api/?name=EV+Philosopher&background=8E44AD&color=fff&size=256&bold=true',
+    role: 'EV Philosopher',
+    traits: { openness: 0.9, agreeableness: 0.7, neuroticism: 0.1 },
+    expertise: 'big picture',
+    speakingStyle: 'thoughtful',
+    catchphrases: ['the future is', 'we\'re witnessing', 'this changes everything'],
+    activeHours: 'night',
+    responseStyle: 'philosophical',
+  },
 ];
 
 // ============================================
-// COMPREHENSIVE TOPIC DATABASE
+// INTELLIGENT TOPIC DATABASE WITH WEIGHTS
 // ============================================
 const conversationTopics = [
-  { category: 'ev_tech', topics: ['Blade Battery safety', 'Fast charging speeds', 'Battery range in winter', 'Regenerative braking efficiency', 'BYD e-Platform 3.0', 'Cell-to-Body technology', 'Heat pump efficiency', '800V architecture benefits', 'Battery thermal management', 'V2L technology'] },
-  { category: 'model_discussion', topics: ['Seal vs Tesla Model 3', 'ATTO 3 interior design', 'Dolphin affordability', 'Han luxury features', 'Seagull city driving', 'Tang family space', 'Yangwang performance', 'Song Plus practicality', 'Yuan Plus versatility', 'Seal Performance track capability'] },
-  { category: 'ownership', topics: ['Home charging setup', 'Maintenance costs', 'Insurance rates', 'Road trip experiences', 'Cold weather performance', 'Software updates', 'Community meetups', 'Resale value', 'Winter driving tips', 'Service center experiences'] },
-  { category: 'buying_advice', topics: ['EV tax credits 2026', 'Financing vs leasing', 'Trade-in values', 'First-time EV buyer tips', 'Charging infrastructure', 'Total cost of ownership', 'Best time to buy', 'Dealer experiences', 'Demo drive tips', 'Price negotiation'] },
-  { category: 'industry_news', topics: ['BYD market share', 'New model announcements', 'Charging network expansion', 'Government incentives', 'Competitor analysis', 'Manufacturing updates', 'Global expansion', 'Battery technology breakthroughs', 'Sustainability initiatives'] },
-  { category: 'charging', topics: ['Home installation costs', 'Public charger reliability', 'Fast charging curves', 'Battery preconditioning', 'Charge scheduling', 'App integration', 'Charger compatibility', 'NACS adoption', 'Tesla Supercharger access', 'Route planning'] },
-  { category: 'lifestyle', topics: ['EV camping with V2L', 'Daily commuting savings', 'Road trip planning', 'Winter storage tips', 'EV etiquette', 'Parking with EVs', 'Car wash tips', 'Detailing recommendations', 'Accessories', 'Phone app features'] },
-  { category: 'community', topics: ['Local EV meetups', 'Online forums', 'Owner clubs', 'Charity drives', 'Group test drives', 'Q&A sessions', 'New owner mentoring', 'DIY maintenance', 'Charging station reviews'] },
+  { category: 'ev_tech', weight: 1.2, topics: [
+    'Blade Battery safety innovations',
+    '800V architecture advantages',
+    'Battery thermal management systems',
+    'Regenerative braking efficiency',
+    'V2L / V2G technology potential',
+  ]},
+  { category: 'model_discussion', weight: 1.5, topics: [
+    'Seal Performance vs Model 3',
+    'ATTO 3 interior quality',
+    'Dolphin city driving experience',
+    'Han luxury features value',
+    'Yangwang U8 off-road capability',
+  ]},
+  { category: 'ownership', weight: 1.3, topics: [
+    'Home charging installation tips',
+    'Long-term maintenance costs',
+    'Winter range optimization',
+    'Software update experiences',
+    'Road trip charging strategies',
+  ]},
+  { category: 'buying_advice', weight: 1.4, topics: [
+    'EV tax credit qualification 2026',
+    'Financing vs leasing analysis',
+    'Trade-in negotiation tips',
+    'First-time EV owner checklist',
+    'Total cost of ownership breakdown',
+  ]},
+  { category: 'industry', weight: 1.0, topics: [
+    'BYD vs Tesla market dynamics',
+    'Charging network expansion',
+    'New battery technologies',
+    'Government policy impacts',
+    'Global EV adoption trends',
+  ]},
 ];
 
 // ============================================
-// ADVANCED CONVERSATION MEMORY
+// INTELLIGENT CONVERSATION MEMORY
 // ============================================
 const conversationMemory = new Map();
-const pendingWelcomeMessages = new Map();
+const learningData = new Map(); // For adaptive learning
 
 function getGuildMemory(guildId) {
   if (!conversationMemory.has(guildId)) {
     conversationMemory.set(guildId, { 
-      messages: [], 
-      currentTopic: null, 
-      lastSpeaker: null, 
-      lastMessageType: null, 
-      topicStartTime: null, 
-      messageCount: 0, 
+      messages: [],
+      topicsDiscussed: new Map(),
+      participantProfiles: new Map(),
+      currentTopic: null,
+      lastSpeaker: null,
+      lastMessageType: null,
       conversationPhase: 'opening',
       activeParticipants: new Set(),
-      topicHistory: [],
-      dailyMessageCount: 0,
-      lastDailyReset: Date.now(),
+      conversationHeat: 0,
+      lastActivityTime: Date.now(),
+      successfulTopics: new Map(),
+      mood: 'casual',
     });
   }
   return conversationMemory.get(guildId);
 }
 
-function updateGuildMemory(guildId, persona, message, messageType) {
-  const memory = getGuildMemory(guildId);
-  const now = Date.now();
-  
-  // Daily reset
-  if (now - memory.lastDailyReset > 86400000) {
-    memory.dailyMessageCount = 0;
-    memory.lastDailyReset = now;
-  }
-  
-  memory.messages.push({ persona: persona.name, message, type: messageType, timestamp: now, role: persona.role });
-  memory.lastSpeaker = persona.name;
-  memory.lastMessageType = messageType;
-  memory.messageCount++;
-  memory.dailyMessageCount++;
-  memory.activeParticipants.add(persona.name);
-  
-  // Update phase based on engagement
-  if (memory.messageCount <= 2) memory.conversationPhase = 'opening';
-  else if (memory.messageCount <= 8) memory.conversationPhase = 'discussion';
-  else if (memory.messageCount <= 15) memory.conversationPhase = 'deep_dive';
-  else memory.conversationPhase = 'wrapping';
-  
-  // Trim memory if too large
-  if (memory.messages.length > CONFIG.maxContextMessages) {
-    memory.messages = memory.messages.slice(-CONFIG.maxContextMessages);
-  }
-  
-  // Natural topic drift (15% chance after 8 messages)
-  if (memory.messageCount >= 8 && Math.random() < 0.15) {
-    memory.topicHistory.push({ topic: memory.currentTopic?.topic, endedAt: now });
-    memory.currentTopic = null;
-    memory.messageCount = 0;
-    memory.conversationPhase = 'opening';
-  }
+function updateConversationLearning(guildId, topic, wasEngaging) {
+  const data = learningData.get(guildId) || new Map();
+  const current = data.get(topic) || { count: 0, engagement: 0 };
+  current.count++;
+  if (wasEngaging) current.engagement++;
+  data.set(topic, current);
+  learningData.set(guildId, data);
+}
+
+function getTopicWeight(guildId, topic) {
+  const data = learningData.get(guildId);
+  if (!data) return 1.0;
+  const stats = data.get(topic);
+  if (!stats || stats.count < 3) return 1.0;
+  const engagementRate = stats.engagement / stats.count;
+  return 0.5 + engagementRate;
 }
 
 // ============================================
-// CONTEXT-AWARE RESPONSE GENERATION
+// CONTEXTUAL RESPONSE GENERATION ENGINE
 // ============================================
 
-function getMessageType(phase, lastType) {
-  const phaseTypes = {
-    'opening': ['question', 'question', 'greeting', 'fact', 'statement', 'icebreaker'],
-    'discussion': ['question', 'answer', 'debate', 'testimonial', 'comparison', 'reaction', 'opinion', 'insight'],
-    'deep_dive': ['analysis', 'technical', 'comparison', 'debate', 'insight', 'prediction', 'data_share'],
-    'wrapping': ['testimonial', 'summary', 'humor', 'tip', 'reaction', 'closing', 'call_to_action'],
-  };
+function analyzeConversationMood(messages) {
+  const recentMessages = messages.slice(-5);
+  let excitementScore = 0;
+  let questionScore = 0;
   
-  let types = phaseTypes[phase] || phaseTypes['discussion'];
-  const filtered = types.filter(t => t !== lastType);
-  return getRandomItem(filtered.length > 0 ? filtered : types);
+  for (const msg of recentMessages) {
+    if (msg.message.includes('!')) excitementScore += 0.2;
+    if (msg.message.includes('?')) questionScore += 0.3;
+    if (msg.message.includes('🔥') || msg.message.includes('🎉')) excitementScore += 0.3;
+  }
+  
+  if (excitementScore > 0.6) return 'excited';
+  if (questionScore > 0.8) return 'curious';
+  if (excitementScore < 0.2 && questionScore < 0.3) return 'casual';
+  return 'balanced';
 }
 
-function generateSmartMessage(persona, topic, phase, messageType, memory) {
+function getCurrentTimeContext() {
+  const hour = new Date().getHours();
+  for (const [key, context] of Object.entries(timeContexts)) {
+    if (hour >= context.hourRange[0] && hour < context.hourRange[1]) {
+      return { ...context, key };
+    }
+  }
+  return timeContexts.evening;
+}
+
+function generateIntelligentResponse(persona, topic, phase, messageType, memory, timeContext, mood) {
   const topicName = topic?.topic || 'electric vehicles';
-  const lastMessages = memory.messages.slice(-3);
+  const lastMessages = memory.messages.slice(-5);
+  const timeGreeting = getRandomItem(timeContext.greetings);
+  const isWeekend = [0, 6].includes(new Date().getDay());
   
-  // Check if this persona hasn't spoken in a while
-  const lastSpokeIndex = memory.messages.findLastIndex(m => m.persona === persona.name);
-  const hasBeenQuiet = lastSpokeIndex === -1 || (memory.messages.length - lastSpokeIndex) > 5;
-  
-  const M = {
-    greeting: {
-      default: [
-        `Hey everyone! 👋 How's the ${topicName} discussion going?`,
-        `Jumping in here - love this conversation about ${topicName}! 💬`,
-        `Great to see the community so active! What's everyone's take on ${topicName}? 🌟`,
-        `Just catching up. Fascinating points about ${topicName}! ⚡`,
-      ],
+  // Dynamic response templates based on phase and mood
+  const responseTemplates = {
+    opening: {
+      excited: [`${timeGreeting}! ⚡ So hyped about ${topicName}! Anyone else? 🎉`],
+      curious: [`${timeGreeting}! 👋 Quick question - what's everyone's take on ${topicName}? 🤔`],
+      casual: [`${timeGreeting} everyone! 🌟 ${topicName} crossed my mind today. Thoughts?`],
     },
-    icebreaker: {
-      default: [
-        `Random question: what's your dream EV road trip destination? 🗺️`,
-        `Curious - what made you first consider going electric? 💭`,
-        `Fun poll: Favorite BYD color? 🤔`,
-        `Quick show of hands - who's done a 500+ mile EV road trip? ✋`,
-      ],
+    discussion: {
+      excited: [`This ${topicName} discussion is 🔥! ${persona.catchphrases[0]} ${getRandomItem(['mind-blowing', 'game-changing', 'incredible'])}!`],
+      curious: [`Building on that ${topicName} point - has anyone considered ${getRandomItem(['the long-term', 'the cost perspective', 'the environmental impact'])}?`],
+      helpful: [`Great ${topicName} insights! To add ${getRandomItem(['a tip', 'some data', 'my experience'])}...`],
     },
-    question: {
-      'EV Expert': [`Anyone have real-world data on ${topicName}? 📊`, `What's everyone's experience with ${topicName}? 🔍`, `Curious - how does ${topicName} impact daily charging habits? 💭`],
-      'Seal Owner': [`Seal owners - how's ${topicName} treating you? 🚗`, `Anyone else notice the ${topicName} improvements? ✨`, `Quick poll: ${topicName} - worth the upgrade? 📊`],
-      'Tech Reviewer': [`Has anyone benchmarked ${topicName} against competitors? 📈`, `What's the consensus on ${topicName} in real-world testing? 🔬`],
-      'New2EV': [`Newbie question: can someone explain ${topicName} in simple terms? 🙋`, `Still learning - is ${topicName} as good as people say? 🥹`],
-      'Family Driver': [`Parents - how does ${topicName} work for car seats and kid gear? 👨‍👩‍👧‍👦`, `Family perspective: is ${topicName} worth prioritizing? 👪`],
-      'Practical Buyer': [`Value question: does ${topicName} justify the cost? 💰`, `Long-term - how does ${topicName} affect resale? 📈`],
+    deep_dive: {
+      analytical: [`Let me dive deeper into ${topicName}. ${getRandomItem(['The key factor is', 'What\'s interesting is', 'Research shows'])}...`],
+      passionate: [`I could talk about ${topicName} all day! ${persona.catchphrases[1]} ${getRandomItem(['by a mile', 'without question', 'any day of the week'])}!`],
     },
-    answer: {
-      'EV Expert': [`Great question! ${topicName} has evolved significantly 📈`, `From my research: ${topicName} is a game-changer 🎯`, `Statistics show ${topicName} improves efficiency by 25% 🔬`],
-      'Seal Owner': [`15k miles in - ${topicName} has been flawless ✅`, `Real talk: ${topicName} exceeded every expectation 💯`, `${topicName} is why I recommend BYD to everyone 🏆`],
-      'Tech Reviewer': [`Benchmarked this: ${topicName} scores top in its class 📊`, `Independent tests confirm ${topicName} leads the market 🏅`],
-      'City Driver': [`For city driving, ${topicName} is perfect 🏙️`, `Daily commute verdict: ${topicName} saves me hours ⏰`],
-      'RoadTripper': [`Long distance tested: ${topicName} holds up great 🛣️`, `Cross-country verified: ${topicName} is reliable 🗺️`],
-    },
-    opinion: {
-      'EV Expert': [`In my professional opinion, ${topicName} is underrated 🎯`, `I firmly believe ${topicName} will be standard in 2 years 📈`],
-      'Seal Owner': [`Hot take: ${topicName} is the best feature of the Seal 🔥`, `Unpopular opinion: ${topicName} > horsepower any day 💪`],
-      'Car Enthusiast': [`From a mechanical standpoint, ${topicName} is brilliantly engineered 🔧`, `${topicName} shows BYD really understands drivers 🏎️`],
-      'EV_Advocate': [`Here's why ${topicName} matters for the EV transition 🌍`, `${topicName} is the future, and BYD is leading the way ⚡`],
-    },
-    analysis: {
-      'EV Expert': [`Deep dive: ${topicName} shows 40% improvement year-over-year 📊`, `Analyzing the data: ${topicName} is where the market is heading 🎯`],
-      'Tech Reviewer': [`Breaking down ${topicName}: the engineering is impressive 🔬`, `Technical analysis: ${topicName} outperforms by significant margin 📈`],
-      'Tech_Explorer': [`Interesting patterns in ${topicName} adoption rates 📈`, `The innovation in ${topicName} is accelerating 🚀`],
-    },
-    insight: {
-      'EV Expert': [`Key insight: ${topicName} adoption is accelerating faster than predicted 🚀`, `What's interesting about ${topicName} is how it's changing buyer behavior 🔍`],
-      'Tech Reviewer': [`Here's something most miss about ${topicName}: the long-term value 💡`, `The real story with ${topicName} is the total cost of ownership 📉`],
-      'ValueHunter': [`Most people overlook: ${topicName} saves money long-term 💰`, `Hidden value in ${topicName} most buyers don't consider 📊`],
-    },
-    prediction: {
-      'EV Expert': [`Prediction: ${topicName} will be standard by 2028 📅`, `I see ${topicName} becoming the differentiator for EVs 🎯`],
-      'Tech Reviewer': [`My bet: ${topicName} technology will trickle down to all models 📉`, `Future forecast: ${topicName} will be table stakes in 3 years 🔮`],
-      'EV_Advocate': [`Soon, ${topicName} will be as common as power windows ⚡`, `The EV tipping point is here, and ${topicName} is proof 🎯`],
-    },
-    debate: {
-      'EV Expert': [`Counterpoint: ${topicName} matters more than 0-60 for 95% of drivers 🎯`, `Change my mind: ${topicName} is the #1 EV feature worth paying for 💪`],
-      'Tech Reviewer': [`Controversial: ${topicName} implementations vary wildly. BYD does it best 📊`, `Tested 5 EVs. ${topicName} winner? BYD by a landslide 🏆`],
-      'Seal Owner': [`I'll die on this hill: ${topicName} makes every other feature better 💯`, `Fight me: ${topicName} > range anxiety arguments 🔥`],
-      'Gearhead_Al': [`Traditionalists might disagree, but ${topicName} is superior 🔧`, `Some say it's hype, but ${topicName} delivers real results 🏎️`],
-    },
-    comparison: {
-      'EV Expert': [`Comparing ${topicName} across brands: BYD leads in 4/5 metrics 📊`, `${topicName} on BYD vs others - significant gap in quality 🔍`],
-      'Tech Reviewer': [`Side-by-side: ${topicName} implementation - BYD is most polished 🏆`, `Tested head-to-head: BYD's ${topicName} beats competitors 🥇`],
-      'ValueHunter': [`Price-to-performance: ${topicName} on BYD is unbeatable value 💰`, `Dollar for dollar, ${topicName} delivers the most ROI 📈`],
-      'Practical_Pete': [`Real world comparison: ${topicName} delivers what matters 🎯`, `For most drivers, ${topicName} is the better choice ✅`],
-    },
-    technical: {
-      'Car Enthusiast': [`Technical breakdown: ${topicName} uses premium components throughout 🔧`, `${topicName} engineering is over-spec'd. Quality shines 🛠️`],
-      'Tech Reviewer': [`Specs check: ${topicName} numbers are verified and impressive 📊`, `Deep dive: ${topicName} architecture is future-proof 🔬`],
-      'Gearhead_Al': [`Under the hood, ${topicName} is brilliantly executed 🔧`, `DIY perspective: ${topicName} is accessible and well-built 🛠️`],
-    },
-    testimonial: {
-      'Seal Owner': [`Best decision ever. ${topicName} saves me $200/month 💰`, `1 year later: ${topicName} is still my favorite feature 🚗`],
-      'Family Driver': [`${topicName} made our road trips stress-free. Zero complaints 👨‍👩‍👧‍👦`, `Never going back to gas. ${topicName} is superior in every way 💚`],
-      'City Driver': [`3 months, saved $600 on fuel. ${topicName} pays for itself 💸`, `My commute is the best part of my day thanks to ${topicName} ☀️`],
-      'RoadTripper': [`800 miles last weekend. ${topicName} made it effortless 🚗⚡`, `Road trips are fun again thanks to ${topicName} 🗺️`],
-      'Commercial Buyer': [`Best business decision this year. ${topicName} transformed our fleet 📈`],
-      'New2EV': [`Was nervous but ${topicName} made switching seamless. So happy! 🎉`],
-    },
-    fact: {
-      'EV Expert': [`Fun fact: ${topicName} reduces operating costs up to 60% 📊`, `BYD's ${topicName} tech is used by Tesla and Toyota 🤯`, `${topicName} tested for 1M+ miles with zero failures 🔬`],
-      'Tech Reviewer': [`${topicName} outperforms competitors by 30% in independent tests 📈`, `Tests confirm: ${topicName} is most efficient in its class 🏆`],
-      'Car Enthusiast': [`${topicName} uses military-grade materials. Over-engineered 🔧`, `${topicName} has fewer moving parts. Less to break 🛠️`],
-      'EV_Advocate': [`Did you know? ${topicName} helps reduce carbon footprint significantly 🌍`, `${topicName} is a major step toward sustainable transportation 💚`],
-    },
-    tip: {
-      'EV Expert': [`Pro tip: Maximize ${topicName} by scheduling during off-peak hours 💡`, `Insider: ${topicName} works best when preconditioned before driving 🔋`],
-      'Seal Owner': [`The app has ${topicName} settings most people never discover 📱`, `After a year, I found ${topicName}'s hidden efficiency mode. Game changer! 🔍`],
-      'City Driver': [`Life hack: ${topicName} + planning ahead = maximum savings 🗓️`, `${topicName} tip: Keep tires at 42 PSI for max efficiency 🛞`],
-      'RoadTripper': [`Road trip tip: ${topicName} adds 50+ miles if you precondition 🛣️`, `${topicName} + ABRP app = perfect route planning 📱`],
-      'ChargePro': [`Charging tip: ${topicName} works best between 20-80% 🔋`, `Home charging setup: ${topicName} pairs perfectly with scheduled rates ⚡`],
-    },
-    data_share: {
-      'EV Expert': [`Data point: ${topicName} adoption up 150% year-over-year 📈`, `Study shows: ${topicName} reduces range anxiety by 70% 📊`],
-      'Tech Reviewer': [`Benchmark results: ${topicName} efficiency rating of 94% 🏆`, `Testing data: ${topicName} consistent across temperature ranges 🌡️`],
-      'ChargePro': [`Charging data: ${topicName} saves average of 15 min per session ⏱️`, `Usage stats: ${topicName} feature used by 85% of owners daily 📱`],
-    },
-    call_to_action: {
-      default: [
-        `Has anyone else had similar experiences with ${topicName}? Share below! 👇`,
-        `What's your take on ${topicName}? Would love to hear more perspectives 💬`,
-        `Anyone want to add their experience with ${topicName}? 🗣️`,
-        `Let's keep this discussion going - what do others think? 🤝`,
-      ],
-    },
-    summary: {
-      default: [
-        `Great discussion everyone! Learned a lot about ${topicName} today 📚`,
-        `Really valuable insights on ${topicName} - thanks all! 🙏`,
-        `This conversation about ${topicName} has been super helpful! 💯`,
-      ],
-    },
-    humor: {
-      'Seal Owner': [`My neighbor asked about ${topicName}. Now he's at the dealership 😂`, `Gas station guy misses me. Haven't been there in 6 months ⛽❌`],
-      'City Driver': [`Hardest part about ${topicName}? Remembering what gas stations look like 😂`],
-      'Family Driver': [`Kids think ${topicName} is magic. I'm not correcting them ✨`],
-      'New2EV': [`Told friends about ${topicName}. They think I'm obsessed. Maybe I am 🤷‍♂️`],
-      'RoadTripper': [`Pulled up to a charger next to a Tesla. He asked about ${topicName}. Converted! 😎`],
-      'BYD_Fan': [`My garage is now a BYD shrine. Wife is not amused 😂`],
+    wrapping: {
+      thoughtful: [`This ${topicName} conversation has been ${getRandomItem(['illuminating', 'thought-provoking', 'genuinely helpful'])}. Thanks everyone! 🙏`],
+      casual: [`Great chat about ${topicName}! Catch you all ${getRandomItem(['later', 'tomorrow', 'next time'])}! 👋`],
     },
     reaction: {
-      default: [`This is exactly what I've been saying! 💯`, `Couldn't agree more. Well said! 👏`, `Great point! Learned something new today 📚`, `BYD community is the best. So helpful 🤝`, `Adding this to my notes. Great discussion 📝`, `Preach! 🙌`, `Facts! 💪`, `This right here 🔥`, `Finally someone said it 🎯`, `Saving this for later 💾`, `Mind officially blown 🤯`, `Take my upvote! ⬆️`],
-    },
-    closing: {
-      default: [
-        `Great chat everyone! Talk soon about ${topicName} 👋`,
-        `Thanks for the awesome discussion! Catch you all later 🌟`,
-        `Learned so much! Looking forward to the next topic 🚀`,
-      ],
+      agree: [`${getRandomItem(['💯', 'Exactly!', 'This!', 'Couldn\'t agree more', '🎯'])}`],
+      thoughtful: [`${getRandomItem(['Hmm', 'Interesting point', 'Never thought of that', 'Good perspective'])} 🤔`],
     },
   };
-
-  // Add quiet persona re-engagement
-  if (hasBeenQuiet && Math.random() < 0.3) {
-    return `*catching up* Great points about ${topicName}! Been following this thread 📝 ${M.reaction.default[0]}`;
-  }
-
-  const typeMessages = M[messageType] || {};
-  let messages = typeMessages[persona.role] || typeMessages['EV Expert'] || typeMessages.default || [];
-  if (messages.length === 0 && messageType === 'reaction') messages = M.reaction.default;
-  if (messages.length === 0) messages = [`Really interesting discussion about ${topicName}! Love this community 🤝`];
   
-  const recentTexts = lastMessages.map(m => m.message);
-  const fresh = messages.filter(m => !recentTexts.includes(m));
-  return getRandomItem(fresh.length > 0 ? fresh : messages);
+  // Select appropriate template based on context
+  const phaseKey = phase === 'heated' ? 'discussion' : phase;
+  const moodKey = mood === 'balanced' ? (persona.speakingStyle === 'analytical' ? 'analytical' : mood) : mood;
+  
+  let templates = responseTemplates[phaseKey] || responseTemplates.discussion;
+  let templateSet = templates[moodKey] || templates.casual || templates;
+  
+  let message = getRandomItem(templateSet);
+  
+  // Add personality flair
+  if (Math.random() < 0.3 && persona.catchphrases) {
+    message = message.replace(persona.catchphrases[0], getRandomItem(persona.catchphrases));
+  }
+  
+  // Add time context emoji
+  if (Math.random() < 0.2) {
+    message = `${timeContext.emoji} ${message}`;
+  }
+  
+  // Add weekend vibe
+  if (isWeekend && Math.random() < 0.15) {
+    message = `🏖️ ${message}`;
+  }
+  
+  return message;
+}
+
+// ============================================
+// INTELLIGENT TOPIC SELECTION
+// ============================================
+function selectIntelligentTopic(memory, guildId) {
+  // Weighted selection based on past engagement
+  const availableTopics = [...conversationTopics];
+  const weights = availableTopics.map(topic => {
+    const topicWeight = getTopicWeight(guildId, topic.category);
+    return topic.weight * topicWeight;
+  });
+  
+  const selectedCategory = weightedRandom(
+    availableTopics.map((t, i) => ({ ...t, weight: weights[i] })),
+    'weight'
+  );
+  
+  const selectedTopic = getRandomItem(selectedCategory.topics);
+  return { category: selectedCategory.category, topic: selectedTopic };
+}
+
+// ============================================
+// CONTEXT-AWARE MESSAGE TYPE SELECTION
+// ============================================
+const messageTypeWeights = {
+  opening: { question: 0.4, greeting: 0.3, fact: 0.2, icebreaker: 0.1 },
+  discussion: { question: 0.3, answer: 0.2, opinion: 0.2, reaction: 0.15, insight: 0.1, comparison: 0.05 },
+  deep_dive: { analysis: 0.35, technical: 0.25, insight: 0.2, data_share: 0.2 },
+  heated: { debate: 0.4, opinion: 0.3, reaction: 0.2, fact: 0.1 },
+  wrapping: { summary: 0.4, closing: 0.3, testimonial: 0.2, reaction: 0.1 },
+};
+
+function getIntelligentMessageType(phase, lastType) {
+  const weights = messageTypeWeights[phase] || messageTypeWeights.discussion;
+  const types = Object.entries(weights);
+  
+  // Reduce chance of repeating the same type
+  const filtered = types.filter(([type]) => type !== lastType);
+  const totalWeight = filtered.reduce((sum, [, weight]) => sum + weight, 0);
+  
+  let random = Math.random() * totalWeight;
+  for (const [type, weight] of filtered) {
+    random -= weight;
+    if (random <= 0) return type;
+  }
+  return filtered[0]?.[0] || 'reaction';
 }
 
 // ============================================
@@ -343,6 +386,9 @@ async function getWebhookClient(url) {
 }
 
 async function sendAsPersona(wc, persona, message, retry = 0) {
+  const typingDelay = Math.random() * (CONFIG.typingDelayRange.max - CONFIG.typingDelayRange.min) + CONFIG.typingDelayRange.min;
+  await new Promise(r => setTimeout(r, typingDelay));
+  
   try {
     await axios.post(wc.url, { username: persona.name, avatar_url: persona.avatar, content: message });
     logger.debug(`💬 ${persona.name}: "${message.substring(0, 80)}${message.length > 80 ? '...' : ''}"`);
@@ -358,41 +404,50 @@ async function sendAsPersona(wc, persona, message, retry = 0) {
 }
 
 // ============================================
+// WELCOME MESSAGES
+// ============================================
+const welcomeMessages = {
+  personalized: [
+    "Hey {{user}}! 👋 Welcome to the BYD family! What brings you here today?",
+    "Welcome {{user}}! 🚗⚡ Another EV enthusiast joins the conversation! Tell us about yourself!",
+    "Hey {{user}}! 🎉 So glad you found us! Are you team Seal, ATTO, or Dolphin?",
+    "Welcome aboard {{user}}! 🌟 Have any questions about going electric? We're here to help!",
+  ],
+};
+
+function getIntelligentWelcomeMessage(member) {
+  const base = getRandomItem(welcomeMessages.personalized);
+  return base.replace('{{user}}', member.displayName);
+}
+
+// ============================================
 // WELCOME MESSAGE FOR NEW MEMBERS
 // ============================================
 async function sendWelcomeMessage(guild, member, config) {
   if (!config?.lobby_webhook_url) return false;
   
   try {
-    const welcomeMessage = getRandomWelcomeMessage().replace('{{user}}', member.displayName);
-    const randomPersona = getRandomItem(activePersonas);
-    const wc = await getWebhookClient(config.lobby_webhook_url);
-    const success = await sendAsPersona(wc, randomPersona, welcomeMessage);
+    await new Promise(r => setTimeout(r, CONFIG.welcomeDelay));
     
-    if (success) {
-      logger.info(`👋 Welcome message sent to ${member.user.tag}`);
-    }
+    const welcomeMessage = getIntelligentWelcomeMessage(member);
+    const persona = getRandomItem(activePersonas.filter(p => p.activeHours === 'all' || p.activeHours === getCurrentTimeContext().key));
+    const wc = await getWebhookClient(config.lobby_webhook_url);
+    const success = await sendAsPersona(wc, persona, welcomeMessage);
+    
+    if (success) logger.info(`👋 Intelligent welcome sent to ${member.user.tag}`);
     return success;
   } catch (err) {
-    logger.error(`Failed to send welcome message to ${member.user.tag}:`, err.message);
+    logger.error(`Failed to send welcome: ${err.message}`);
     return false;
   }
 }
 
 // ============================================
-// CHECK IF WITHIN ACTIVE HOURS
-// ============================================
-function isWithinActiveHours() {
-  const hour = new Date().getHours();
-  return hour >= CONFIG.activeHoursStart && hour < CONFIG.activeHoursEnd;
-}
-
-// ============================================
-// MAIN FUNCTION
+// MAIN INTELLIGENT LOBBY CHATTER
 // ============================================
 async function runLobbyChatter(client) {
-  // Don't run during inactive hours
-  if (!isWithinActiveHours()) return;
+  const hour = new Date().getHours();
+  if (hour < CONFIG.activeHoursStart || hour >= CONFIG.activeHoursEnd) return;
   
   const guilds = client.guilds.cache;
   let sent = 0;
@@ -410,36 +465,62 @@ async function runLobbyChatter(client) {
       if (!personas?.length) personas = activePersonas;
       
       const mem = getGuildMemory(guild.id);
+      const timeContext = getCurrentTimeContext();
+      const mood = analyzeConversationMood(mem.messages);
+      const isStale = (Date.now() - mem.lastActivityTime) > 3600000;
       
-      // Select or rotate topic
-      if (!mem.currentTopic) {
-        const cat = getRandomItem(conversationTopics);
-        mem.currentTopic = { category: cat.category, topic: getRandomItem(cat.topics) };
-        mem.messageCount = 0;
+      if (isStale || !mem.currentTopic) {
+        mem.currentTopic = selectIntelligentTopic(mem, guild.id);
         mem.conversationPhase = 'opening';
+        mem.messageCount = 0;
       }
       
-      // Select persona (avoid same speaker twice)
-      const avail = personas.filter(p => p.name !== mem.lastSpeaker);
-      const persona = getRandomItem(avail.length > 0 ? avail : personas);
+      // Smart persona selection
+      let avail = personas.filter(p => p.name !== mem.lastSpeaker);
+      if (timeContext.key !== 'all') {
+        avail = avail.filter(p => p.activeHours === 'all' || p.activeHours === timeContext.key);
+      }
+      if (avail.length === 0) avail = personas;
+      const persona = getRandomItem(avail);
       
-      // Determine message type based on phase
-      const msgType = getMessageType(mem.conversationPhase, mem.lastMessageType);
-      const message = generateSmartMessage(persona, mem.currentTopic, mem.conversationPhase, msgType, mem);
+      const msgType = getIntelligentMessageType(mem.conversationPhase, mem.lastMessageType);
+      const message = generateIntelligentResponse(persona, mem.currentTopic, mem.conversationPhase, msgType, mem, timeContext, mood);
       
       const wc = await getWebhookClient(config.lobby_webhook_url);
-      const ok = await sendAsPersona(wc, persona, message);
+      const success = await sendAsPersona(wc, persona, message);
       
-      if (ok) {
-        updateGuildMemory(guild.id, persona, message, msgType);
+      if (success) {
+        mem.messages.push({ persona: persona.name, message, type: msgType, timestamp: Date.now() });
+        mem.lastSpeaker = persona.name;
+        mem.lastMessageType = msgType;
+        mem.messageCount++;
+        mem.lastActivityTime = Date.now();
+        mem.activeParticipants.add(persona.name);
+        mem.conversationHeat = Math.min(100, mem.conversationHeat + 5);
+        
+        // Update conversation phase
+        if (mem.messageCount >= 12) mem.conversationPhase = 'wrapping';
+        else if (mem.messageCount >= 6) mem.conversationPhase = 'deep_dive';
+        else if (mem.messageCount >= 3) mem.conversationPhase = 'discussion';
+        
+        // Trim memory
+        if (mem.messages.length > CONFIG.maxContextMessages) {
+          mem.messages = mem.messages.slice(-CONFIG.maxContextMessages);
+        }
+        
         sent++;
       }
       
-      // Random delay between messages
-      await new Promise(r => setTimeout(r, Math.random() * (CONFIG.maxDelay - CONFIG.minDelay) + CONFIG.minDelay));
+      // Natural delay between messages
+      const isPeak = hour >= CONFIG.peakHoursStart && hour < CONFIG.peakHoursEnd;
+      const isWeekend = [0, 6].includes(new Date().getDay());
+      let delay = Math.random() * (CONFIG.maxDelay - CONFIG.minDelay) + CONFIG.minDelay;
+      if (isPeak) delay *= 0.6;
+      if (isWeekend) delay *= 1.3;
+      await new Promise(r => setTimeout(r, Math.min(delay, 600000)));
       
     } catch (err) { 
-      logger.error(`Lobby failed for ${guild.id}:`, err.message); 
+      logger.error(`Lobby failed: ${err.message}`); 
     }
   }
   
@@ -459,29 +540,38 @@ function startLobbyChatterScheduler(client) {
     await runLobbyChatter(client); 
   });
   
-  logger.ready(`💬 Intelligent lobby chatter scheduler started (${CONFIG.schedule})`);
+  logger.ready(`🧠 Intelligent lobby chatter started (${CONFIG.schedule})`);
 }
 
 function getLobbyStats(guildId) {
   const m = getGuildMemory(guildId);
   return { 
-    totalMessages: m.messages.length, 
-    currentTopic: m.currentTopic?.topic || 'None', 
-    phase: m.conversationPhase, 
-    lastSpeaker: m.lastSpeaker || 'None',
+    totalMessages: m.messages.length,
+    currentTopic: m.currentTopic?.topic || 'None',
+    phase: m.conversationPhase,
+    heat: m.conversationHeat,
+    lastSpeaker: m.lastSpeaker,
     activeParticipants: Array.from(m.activeParticipants),
-    dailyMessageCount: m.dailyMessageCount,
-    topicHistory: m.topicHistory.slice(-5),
+    dailyActivity: m.dailyMessageCount,
   };
 }
 
 function resetLobbyMemory(guildId) { 
   conversationMemory.delete(guildId); 
+  learningData.delete(guildId);
 }
 
-// Process welcome messages for new members
-async function processWelcomeQueue(client) {
-  for (const [guildId, memberId] of pendingWelcomeMessages) {
+// Welcome queue
+const welcomeQueue = [];
+
+function queueWelcomeMessage(guildId, memberId, client) {
+  welcomeQueue.push({ guildId, memberId, client });
+  setTimeout(() => processWelcomeQueue(), 3000);
+}
+
+async function processWelcomeQueue() {
+  while (welcomeQueue.length > 0) {
+    const { guildId, memberId, client } = welcomeQueue.shift();
     const guild = client.guilds.cache.get(guildId);
     const member = guild?.members.cache.get(memberId);
     if (guild && member) {
@@ -490,14 +580,7 @@ async function processWelcomeQueue(client) {
         await sendWelcomeMessage(guild, member, config);
       }
     }
-    pendingWelcomeMessages.delete(guildId);
   }
-}
-
-// Call this from guildMemberAdd event
-function queueWelcomeMessage(guildId, memberId) {
-  pendingWelcomeMessages.set(guildId, memberId);
-  setTimeout(() => processWelcomeQueue(client), 5000);
 }
 
 module.exports = { 
