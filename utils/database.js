@@ -92,6 +92,7 @@ async function initDatabase() {
       guild_id TEXT PRIMARY KEY,
       verify_role_id TEXT,
       verify_enabled BOOLEAN DEFAULT false,
+      verify_channel_id TEXT,
       ticket_category_id TEXT,
       ticket_logs_channel_id TEXT,
       staff_role_id TEXT,
@@ -275,6 +276,7 @@ async function initDatabase() {
     `ALTER TABLE test_drive_bookings ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMP`,
     `ALTER TABLE test_drive_bookings ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP`,
     
+    `ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS verify_channel_id TEXT`,
     `ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS lead_role_id TEXT`,
     `ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS auto_post_enabled BOOLEAN DEFAULT false`,
     `ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS auto_post_channels TEXT[] DEFAULT '{}'`,
@@ -537,6 +539,7 @@ async function getGuildConfig(guildId) {
       guild_id: guildId,
       verify_enabled: false,
       verify_role_id: null,
+      verify_channel_id: null,
       auto_post_enabled: false,
       auto_post_channels: [],
       auto_post_interval_hours: 2,
@@ -576,7 +579,8 @@ async function getGuildConfig(guildId) {
 
 async function setGuildConfig(guildId, config) {
   const {
-    verify_role_id, verify_enabled, ticket_category_id, ticket_logs_channel_id,
+    verify_role_id, verify_enabled, verify_channel_id,
+    ticket_category_id, ticket_logs_channel_id,
     staff_role_id, lead_role_id, auto_post_enabled, auto_post_channels,
     auto_post_interval_hours, lobby_webhook_url, lobby_chatter_enabled,
     lobby_chatter_personas, giveaway_ping_role_id, welcome_channel_id,
@@ -585,16 +589,17 @@ async function setGuildConfig(guildId, config) {
 
   await pool.query(
     `INSERT INTO guild_config (
-      guild_id, verify_role_id, verify_enabled, ticket_category_id,
-      ticket_logs_channel_id, staff_role_id, lead_role_id,
+      guild_id, verify_role_id, verify_enabled, verify_channel_id,
+      ticket_category_id, ticket_logs_channel_id, staff_role_id, lead_role_id,
       auto_post_enabled, auto_post_channels, auto_post_interval_hours,
       lobby_webhook_url, lobby_chatter_enabled, lobby_chatter_personas,
       giveaway_ping_role_id, welcome_channel_id, log_channel_id,
       mod_role_id, admin_role_id, updated_at
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,NOW())
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,NOW())
     ON CONFLICT (guild_id) DO UPDATE SET
       verify_role_id = EXCLUDED.verify_role_id,
       verify_enabled = EXCLUDED.verify_enabled,
+      verify_channel_id = EXCLUDED.verify_channel_id,
       ticket_category_id = EXCLUDED.ticket_category_id,
       ticket_logs_channel_id = EXCLUDED.ticket_logs_channel_id,
       staff_role_id = EXCLUDED.staff_role_id,
@@ -611,8 +616,8 @@ async function setGuildConfig(guildId, config) {
       mod_role_id = EXCLUDED.mod_role_id,
       admin_role_id = EXCLUDED.admin_role_id,
       updated_at = NOW()`,
-    [guildId, verify_role_id || null, verify_enabled || false, ticket_category_id || null,
-     ticket_logs_channel_id || null, staff_role_id || null, lead_role_id || null,
+    [guildId, verify_role_id || null, verify_enabled || false, verify_channel_id || null,
+     ticket_category_id || null, ticket_logs_channel_id || null, staff_role_id || null, lead_role_id || null,
      auto_post_enabled || false, auto_post_channels || [], auto_post_interval_hours || 2,
      lobby_webhook_url || null, lobby_chatter_enabled || false,
      lobby_chatter_personas ? JSON.stringify(lobby_chatter_personas) : '[]',
