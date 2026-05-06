@@ -8,6 +8,8 @@ const EMOJI_REGEX = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\
 const SNOWFLAKE_REGEX = /^\d{17,20}$/;
 const WEBHOOK_REGEX = /\/webhooks\/(\d+)\/(.+)$/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const URL_REGEX = /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/;
+const PHONE_REGEX = /^[\d\s\-\(\)\+]{10,15}$/;
 
 // ============================================
 // ARRAY & RANDOM HELPERS
@@ -118,6 +120,31 @@ function hasIntersection(arr1, arr2) {
   if (!arr1?.length || !arr2?.length) return false;
   const set1 = new Set(arr1);
   return arr2.some(item => set1.has(item));
+}
+
+/**
+ * Get the difference between two arrays.
+ * @param {Array} arr1 - First array
+ * @param {Array} arr2 - Second array
+ * @returns {Array} - Elements in arr1 that are not in arr2
+ */
+function difference(arr1, arr2) {
+  if (!arr1?.length) return [];
+  if (!arr2?.length) return [...arr1];
+  const set2 = new Set(arr2);
+  return arr1.filter(item => !set2.has(item));
+}
+
+/**
+ * Get the intersection of two arrays.
+ * @param {Array} arr1 - First array
+ * @param {Array} arr2 - Second array
+ * @returns {Array} - Elements that exist in both arrays
+ */
+function intersection(arr1, arr2) {
+  if (!arr1?.length || !arr2?.length) return [];
+  const set1 = new Set(arr1);
+  return arr2.filter(item => set1.has(item));
 }
 
 // ============================================
@@ -235,6 +262,19 @@ async function waitFor(condition, timeout = 30000, interval = 1000) {
   return false;
 }
 
+/**
+ * Create a deferred promise.
+ * @returns {Object} - { promise, resolve, reject }
+ */
+function defer() {
+  let resolve, reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 // ============================================
 // FORMATTING HELPERS
 // ============================================
@@ -272,6 +312,18 @@ function formatNumber(num) {
 }
 
 /**
+ * Format a percentage.
+ * @param {number} value - Value to format as percentage
+ * @param {number} decimals - Decimal places (default: 1)
+ * @returns {string} - Formatted percentage
+ */
+function formatPercent(value, decimals = 1) {
+  if (typeof value !== 'number') value = parseFloat(value);
+  if (isNaN(value)) return '0%';
+  return `${value.toFixed(decimals)}%`;
+}
+
+/**
  * Format a date to a readable string.
  * @param {Date|string|number} date - Date to format
  * @param {string} format - 'short', 'long', 'relative', 'full', 'time', 'iso'
@@ -294,6 +346,7 @@ function formatDate(date, format = 'short') {
     time: () => d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
     iso: () => d.toISOString(),
     discord: () => `<t:${Math.floor(d.getTime() / 1000)}:F>`,
+    discordRelative: () => `<t:${Math.floor(d.getTime() / 1000)}:R>`,
   };
   
   return formats[format] ? formats[format]() : formats.short();
@@ -446,6 +499,22 @@ function countEmojis(str) {
   return matches ? matches.length : 0;
 }
 
+/**
+ * Mask sensitive information in a string.
+ * @param {string} str - String to mask
+ * @param {number} visibleStart - Visible characters at start (default: 4)
+ * @param {number} visibleEnd - Visible characters at end (default: 4)
+ * @returns {string} - Masked string
+ */
+function maskString(str, visibleStart = 4, visibleEnd = 4) {
+  if (!str || typeof str !== 'string') return '***';
+  if (str.length <= visibleStart + visibleEnd) return '*'.repeat(str.length);
+  const start = str.slice(0, visibleStart);
+  const end = str.slice(-visibleEnd);
+  const middle = '*'.repeat(Math.min(10, str.length - visibleStart - visibleEnd));
+  return `${start}${middle}${end}`;
+}
+
 // ============================================
 // VALIDATION HELPERS
 // ============================================
@@ -499,6 +568,26 @@ function isValidSnowflake(id) {
 function isNumeric(value) {
   if (value === null || value === undefined) return false;
   return !isNaN(parseFloat(value)) && isFinite(value);
+}
+
+/**
+ * Validate a URL.
+ * @param {string} url - URL to validate
+ * @returns {boolean} - True if valid URL
+ */
+function isValidUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  return URL_REGEX.test(url);
+}
+
+/**
+ * Validate a phone number.
+ * @param {string} phone - Phone number to validate
+ * @returns {boolean} - True if valid phone number
+ */
+function isValidPhone(phone) {
+  if (!phone || typeof phone !== 'string') return false;
+  return PHONE_REGEX.test(phone);
 }
 
 // ============================================
@@ -559,6 +648,27 @@ function isEmpty(obj) {
   if (!obj) return true;
   if (typeof obj !== 'object') return false;
   return Object.keys(obj).length === 0;
+}
+
+/**
+ * Merge objects deeply.
+ * @param {Object} target - Target object
+ * @param {Object} source - Source object
+ * @returns {Object} - Merged object
+ */
+function deepMerge(target, source) {
+  if (!target || typeof target !== 'object') return source;
+  if (!source || typeof source !== 'object') return target;
+  
+  const result = { ...target };
+  for (const key in source) {
+    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+      result[key] = deepMerge(target[key], source[key]);
+    } else {
+      result[key] = source[key];
+    }
+  }
+  return result;
 }
 
 // ============================================
@@ -642,6 +752,16 @@ function throttle(fn, limit = 300) {
   };
 }
 
+/**
+ * Generate a random number between min and max.
+ * @param {number} min - Minimum value
+ * @param {number} max - Maximum value
+ * @returns {number} - Random number
+ */
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
 // ============================================
 // EXPORTS
 // ============================================
@@ -655,6 +775,8 @@ module.exports = {
   chunk,
   unique,
   hasIntersection,
+  difference,
+  intersection,
   
   // Async
   sleep,
@@ -662,10 +784,12 @@ module.exports = {
   withTimeout,
   parallelLimit,
   waitFor,
+  defer,
   
   // Formatting
   formatUSD,
   formatNumber,
+  formatPercent,
   formatDate,
   getRelativeTime,
   formatDuration,
@@ -679,6 +803,7 @@ module.exports = {
   slugify,
   stripEmojis,
   countEmojis,
+  maskString,
   
   // Validation
   isValidWebhookUrl,
@@ -686,12 +811,15 @@ module.exports = {
   isValidEmail,
   isValidSnowflake,
   isNumeric,
+  isValidUrl,
+  isValidPhone,
   
   // Object
   deepClone,
   pick,
   omit,
   isEmpty,
+  deepMerge,
   
   // Misc
   clamp,
@@ -699,4 +827,5 @@ module.exports = {
   formatBytes,
   debounce,
   throttle,
+  randomInt,
 };
