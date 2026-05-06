@@ -5,7 +5,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const { EmbedBuilder } = require('discord.js');
 const logger = require('../utils/logger');
-const { generateContent } = require('../utils/openai');
+const { generateContent, getFallbackPost } = require('../utils/openai');
 
 // ============================================
 // CONFIGURATION
@@ -18,12 +18,14 @@ const AUTO_POST_CONFIG = {
   postToAllChannels: process.env.AUTO_POST_ALL_CHANNELS === 'true', // Post to all channels simultaneously
   runOnStartup: process.env.AUTO_POST_ON_STARTUP === 'true',
   minDelayBetweenPosts: parseInt(process.env.AUTO_POST_MIN_DELAY, 10) || 5000, // 5 seconds between posts
+  enableImageValidation: process.env.ENABLE_IMAGE_VALIDATION !== 'false', // Enable image URL validation
 };
 
 const MAX_DISCORD_EMBED_DESCRIPTION = 4096;
 const MAX_RETRIES = 3;
 const MAX_RECENT_HASHES = 10;
 const STATE_FILE = path.join(__dirname, '../data/autopost_state.json');
+const CONTENT_CACHE_TTL = 3600000; // 1 hour cache for generated content
 
 // ============================================
 // CONTENT TYPES
@@ -70,6 +72,8 @@ const modelsList = [
 let lastTypeIndex = -1;
 let lastChannelIndex = 0;
 const recentContentHashes = new Set();
+let contentCache = new Map();
+let savePromise = null;
 
 // Statistics tracking
 const stats = {
@@ -105,26 +109,37 @@ async function loadState() {
 }
 
 async function saveState() {
-  try {
-    const state = {
-      lastTypeIndex,
-      lastChannelIndex,
-      stats: {
-        totalPosts: stats.totalPosts,
-        successfulPosts: stats.successfulPosts,
-        failedPosts: stats.failedPosts,
-        apiPosts: stats.apiPosts,
-        fallbackPosts: stats.fallbackPosts,
-        lastPostTime: stats.lastPostTime,
-        contentTypes: stats.contentTypes,
-      },
-    };
-    
-    await fs.mkdir(path.dirname(STATE_FILE), { recursive: true });
-    await fs.writeFile(STATE_FILE, JSON.stringify(state, null, 2));
-  } catch (err) {
-    logger.error('Failed to save auto post state:', err);
+  // Prevent race conditions
+  if (savePromise) {
+    await savePromise;
   }
+  
+  savePromise = (async () => {
+    try {
+      const state = {
+        lastTypeIndex,
+        lastChannelIndex,
+        stats: {
+          totalPosts: stats.totalPosts,
+          successfulPosts: stats.successfulPosts,
+          failedPosts: stats.failedPosts,
+          apiPosts: stats.apiPosts,
+          fallbackPosts: stats.fallbackPosts,
+          lastPostTime: stats.lastPostTime,
+          contentTypes: stats.contentTypes,
+        },
+      };
+      
+      await fs.mkdir(path.dirname(STATE_FILE), { recursive: true });
+      await fs.writeFile(STATE_FILE, JSON.stringify(state, null, 2));
+    } catch (err) {
+      logger.error('Failed to save auto post state:', err);
+    } finally {
+      savePromise = null;
+    }
+  })();
+  
+  await savePromise;
 }
 
 // ============================================
@@ -139,6 +154,23 @@ function isValidDiscordContent(text) {
   if (text.length === 0) return false;
   if (text.length > MAX_DISCORD_EMBED_DESCRIPTION) return false;
   return true;
+}
+
+function isValidImageUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  
+  // Check if URL is from Discord CDN or valid HTTPS
+  const isValidProtocol = url.startsWith('https://');
+  const isValidDiscordCDN = url.includes('cdn.discordapp.com');
+  const isValidImgur = url.includes('imgur.com');
+  
+  // Check for valid image extensions
+  const validExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+  const hasValidExtension = validExtensions.some(ext => 
+    url.toLowerCase().includes(ext)
+  );
+  
+  return isValidProtocol && (isValidDiscordCDN || isValidImgur || hasValidExtension);
 }
 
 function isDuplicateContent(text) {
@@ -157,7 +189,20 @@ function isDuplicateContent(text) {
     recentContentHashes.delete(firstHash);
   }
   
+  // Periodic cleanup
+  if (recentContentHashes.size % 20 === 0) {
+    cleanupOldHashes();
+  }
+  
   return false;
+}
+
+function cleanupOldHashes() {
+  if (recentContentHashes.size > MAX_RECENT_HASHES * 2) {
+    const toDelete = Array.from(recentContentHashes).slice(0, MAX_RECENT_HASHES);
+    toDelete.forEach(hash => recentContentHashes.delete(hash));
+    logger.debug(`Cleaned up ${toDelete.length} old content hashes`);
+  }
 }
 
 function truncateContent(text) {
@@ -199,6 +244,29 @@ function updateStats(type, success, source = 'unknown') {
   }
 }
 
+// Cache helper
+function getCachedContent(cacheKey) {
+  const cached = contentCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CONTENT_CACHE_TTL) {
+    logger.debug(`Using cached content for: ${cacheKey}`);
+    return cached.data;
+  }
+  return null;
+}
+
+function setCachedContent(cacheKey, data) {
+  // Keep cache size manageable
+  if (contentCache.size > 100) {
+    const oldestKey = contentCache.keys().next().value;
+    contentCache.delete(oldestKey);
+  }
+  
+  contentCache.set(cacheKey, {
+    data: { ...data }, // Clone to prevent mutation
+    timestamp: Date.now()
+  });
+}
+
 // ============================================
 // MAIN AUTO POST FUNCTION
 // ============================================
@@ -225,20 +293,32 @@ async function postAutoContent(client, specificChannelId = null) {
 
   logger.info(`Auto posting: ${contentType.name}${selectedModel ? ` (${selectedModel})` : ''}`);
   
-  // ============================================
-  // GENERATE CONTENT (now returns an object)
-  // ============================================
-  let result;
-  try {
-    // Pass contentType.id for better fallback matching
-    result = await generateContent(prompt, 'openai/gpt-3.5-turbo', contentType.id);
-  } catch (err) {
-    logger.error('Failed to generate auto post content:', err);
-    updateStats(contentType.id, false);
-    return false;
+  // Check cache first
+  const cacheKey = `${prompt.substring(0, 100)}_${contentType.id}`;
+  let result = getCachedContent(cacheKey);
+  
+  if (!result) {
+    // ============================================
+    // GENERATE CONTENT
+    // ============================================
+    try {
+      // Pass contentType.id for better fallback matching
+      result = await generateContent(prompt, 'openai/gpt-3.5-turbo', contentType.id);
+      
+      // Cache successful API results
+      if (result && result.source === 'api') {
+        setCachedContent(cacheKey, result);
+      }
+    } catch (err) {
+      logger.error('Failed to generate auto post content:', err);
+      updateStats(contentType.id, false);
+      return false;
+    }
+  } else {
+    logger.info(`Using cached content for ${contentType.name}`);
   }
 
-  // Check if result is valid (now an object, not a string)
+  // Check if result is valid
   if (!result || !result.content) {
     logger.error('Failed to generate content (all sources exhausted)');
     updateStats(contentType.id, false);
@@ -249,7 +329,7 @@ async function postAutoContent(client, specificChannelId = null) {
   if (result.source === 'fallback') {
     logger.warn(`📦 Using fallback content (Post: ${result.postId || 'unknown'})${result.image ? ' 🖼️ with image' : ''}`);
   } else {
-    logger.success(`✅ AI-generated content (${result.model}, ${result.responseTime}ms)`);
+    logger.info(`✅ AI-generated content (${result.model}, ${result.responseTime}ms)`);
   }
 
   let generatedText = result.content;
@@ -265,7 +345,6 @@ async function postAutoContent(client, specificChannelId = null) {
   if (result.source === 'api' && isDuplicateContent(generatedText)) {
     logger.warn('Duplicate API content detected, trying fallback...');
     // Force fallback for this post
-    const { getFallbackPost } = require('../utils/openai');
     const fallbackPost = getFallbackPost(contentType.id);
     if (fallbackPost) {
       result = {
@@ -299,17 +378,24 @@ async function postAutoContent(client, specificChannelId = null) {
     })
     .setTimestamp();
 
-  // Add image if available (from fallback posts)
-  if (result.image) {
+  // Add image with validation
+  if (result.image && AUTO_POST_CONFIG.enableImageValidation) {
+    if (isValidImageUrl(result.image)) {
+      embed.setImage(result.image);
+      logger.debug(`🖼️ Added image to embed: ${result.image}`);
+    } else {
+      logger.warn(`Invalid image URL skipped: ${result.image}`);
+    }
+  } else if (result.image && !AUTO_POST_CONFIG.enableImageValidation) {
     embed.setImage(result.image);
-    logger.debug(`🖼️ Added image to embed: ${result.image}`);
+    logger.debug(`🖼️ Added image (validation disabled): ${result.image}`);
   }
 
   // Add author field for fallback content
   if (result.source === 'fallback') {
     embed.setAuthor({
       name: '📦 Pre-written Content',
-      iconURL: 'https://cdn.discordapp.com/emojis/📦.png', // You can use a custom icon URL
+      iconURL: 'https://cdn.discordapp.com/emojis/📦.png',
     });
   } else {
     embed.setAuthor({
@@ -318,7 +404,7 @@ async function postAutoContent(client, specificChannelId = null) {
   }
 
   // ============================================
-  // DETERMINE TARGET CHANNEL
+  // DETERMINE TARGET CHANNEL with cache fallback
   // ============================================
   let targetChannelId;
   if (specificChannelId) {
@@ -328,11 +414,20 @@ async function postAutoContent(client, specificChannelId = null) {
     lastChannelIndex++;
   }
 
-  const channel = client.channels.cache.get(targetChannelId);
+  // Get channel with cache fallback
+  let channel = client.channels.cache.get(targetChannelId);
   if (!channel) {
-    logger.error(`Auto post channel not found: ${targetChannelId}`);
-    updateStats(contentType.id, false, result.source);
-    return false;
+    logger.warn(`Channel ${targetChannelId} not in cache, fetching...`);
+    try {
+      channel = await client.channels.fetch(targetChannelId);
+      if (!channel) {
+        throw new Error('Channel not found');
+      }
+    } catch (err) {
+      logger.error(`Failed to fetch channel ${targetChannelId}:`, err.message);
+      updateStats(contentType.id, false, result.source);
+      return false;
+    }
   }
 
   // ============================================
@@ -342,7 +437,7 @@ async function postAutoContent(client, specificChannelId = null) {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       await channel.send({ embeds: [embed] });
-      logger.success(
+      logger.info(
         `Auto post sent to #${channel.name} (${contentType.name})` +
         `${result.source === 'fallback' ? ' 📦' : ' 🤖'}` +
         `${result.image ? ' 🖼️' : ''}` +
@@ -446,6 +541,7 @@ function getAutoPostStats() {
     currentTypeIndex: lastTypeIndex,
     currentType: lastTypeIndex >= 0 ? contentTypes[lastTypeIndex]?.name : 'N/A',
     currentChannelIndex: lastChannelIndex,
+    cacheSize: contentCache.size,
   };
 }
 
@@ -475,34 +571,49 @@ function startAutoPostScheduler(client) {
   cron.schedule(AUTO_POST_CONFIG.schedule, async () => {
     logger.info('🤖 Auto poster: starting scheduled run...');
     
-    if (AUTO_POST_CONFIG.postToAllChannels) {
-      // Post to all configured channels
-      for (let i = 0; i < AUTO_POST_CONFIG.channels.length; i++) {
-        const channelId = AUTO_POST_CONFIG.channels[i];
-        await postAutoContent(client, channelId);
-        
-        // Add delay between posts if not the last channel
-        if (i < AUTO_POST_CONFIG.channels.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, AUTO_POST_CONFIG.minDelayBetweenPosts));
+    try {
+      if (AUTO_POST_CONFIG.postToAllChannels) {
+        // Post to all configured channels
+        for (let i = 0; i < AUTO_POST_CONFIG.channels.length; i++) {
+          const channelId = AUTO_POST_CONFIG.channels[i];
+          await postAutoContent(client, channelId);
+          
+          // Add delay between posts if not the last channel
+          if (i < AUTO_POST_CONFIG.channels.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, AUTO_POST_CONFIG.minDelayBetweenPosts));
+          }
         }
+      } else {
+        // Post to single channel (round-robin)
+        await postAutoContent(client);
       }
-    } else {
-      // Post to single channel (round-robin)
-      await postAutoContent(client);
+      
+      logger.info('✅ Auto poster: scheduled run completed');
+    } catch (err) {
+      logger.error('Auto poster: scheduled run failed:', err);
+      stats.lastError = err.message;
     }
-    
-    logger.info('✅ Auto poster: scheduled run completed');
   });
 
   // Optionally run on startup
   if (AUTO_POST_CONFIG.runOnStartup) {
     setTimeout(async () => {
       logger.info('Auto poster: running startup post...');
-      await postAutoContent(client);
+      try {
+        await postAutoContent(client);
+      } catch (err) {
+        logger.error('Auto poster: startup post failed:', err);
+      }
     }, 5000); // 5 second delay to ensure bot is ready
   }
 
-  logger.ready(
+  // Periodically cleanup old content hashes (every 6 hours)
+  cron.schedule('0 */6 * * *', () => {
+    logger.debug('Running periodic cleanup of content hashes');
+    cleanupOldHashes();
+  });
+
+  logger.info(
     `🚀 Auto poster scheduled with cron "${AUTO_POST_CONFIG.schedule}" | ` +
     `Mode: ${AUTO_POST_CONFIG.postToAllChannels ? 'All channels' : 'Round-robin'} | ` +
     `Source: ${hasApiKey ? 'API + Fallback' : 'Fallback Only'} | ` +
@@ -519,4 +630,8 @@ module.exports = {
   startAutoPostScheduler,
   getAutoPostStats,
   postAutoContent, // Export for manual triggering if needed
+  clearCache: () => {
+    contentCache.clear();
+    logger.info('Content cache cleared');
+  },
 };
