@@ -27,6 +27,17 @@ const PermissionLevelNames = {
   7: 'Bot Owner',
 };
 
+const PermissionLevelEmojis = {
+  0: '👤',
+  1: '✅',
+  2: '👑',
+  3: '🛡️',
+  4: '🔨',
+  5: '⚙️',
+  6: '👑',
+  7: '🤖',
+};
+
 // ============================================
 // CORE PERMISSION CHECKS
 // ============================================
@@ -240,6 +251,26 @@ function hasAllRoles(member, roleNames) {
   }
 }
 
+/**
+ * Get all role IDs a member has
+ * @param {GuildMember} member - Discord guild member
+ * @returns {string[]} - Array of role IDs
+ */
+function getMemberRoleIds(member) {
+  if (!member) return [];
+  return Array.from(member.roles.cache.keys());
+}
+
+/**
+ * Get all role names a member has
+ * @param {GuildMember} member - Discord guild member
+ * @returns {string[]} - Array of role names
+ */
+function getMemberRoleNames(member) {
+  if (!member) return [];
+  return member.roles.cache.map(r => r.name);
+}
+
 // ============================================
 // PERMISSION LEVEL CALCULATION
 // ============================================
@@ -291,6 +322,15 @@ function getPermissionLevelName(level) {
 }
 
 /**
+ * Get the permission level emoji for display
+ * @param {number} level - Permission level number
+ * @returns {string} - Emoji for the permission level
+ */
+function getPermissionLevelEmoji(level) {
+  return PermissionLevelEmojis[level] || '👤';
+}
+
+/**
  * Check if a member meets a required permission level
  * @param {GuildMember} member - Discord guild member
  * @param {number} requiredLevel - Required permission level
@@ -299,6 +339,18 @@ function getPermissionLevelName(level) {
 async function hasPermissionLevel(member, requiredLevel) {
   const userLevel = await getPermissionLevel(member);
   return userLevel >= requiredLevel;
+}
+
+/**
+ * Get formatted permission level string for display
+ * @param {GuildMember} member - Discord guild member
+ * @returns {Promise<string>} - Formatted permission string with emoji
+ */
+async function getFormattedPermissionLevel(member) {
+  const level = await getPermissionLevel(member);
+  const name = getPermissionLevelName(level);
+  const emoji = getPermissionLevelEmoji(level);
+  return `${emoji} ${name}`;
 }
 
 // ============================================
@@ -404,6 +456,46 @@ async function requirePermissionLevel(interaction, requiredLevel) {
 }
 
 // ============================================
+// PERMISSION CACHE (for performance)
+// ============================================
+const permissionCache = new Map();
+const CACHE_TTL = 30000; // 30 seconds
+
+function getCachedPermission(memberId, guildId) {
+  const key = `${guildId}:${memberId}`;
+  const cached = permissionCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.level;
+  }
+  return null;
+}
+
+function setCachedPermission(memberId, guildId, level) {
+  const key = `${guildId}:${memberId}`;
+  permissionCache.set(key, { level, timestamp: Date.now() });
+  
+  // Clean up old cache entries
+  if (permissionCache.size > 1000) {
+    for (const [k, v] of permissionCache) {
+      if (Date.now() - v.timestamp > CACHE_TTL) {
+        permissionCache.delete(k);
+      }
+    }
+  }
+}
+
+async function getPermissionLevelWithCache(member) {
+  if (!member) return PermissionLevels.EVERYONE;
+  
+  const cached = getCachedPermission(member.id, member.guild?.id);
+  if (cached !== null) return cached;
+  
+  const level = await getPermissionLevel(member);
+  setCachedPermission(member.id, member.guild?.id, level);
+  return level;
+}
+
+// ============================================
 // UTILITY FUNCTIONS
 // ============================================
 
@@ -506,6 +598,28 @@ function canManageMessages(member, channel) {
 }
 
 /**
+ * Check if member can kick members
+ * @param {GuildMember} member - Discord guild member
+ * @returns {boolean} - True if user can kick members
+ */
+function canKick(member) {
+  if (!member) return false;
+  if (isAdmin(member)) return true;
+  return member.permissions?.has('KickMembers') === true;
+}
+
+/**
+ * Check if member can ban members
+ * @param {GuildMember} member - Discord guild member
+ * @returns {boolean} - True if user can ban members
+ */
+function canBan(member) {
+  if (!member) return false;
+  if (isAdmin(member)) return true;
+  return member.permissions?.has('BanMembers') === true;
+}
+
+/**
  * Log permission check for auditing
  * @param {GuildMember} member - Discord guild member
  * @param {string} action - Action being performed
@@ -538,6 +652,20 @@ function getHighestRoleColor(member) {
   }
 }
 
+/**
+ * Get the highest permission level of multiple members
+ * @param {GuildMember[]} members - Array of Discord guild members
+ * @returns {Promise<number>} - Highest permission level
+ */
+async function getHighestPermissionLevel(members) {
+  let highest = PermissionLevels.EVERYONE;
+  for (const member of members) {
+    const level = await getPermissionLevel(member);
+    if (level > highest) highest = level;
+  }
+  return highest;
+}
+
 // ============================================
 // EXPORTS
 // ============================================
@@ -546,6 +674,7 @@ module.exports = {
   // Permission levels enum
   PermissionLevels,
   PermissionLevelNames,
+  PermissionLevelEmojis,
   
   // Basic checks
   isAdmin,
@@ -564,11 +693,17 @@ module.exports = {
   hasRoleById,
   hasAnyRole,
   hasAllRoles,
+  getMemberRoleIds,
+  getMemberRoleNames,
   
   // Permission level
   getPermissionLevel,
+  getPermissionLevelWithCache,
   getPermissionLevelName,
+  getPermissionLevelEmoji,
+  getFormattedPermissionLevel,
   hasPermissionLevel,
+  getHighestPermissionLevel,
   
   // Guards (for slash commands)
   requireBotOwner,
@@ -582,6 +717,11 @@ module.exports = {
   canViewChannel,
   canSendMessages,
   canManageMessages,
+  canKick,
+  canBan,
   logPermissionCheck,
   getHighestRoleColor,
+  
+  // Cache management
+  clearPermissionCache: () => permissionCache.clear(),
 };
