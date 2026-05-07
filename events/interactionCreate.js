@@ -8,6 +8,7 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  MessageFlags,
 } = require('discord.js');
 
 const { isAdmin, isStaffOrAbove } = require('../utils/permissions');
@@ -66,6 +67,9 @@ function getPersonalAdvisor() {
 // ========== BOT INIT ==========
 module.exports = (client) => {
   client.on('interactionCreate', async (interaction) => {
+    // Prevent duplicate replies
+    if (interaction.replied || interaction.deferred) return;
+
     // Slash Commands
     if (interaction.isCommand()) {
       const command = client.commands.get(interaction.commandName);
@@ -75,7 +79,7 @@ module.exports = (client) => {
         logger.cmd(`/${interaction.commandName} executed by ${interaction.user.tag}`);
       } catch (error) {
         logger.error(`Command ${interaction.commandName} failed:`, error);
-        const reply = { content: '❌ There was an error executing this command.', ephemeral: true };
+        const reply = { content: '❌ There was an error executing this command.', flags: MessageFlags.Ephemeral };
         if (interaction.deferred || interaction.replied) await interaction.editReply(reply);
         else await interaction.reply(reply);
       }
@@ -196,7 +200,7 @@ async function handleButton(interaction, client) {
   if (customId.startsWith('disqualified_')) return; // Already disqualified, ignore
 
   logger.warn(`Unknown button customId: ${customId}`);
-  await interaction.reply({ content: '❓ Unknown option. Use the buttons provided.', ephemeral: true });
+  await interaction.reply({ content: '❓ Unknown option. Use the buttons provided.', flags: MessageFlags.Ephemeral });
 }
 
 // ------------------------- SELECT MENU HANDLERS -------------------------
@@ -211,7 +215,7 @@ async function handleSelectMenu(interaction, client) {
     const region = values[0];
     const model = state.selectedModel;
     if (!model) {
-      await interaction.reply({ content: 'Please select a model first.', ephemeral: true });
+      await interaction.reply({ content: 'Please select a model first.', flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -284,12 +288,12 @@ async function handleSelectMenu(interaction, client) {
       return handleLeadSelect(interaction);
     } else {
       logger.error('handleLeadSelect is not a function');
-      return interaction.reply({ content: '❌ An error occurred. Please try again.', ephemeral: true });
+      return interaction.reply({ content: '❌ An error occurred. Please try again.', flags: MessageFlags.Ephemeral });
     }
   }
 
   logger.warn(`Unknown select menu customId: ${customId}`);
-  await interaction.reply({ content: '❓ Unknown selection.', ephemeral: true });
+  await interaction.reply({ content: '❓ Unknown selection.', flags: MessageFlags.Ephemeral });
 }
 
 // ------------------------- MODAL HANDLERS -------------------------
@@ -337,7 +341,7 @@ async function handleModal(interaction) {
       new ButtonBuilder().setCustomId('tradein_condition_fair').setLabel('🛠️ Fair').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('tradein_condition_needs_repair').setLabel('💥 Needs Repair').setStyle(ButtonStyle.Danger)
     );
-    await interaction.reply({ embeds: [embed], components: [row], ephemeral: false });
+    await interaction.reply({ embeds: [embed], components: [row] }); // public
     await addLeadScore(userId, 'trade_in_started', user.username);
     return;
   }
@@ -348,7 +352,7 @@ async function handleModal(interaction) {
     const config = await getGuildConfig(interaction.guildId);
     config.verify_role_id = roleId;
     await setGuildConfig(interaction.guildId, config);
-    await interaction.reply({ content: '✅ Verification role updated.', ephemeral: true });
+    await interaction.reply({ content: '✅ Verification role updated.', flags: MessageFlags.Ephemeral });
     logger.success(`Verification role set to ${roleId} in guild ${interaction.guildId}`);
     return;
   }
@@ -358,7 +362,7 @@ async function handleModal(interaction) {
     const config = await getGuildConfig(interaction.guildId);
     config.ticket_category_id = categoryId;
     await setGuildConfig(interaction.guildId, config);
-    await interaction.reply({ content: '✅ Ticket category updated.', ephemeral: true });
+    await interaction.reply({ content: '✅ Ticket category updated.', flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -367,7 +371,7 @@ async function handleModal(interaction) {
     const config = await getGuildConfig(interaction.guildId);
     config.staff_role_id = roleId;
     await setGuildConfig(interaction.guildId, config);
-    await interaction.reply({ content: '✅ Staff role updated.', ephemeral: true });
+    await interaction.reply({ content: '✅ Staff role updated.', flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -376,7 +380,7 @@ async function handleModal(interaction) {
     const config = await getGuildConfig(interaction.guildId);
     config.ticket_logs_channel_id = channelId || null;
     await setGuildConfig(interaction.guildId, config);
-    await interaction.reply({ content: channelId ? '✅ Logs channel set.' : '❌ Logs channel removed.', ephemeral: true });
+    await interaction.reply({ content: channelId ? '✅ Logs channel set.' : '❌ Logs channel removed.', flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -386,19 +390,19 @@ async function handleModal(interaction) {
     const config = await getGuildConfig(interaction.guildId);
     config.auto_post_channels = channelIds;
     await setGuildConfig(interaction.guildId, config);
-    await interaction.reply({ content: `✅ Auto poster channels set: ${channelIds.map(id => `<#${id}>`).join(', ')}`, ephemeral: true });
+    await interaction.reply({ content: `✅ Auto poster channels set: ${channelIds.map(id => `<#${id}>`).join(', ')}`, flags: MessageFlags.Ephemeral });
     return;
   }
 
   if (customId === 'admin_modal_autopost_interval') {
     const interval = parseInt(fields.getTextInputValue('interval'), 10);
     if (isNaN(interval) || interval < 1) {
-      return interaction.reply({ content: '❌ Please enter a valid number of hours (>= 1).', ephemeral: true });
+      return interaction.reply({ content: '❌ Please enter a valid number of hours (>= 1).', flags: MessageFlags.Ephemeral });
     }
     const config = await getGuildConfig(interaction.guildId);
     config.auto_post_interval_hours = interval;
     await setGuildConfig(interaction.guildId, config);
-    await interaction.reply({ content: `✅ Auto poster interval set to every ${interval} hour(s).`, ephemeral: true });
+    await interaction.reply({ content: `✅ Auto poster interval set to every ${interval} hour(s).`, flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -408,7 +412,7 @@ async function handleModal(interaction) {
     const config = await getGuildConfig(interaction.guildId);
     config.lobby_webhook_url = url;
     await setGuildConfig(interaction.guildId, config);
-    await interaction.reply({ content: '✅ Lobby chatter webhook URL saved.', ephemeral: true });
+    await interaction.reply({ content: '✅ Lobby chatter webhook URL saved.', flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -422,12 +426,12 @@ async function handleModal(interaction) {
         const parsed = JSON.parse(personas);
         config.lobby_chatter_personas = parsed;
       } catch (err) {
-        await interaction.reply({ content: '❌ Invalid JSON. Personas not updated.', ephemeral: true });
+        await interaction.reply({ content: '❌ Invalid JSON. Personas not updated.', flags: MessageFlags.Ephemeral });
         return;
       }
     }
     await setGuildConfig(interaction.guildId, config);
-    await interaction.reply({ content: '✅ Lobby chatter personas updated.', ephemeral: true });
+    await interaction.reply({ content: '✅ Lobby chatter personas updated.', flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -436,16 +440,16 @@ async function handleModal(interaction) {
     const roleId = fields.getTextInputValue('role_id');
     if (roleId.toLowerCase() === 'none') {
       await setGiveawayPingRole(interaction.guildId, null);
-      await interaction.reply({ content: '✅ Giveaway ping role disabled.', ephemeral: true });
+      await interaction.reply({ content: '✅ Giveaway ping role disabled.', flags: MessageFlags.Ephemeral });
     } else {
       await setGiveawayPingRole(interaction.guildId, roleId);
-      await interaction.reply({ content: `✅ Giveaway ping role set to <@&${roleId}>.`, ephemeral: true });
+      await interaction.reply({ content: `✅ Giveaway ping role set to <@&${roleId}>.`, flags: MessageFlags.Ephemeral });
     }
     return;
   }
 
   logger.warn(`Unknown modal customId: ${customId}`);
-  await interaction.reply({ content: '❓ Unknown form.', ephemeral: true });
+  await interaction.reply({ content: '❓ Unknown form.', flags: MessageFlags.Ephemeral });
 }
 
 // ============================================
@@ -454,7 +458,7 @@ async function handleModal(interaction) {
 
 async function adminStatsDetail(interaction) {
   if (!isAdmin(interaction.member)) {
-    return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+    return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   }
   
   const autoPostStats = getAutoPostStats();
@@ -564,16 +568,16 @@ async function adminStatsDetail(interaction) {
   if (interaction.deferred || interaction.replied) {
     await interaction.editReply({ embeds: [statsEmbed], components: [row] });
   } else {
-    await interaction.reply({ embeds: [statsEmbed], components: [row], ephemeral: true });
+    await interaction.reply({ embeds: [statsEmbed], components: [row], flags: MessageFlags.Ephemeral });
   }
 }
 
 async function adminTestAutoPost(interaction) {
   if (!isAdmin(interaction.member)) {
-    return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+    return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   }
   
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   
   try {
     logger.info(`Admin ${interaction.user.tag} triggered test auto post`);
@@ -582,30 +586,27 @@ async function adminTestAutoPost(interaction) {
     if (success) {
       const autoPostStats = getAutoPostStats();
       await interaction.editReply({ 
-        content: `✅ **Test auto post sent successfully!**\n\nCheck the configured channel for the post.\n\n📊 **Current Stats:**\n• Total Posts: ${autoPostStats.totalPosts}\n• Success Rate: ${autoPostStats.successRate}\n• Last Post: Just now`, 
-        ephemeral: true 
+        content: `✅ **Test auto post sent successfully!**\n\nCheck the configured channel for the post.\n\n📊 **Current Stats:**\n• Total Posts: ${autoPostStats.totalPosts}\n• Success Rate: ${autoPostStats.successRate}\n• Last Post: Just now`
       });
     } else {
       await interaction.editReply({ 
-        content: '❌ **Failed to send test auto post.**\n\nPossible issues:\n• No channels configured\n• Missing permissions\n• Content generation failed\n\nCheck the bot logs for detailed error information.', 
-        ephemeral: true 
+        content: '❌ **Failed to send test auto post.**\n\nPossible issues:\n• No channels configured\n• Missing permissions\n• Content generation failed\n\nCheck the bot logs for detailed error information.'
       });
     }
   } catch (err) {
     logger.error('Test auto post failed:', err);
     await interaction.editReply({ 
-      content: `❌ **Error during test post:**\n\`\`\`${err.message}\`\`\`\nCheck logs for full stack trace.`, 
-      ephemeral: true 
+      content: `❌ **Error during test post:**\n\`\`\`${err.message}\`\`\`\nCheck logs for full stack trace.`
     });
   }
 }
 
 async function adminPullAllLeads(interaction) {
   if (!isAdmin(interaction.member)) {
-    return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+    return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   }
   
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const guildId = interaction.guildId;
 
   const res = await pool.query(
@@ -650,15 +651,15 @@ async function adminPullAllLeads(interaction) {
   }
 
   await interaction.editReply({ embeds: [embed] });
-  await interaction.followUp({ content: '📎 **CSV Export:**', files: [{ name: `all-leads-${Date.now()}.csv`, attachment: Buffer.from(csv) }], ephemeral: true });
+  await interaction.followUp({ content: '📎 **CSV Export:**', files: [{ name: `all-leads-${Date.now()}.csv`, attachment: Buffer.from(csv) }], flags: MessageFlags.Ephemeral });
 }
 
 async function adminPullActiveLeads(interaction) {
   if (!isAdmin(interaction.member)) {
-    return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+    return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   }
   
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const guildId = interaction.guildId;
 
   const gwRes = await pool.query('SELECT * FROM car_giveaways WHERE guild_id = $1 AND ended = false ORDER BY end_time ASC', [guildId]);
@@ -687,22 +688,22 @@ async function handleVerify(interaction) {
   const config = await getGuildConfig(guildId);
 
   if (!config.verify_enabled) {
-    return interaction.reply({ content: '❌ Verification is disabled on this server.', ephemeral: true });
+    return interaction.reply({ content: '❌ Verification is disabled on this server.', flags: MessageFlags.Ephemeral });
   }
 
   const roleId = config.verify_role_id;
   if (!roleId) {
-    return interaction.reply({ content: '❌ Verification role not configured. Contact an admin.', ephemeral: true });
+    return interaction.reply({ content: '❌ Verification role not configured. Contact an admin.', flags: MessageFlags.Ephemeral });
   }
 
   const member = interaction.member;
   if (member.roles.cache.has(roleId)) {
-    return interaction.reply({ content: '✅ You are already verified!', ephemeral: true });
+    return interaction.reply({ content: '✅ You are already verified!', flags: MessageFlags.Ephemeral });
   }
 
   try {
     await member.roles.add(roleId);
-    await interaction.reply({ content: '✅ You have been verified! Welcome to the server!', ephemeral: true });
+    await interaction.reply({ content: '✅ You have been verified! Welcome to the server!', flags: MessageFlags.Ephemeral });
     logger.success(`${member.user.tag} verified in guild ${interaction.guildId}`);
 
     if (config.ticket_logs_channel_id) {
@@ -713,7 +714,7 @@ async function handleVerify(interaction) {
     }
   } catch (err) {
     logger.error('Verification error:', err);
-    await interaction.reply({ content: '❌ Failed to assign role. Please contact an admin.', ephemeral: true });
+    await interaction.reply({ content: '❌ Failed to assign role. Please contact an admin.', flags: MessageFlags.Ephemeral });
   }
 }
 
@@ -722,17 +723,17 @@ async function createTicket(interaction, client) {
   const config = await getGuildConfig(guild.id);
 
   if (!config.ticket_category_id || !config.staff_role_id) {
-    return interaction.reply({ content: '❌ Ticket system not fully configured. Contact an admin.', ephemeral: true });
+    return interaction.reply({ content: '❌ Ticket system not fully configured. Contact an admin.', flags: MessageFlags.Ephemeral });
   }
 
   const openTickets = await getUserOpenTickets(interaction.user.id);
   if (openTickets.length >= 1) {
-    return interaction.reply({ content: '❌ You already have an open ticket. Please close it before creating a new one.', ephemeral: true });
+    return interaction.reply({ content: '❌ You already have an open ticket. Please close it before creating a new one.', flags: MessageFlags.Ephemeral });
   }
 
   const category = guild.channels.cache.get(config.ticket_category_id);
   if (!category) {
-    return interaction.reply({ content: '❌ Ticket category not found. Contact an admin.', ephemeral: true });
+    return interaction.reply({ content: '❌ Ticket category not found. Contact an admin.', flags: MessageFlags.Ephemeral });
   }
 
   const ticketName = `ticket-${interaction.user.username}-${Date.now()}`;
@@ -758,7 +759,7 @@ async function createTicket(interaction, client) {
     new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Close Ticket').setStyle(ButtonStyle.Danger)
   );
   await ticketChannel.send({ content: `<@&${config.staff_role_id}>`, embeds: [embed], components: [closeButton] });
-  await interaction.reply({ content: `✅ Ticket created: ${ticketChannel}`, ephemeral: true });
+  await interaction.reply({ content: `✅ Ticket created: ${ticketChannel}`, flags: MessageFlags.Ephemeral });
   logger.success(`Ticket created by ${interaction.user.tag}: ${ticketChannel.name}`);
 
   if (config.ticket_logs_channel_id) {
@@ -772,7 +773,7 @@ async function createTicket(interaction, client) {
 async function closeTicketHandler(interaction, client) {
   const channel = interaction.channel;
   if (!channel.name.startsWith('ticket-')) {
-    return interaction.reply({ content: '❌ This command can only be used inside a ticket channel.', ephemeral: true });
+    return interaction.reply({ content: '❌ This command can only be used inside a ticket channel.', flags: MessageFlags.Ephemeral });
   }
 
   const config = await getGuildConfig(interaction.guildId);
@@ -781,7 +782,7 @@ async function closeTicketHandler(interaction, client) {
   const isAdminUser = interaction.member.permissions.has('Administrator');
 
   if (!isStaff && !isAdminUser) {
-    return interaction.reply({ content: '❌ Only staff members or admins can close tickets.', ephemeral: true });
+    return interaction.reply({ content: '❌ Only staff members or admins can close tickets.', flags: MessageFlags.Ephemeral });
   }
 
   await interaction.reply('🔒 Closing ticket in 5 seconds...');
@@ -804,7 +805,7 @@ async function closeTicketHandler(interaction, client) {
 
 // ------------------------- ADMIN DASHBOARD INTERFACE -------------------------
 async function adminVerifyMenu(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const embed = new EmbedBuilder()
     .setTitle('✅ Verification Configuration')
@@ -820,7 +821,7 @@ async function adminVerifyMenu(interaction) {
 }
 
 async function adminTicketMenu(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const embed = new EmbedBuilder()
     .setTitle('🎫 Ticket System Configuration')
@@ -837,7 +838,7 @@ async function adminTicketMenu(interaction) {
 }
 
 async function adminRefresh(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const guildId = interaction.guildId;
   const config = await getGuildConfig(guildId);
@@ -886,7 +887,7 @@ async function adminRefresh(interaction) {
 
 // ----- ADMIN SETTING FUNCTIONS -----
 async function adminSetVerifyRole(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_verify_role')
@@ -904,23 +905,23 @@ async function adminSetVerifyRole(interaction) {
 }
 
 async function adminToggleVerify(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const config = await getGuildConfig(interaction.guildId);
   config.verify_enabled = !config.verify_enabled;
   await setGuildConfig(interaction.guildId, config);
-  await interaction.reply({ content: `✅ Verification ${config.verify_enabled ? 'enabled' : 'disabled'}.`, ephemeral: true });
+  await interaction.reply({ content: `✅ Verification ${config.verify_enabled ? 'enabled' : 'disabled'}.`, flags: MessageFlags.Ephemeral });
 }
 
 async function adminPostVerifyPanel(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const config = await getGuildConfig(interaction.guildId);
   if (!config.verify_enabled) {
-    return interaction.reply({ content: '❌ Verification system is disabled. Enable it first.', ephemeral: true });
+    return interaction.reply({ content: '❌ Verification system is disabled. Enable it first.', flags: MessageFlags.Ephemeral });
   }
   if (!config.verify_role_id) {
-    return interaction.reply({ content: '❌ No verification role set. Set one first.', ephemeral: true });
+    return interaction.reply({ content: '❌ No verification role set. Set one first.', flags: MessageFlags.Ephemeral });
   }
   const embed = new EmbedBuilder()
     .setTitle('⚡ Welcome to the BYD Community')
@@ -937,11 +938,11 @@ async function adminPostVerifyPanel(interaction) {
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('verify_button').setLabel('✅ Verify Me').setStyle(ButtonStyle.Success)
   );
-  await interaction.reply({ embeds: [embed], components: [row], ephemeral: false });
+  await interaction.reply({ embeds: [embed], components: [row] }); // public
 }
 
 async function adminSetTicketCategory(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_ticket_category')
@@ -959,7 +960,7 @@ async function adminSetTicketCategory(interaction) {
 }
 
 async function adminSetTicketStaff(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_ticket_staff')
@@ -977,7 +978,7 @@ async function adminSetTicketStaff(interaction) {
 }
 
 async function adminSetTicketLogs(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_ticket_logs')
@@ -995,11 +996,11 @@ async function adminSetTicketLogs(interaction) {
 }
 
 async function adminPostTicketPanel(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const config = await getGuildConfig(interaction.guildId);
   if (!config.ticket_category_id || !config.staff_role_id) {
-    return interaction.reply({ content: '❌ Ticket category and staff role must be set first.', ephemeral: true });
+    return interaction.reply({ content: '❌ Ticket category and staff role must be set first.', flags: MessageFlags.Ephemeral });
   }
   const embed = new EmbedBuilder()
     .setTitle('🎫 BYD Concierge – Priority Support')
@@ -1012,12 +1013,12 @@ async function adminPostTicketPanel(interaction) {
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('create_ticket').setLabel('📩 Create Ticket').setStyle(ButtonStyle.Primary)
   );
-  await interaction.reply({ embeds: [embed], components: [row], ephemeral: false });
+  await interaction.reply({ embeds: [embed], components: [row] }); // public
 }
 
 // ----- AUTO POSTER ADMIN FUNCTIONS -----
 async function adminAutopostMenu(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const config = await getGuildConfig(interaction.guildId);
   const channels = config.auto_post_channels?.length ? config.auto_post_channels.map(id => `<#${id}>`).join(', ') : 'None';
@@ -1053,16 +1054,16 @@ async function adminAutopostMenu(interaction) {
 }
 
 async function adminAutopostToggle(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const config = await getGuildConfig(interaction.guildId);
   config.auto_post_enabled = !config.auto_post_enabled;
   await setGuildConfig(interaction.guildId, config);
-  await interaction.reply({ content: `✅ Auto poster ${config.auto_post_enabled ? 'enabled' : 'disabled'}.`, ephemeral: true });
+  await interaction.reply({ content: `✅ Auto poster ${config.auto_post_enabled ? 'enabled' : 'disabled'}.`, flags: MessageFlags.Ephemeral });
 }
 
 async function adminAutopostSetChannels(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_autopost_channels')
@@ -1081,7 +1082,7 @@ async function adminAutopostSetChannels(interaction) {
 }
 
 async function adminAutopostSetInterval(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_autopost_interval')
@@ -1101,7 +1102,7 @@ async function adminAutopostSetInterval(interaction) {
 
 // ----- LOBBY CHATTER ADMIN FUNCTIONS -----
 async function adminLobbyMenu(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const config = await getGuildConfig(interaction.guildId);
   const embed = new EmbedBuilder()
@@ -1122,16 +1123,16 @@ async function adminLobbyMenu(interaction) {
 }
 
 async function adminLobbyToggle(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const config = await getGuildConfig(interaction.guildId);
   config.lobby_chatter_enabled = !config.lobby_chatter_enabled;
   await setGuildConfig(interaction.guildId, config);
-  await interaction.reply({ content: `✅ Lobby chatter ${config.lobby_chatter_enabled ? 'enabled' : 'disabled'}.`, ephemeral: true });
+  await interaction.reply({ content: `✅ Lobby chatter ${config.lobby_chatter_enabled ? 'enabled' : 'disabled'}.`, flags: MessageFlags.Ephemeral });
 }
 
 async function adminLobbySetWebhook(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_lobby_webhook')
@@ -1150,7 +1151,7 @@ async function adminLobbySetWebhook(interaction) {
 }
 
 async function adminLobbySetPersonas(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_lobby_personas')
@@ -1170,7 +1171,7 @@ async function adminLobbySetPersonas(interaction) {
 
 // ----- GIVEAWAY ADMIN FUNCTIONS -----
 async function adminGiveawayMenu(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const config = await getGuildConfig(interaction.guildId);
   const embed = new EmbedBuilder()
@@ -1196,7 +1197,7 @@ async function adminGiveawayMenu(interaction) {
 }
 
 async function adminGiveawaySetPingRole(interaction) {
-  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+  if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Admin only.', flags: MessageFlags.Ephemeral });
   
   const modal = new ModalBuilder()
     .setCustomId('admin_modal_giveaway_pingrole')
@@ -1224,7 +1225,7 @@ async function handleVerifyEntry(interaction) {
   const userId = parts[3];
   
   if (!isAdmin(interaction.member) && !(await isStaffOrAbove(interaction.member))) {
-    return interaction.reply({ content: '❌ Only admins or staff can verify entries.', ephemeral: true });
+    return interaction.reply({ content: '❌ Only admins or staff can verify entries.', flags: MessageFlags.Ephemeral });
   }
   
   const row = new ActionRowBuilder().addComponents(
@@ -1242,10 +1243,10 @@ async function handleContactEntry(interaction) {
   const userId = parts[3];
   
   if (!isAdmin(interaction.member) && !(await isStaffOrAbove(interaction.member))) {
-    return interaction.reply({ content: '❌ Only admins or staff can contact entrants.', ephemeral: true });
+    return interaction.reply({ content: '❌ Only admins or staff can contact entrants.', flags: MessageFlags.Ephemeral });
   }
   
-  await interaction.reply({ content: `📩 **Contact <@${userId}>:** Use this channel to communicate with them directly.`, ephemeral: true });
+  await interaction.reply({ content: `📩 **Contact <@${userId}>:** Use this channel to communicate with them directly.`, flags: MessageFlags.Ephemeral });
 }
 
 async function handleDisqualifyEntry(interaction) {
@@ -1254,7 +1255,7 @@ async function handleDisqualifyEntry(interaction) {
   const userId = parts[3];
   
   if (!isAdmin(interaction.member) && !(await isStaffOrAbove(interaction.member))) {
-    return interaction.reply({ content: '❌ Only admins or staff can disqualify entries.', ephemeral: true });
+    return interaction.reply({ content: '❌ Only admins or staff can disqualify entries.', flags: MessageFlags.Ephemeral });
   }
   
   const row = new ActionRowBuilder().addComponents(
@@ -1331,8 +1332,8 @@ async function handleNotSure(interaction) {
 }
 
 async function sendBrochure(interaction, model) {
-  if (!model) return interaction.reply({ content: '❓ Please select a BYD model first.', ephemeral: true });
-  await interaction.reply({ content: `📄 **Brochure for BYD ${model}:**\nhttps://byd.com/brochure/${model.toLowerCase().replace(/ /g, '-')}`, ephemeral: true });
+  if (!model) return interaction.reply({ content: '❓ Please select a BYD model first.', flags: MessageFlags.Ephemeral });
+  await interaction.reply({ content: `📄 **Brochure for BYD ${model}:**\nhttps://byd.com/brochure/${model.toLowerCase().replace(/ /g, '-')}`, flags: MessageFlags.Ephemeral });
   await addLeadScore(interaction.user.id, 'brochure_requested', interaction.user.username);
 }
 
@@ -1344,7 +1345,7 @@ async function sendIncentivesInfo(interaction, model) {
       `• **Utility Rebates:** Up to $1,500 from local providers\n` +
       `• **HOV Lane Access:** Available in CA, NY, WA\n\n` +
       `Use \`/quote\` to see your personalized savings!`, 
-    ephemeral: true 
+    flags: MessageFlags.Ephemeral 
   });
 }
 
@@ -1355,16 +1356,16 @@ async function sendCompareInfo(interaction, model) {
       `• **ATTO 3:** 380 mi range, 5.2s 0-60, $34,990\n` +
       `• **Han:** 450 mi range, 3.9s 0-60, $59,990\n\n` +
       `Use \`/compare model1:Seal model2:Han\` for detailed comparison!`, 
-    ephemeral: true 
+    flags: MessageFlags.Ephemeral 
   });
 }
 
 async function sendSpecsInfo(interaction, model) {
-  if (!model) return interaction.reply({ content: '❓ Please select a BYD model first.', ephemeral: true });
+  if (!model) return interaction.reply({ content: '❓ Please select a BYD model first.', flags: MessageFlags.Ephemeral });
   
   const modelData = require('../utils/bydData').models[model];
   if (!modelData) {
-    return interaction.reply({ content: `❌ Specs not found for ${model}.`, ephemeral: true });
+    return interaction.reply({ content: `❌ Specs not found for ${model}.`, flags: MessageFlags.Ephemeral });
   }
   
   await interaction.reply({ 
@@ -1376,7 +1377,7 @@ async function sendSpecsInfo(interaction, model) {
       `• **Warranty:** ${modelData.warranty}\n` +
       `${modelData.zeroToSixty ? `• **0-60:** ${modelData.zeroToSixty}\n` : ''}` +
       `${modelData.seats ? `• **Seats:** ${modelData.seats}\n` : ''}`, 
-    ephemeral: true 
+    flags: MessageFlags.Ephemeral 
   });
 }
 
@@ -1388,13 +1389,13 @@ async function sendFinancingInfo(interaction, model) {
       `• **Lease:** Starting at $399/month with $3,999 down\n` +
       `• **BYD Financing:** Special rates for Lead members\n\n` +
       `Contact an advisor for a personalized quote!`, 
-    ephemeral: true 
+    flags: MessageFlags.Ephemeral 
   });
 }
 
 async function startQuoteFlow(interaction, model) {
   if (!model) {
-    return interaction.reply({ content: '❓ Please select a BYD model first.', ephemeral: true });
+    return interaction.reply({ content: '❓ Please select a BYD model first.', flags: MessageFlags.Ephemeral });
   }
   const userId = interaction.user.id;
   await updateUserState(userId, { step: 'awaiting_region' });
@@ -1413,12 +1414,12 @@ async function startQuoteFlow(interaction, model) {
       { label: 'Massachusetts', value: 'Massachusetts' }, { label: 'Illinois', value: 'Illinois' },
     ]);
   const row = new ActionRowBuilder().addComponents(selectMenu);
-  await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+  await interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
 }
 
 async function startTestDriveFlow(interaction, model) {
   if (!model) {
-    return interaction.reply({ content: '❓ Please select a BYD model first.', ephemeral: true });
+    return interaction.reply({ content: '❓ Please select a BYD model first.', flags: MessageFlags.Ephemeral });
   }
   const embed = new EmbedBuilder()
     .setTitle('🚗 Let\'s get you behind the wheel – no pressure.')
@@ -1502,34 +1503,34 @@ async function confirmTestDrive(interaction, client, date, time, locationType) {
 }
 
 async function transferToAdvisor(interaction) {
-  await interaction.reply({ content: '💬 A sales advisor will be with you shortly. Creating a private thread...', ephemeral: true });
+  await interaction.reply({ content: '💬 A sales advisor will be with you shortly. Creating a private thread...', flags: MessageFlags.Ephemeral });
 }
 
 async function setTradeCondition(interaction, condition) {
   const userId = interaction.user.id;
   const state = await getUserState(userId, interaction.user.username);
   const { makeModel, odometer } = state.tempData || {};
-  await interaction.reply({ content: `✅ Your ${makeModel || 'vehicle'} with ${odometer || 'N/A'} miles is rated **${condition}**. Estimated trade‑in: $${Math.floor(Math.random() * 50000 + 50000).toLocaleString()}. A formal offer will be sent shortly.`, ephemeral: true });
+  await interaction.reply({ content: `✅ Your ${makeModel || 'vehicle'} with ${odometer || 'N/A'} miles is rated **${condition}**. Estimated trade‑in: $${Math.floor(Math.random() * 50000 + 50000).toLocaleString()}. A formal offer will be sent shortly.`, flags: MessageFlags.Ephemeral });
   await updateUserState(userId, { step: null, tempData: {} });
   await addLeadScore(userId, 'trade_in_completed', interaction.user.username);
 }
 
 async function recommendAffordability(interaction) {
-  await interaction.reply({ content: '💸 **Best value picks:**\n• **Seagull** – $19,990 (city EV)\n• **Dolphin** – $29,990 (hatch)\n• **Yuan Plus** – $37,990 (crossover)\n\nWant a quote on any of these?', ephemeral: true });
+  await interaction.reply({ content: '💸 **Best value picks:**\n• **Seagull** – $19,990 (city EV)\n• **Dolphin** – $29,990 (hatch)\n• **Yuan Plus** – $37,990 (crossover)\n\nWant a quote on any of these?', flags: MessageFlags.Ephemeral });
 }
 
 async function recommendRange(interaction) {
-  await interaction.reply({ content: '⚡ **Longest range:**\n• **Seal** – 420 miles\n• **Han** – 450 miles\n• **Tang** – 390 miles (3‑row SUV)\n\nWhich one catches your eye?', ephemeral: true });
+  await interaction.reply({ content: '⚡ **Longest range:**\n• **Seal** – 420 miles\n• **Han** – 450 miles\n• **Tang** – 390 miles (3‑row SUV)\n\nWhich one catches your eye?', flags: MessageFlags.Ephemeral });
 }
 
 async function recommendFamily(interaction) {
-  await interaction.reply({ content: '👨‍👩‍👧‍👦 **Family‑friendly BYDs:**\n• **ATTO 3** – compact SUV, $34,990*\n• **Tang** – 3‑row midsize, $49,990*\n• **Song Plus** – spacious family SUV, $42,990*\n\n_*Before EV credits._ Would you like a safety brochure or a test drive?', ephemeral: true });
+  await interaction.reply({ content: '👨‍👩‍👧‍👦 **Family‑friendly BYDs:**\n• **ATTO 3** – compact SUV, $34,990*\n• **Tang** – 3‑row midsize, $49,990*\n• **Song Plus** – spacious family SUV, $42,990*\n\n_*Before EV credits._ Would you like a safety brochure or a test drive?', flags: MessageFlags.Ephemeral });
 }
 
 async function recommendCity(interaction) {
-  await interaction.reply({ content: '🏙️ **Perfect for city driving:**\n• **Seagull** – ultra‑compact, $19,990\n• **Dolphin** – nimble hatch, $29,990\n• **Yuan Plus** – crossover with parking assist, $37,990\n\nAll come with parking sensors and 360° camera. Want to see city range figures?', ephemeral: true });
+  await interaction.reply({ content: '🏙️ **Perfect for city driving:**\n• **Seagull** – ultra‑compact, $19,990\n• **Dolphin** – nimble hatch, $29,990\n• **Yuan Plus** – crossover with parking assist, $37,990\n\nAll come with parking sensors and 360° camera. Want to see city range figures?', flags: MessageFlags.Ephemeral });
 }
 
 async function handleFleet(interaction) {
-  await interaction.reply({ content: '🚛 A commercial sales advisor will contact you soon. Please share your fleet size and use case in the thread.', ephemeral: true });
+  await interaction.reply({ content: '🚛 A commercial sales advisor will contact you soon. Please share your fleet size and use case in the thread.', flags: MessageFlags.Ephemeral });
 }
