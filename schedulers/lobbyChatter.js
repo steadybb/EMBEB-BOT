@@ -54,184 +54,63 @@ const activePersonas = [
 ];
 
 // ============================================
-// 🧠 RICH TOPIC CONTENT – real conversation snippets
+// 🧠 RICH TOPIC CONTENT – genuine conversation snippets
 // ============================================
 const topicContent = {
   'Blade Battery safety testing': {
-    questions: [
-      "Has anyone seen the nail penetration test results? How does it compare to NMC batteries?",
-      "Is the Blade Battery really as safe as they claim? Looking for real‑world data.",
-      "How does LFP chemistry make the Blade Battery safer exactly?"
-    ],
-    answers: [
-      "The Blade Battery passed the nail penetration test without fire or smoke. NMC batteries ignite within seconds. Huge difference.",
-      "LFP chemistry is inherently stable – it doesn't produce oxygen when breaking down, so thermal runaway is nearly impossible.",
-      "I watched a teardown – the cells are arranged like blades, which helps with cooling and structural rigidity. Brilliant engineering."
-    ],
-    opinions: [
-      "The Blade Battery is why I chose BYD. Safety first for my family.",
-      "After seeing the puncture test comparisons, I'm convinced LFP is the future.",
-      "BYD under‑markets their battery safety – it's a massive selling point they barely mention."
-    ]
+    questions: [ "Has anyone seen the nail penetration test results? How does it compare to NMC batteries?", "Is the Blade Battery really as safe as they claim? Looking for real‑world data.", "How does LFP chemistry make the Blade Battery safer exactly?" ],
+    answers: [ "The Blade Battery passed the nail penetration test without fire or smoke. NMC batteries ignite within seconds. Huge difference.", "LFP chemistry is inherently stable – it doesn't produce oxygen when breaking down, so thermal runaway is nearly impossible.", "I watched a teardown – the cells are arranged like blades, which helps with cooling and structural rigidity. Brilliant engineering." ],
+    opinions: [ "The Blade Battery is why I chose BYD. Safety first for my family.", "After seeing the puncture test comparisons, I'm convinced LFP is the future.", "BYD under‑markets their battery safety – it's a massive selling point they barely mention." ]
   },
   '800V charging architecture': {
-    questions: [
-      "Does the Seal support true 800V charging? Heard mixed things.",
-      "How much faster is 800V vs 400V in real‑world charging?",
-      "Is 800V worth the premium or is 400V enough for occasional road trips?"
-    ],
-    answers: [
-      "The Seal uses a 550V system – not true 800V but way faster than 400V. 10‑80% in ~30 minutes on a 150kW charger.",
-      "800V cuts charging time nearly in half. Kia EV6 and Taycan charge insanely fast.",
-      "For daily driving, 400V is plenty. If you road trip often, 800V makes a huge difference."
-    ],
-    opinions: [
-      "800V is nice but I charge at home 95% of the time. Not worth the extra cost for me.",
-      "Once you experience 800V, you'll never go back. 18 minutes to 80% is game‑changing.",
-      "BYD should make 800V standard across all models – it's becoming a competitive disadvantage."
-    ]
+    questions: [ "Does the Seal support true 800V charging? Heard mixed things.", "How much faster is 800V vs 400V in real‑world charging?", "Is 800V worth the premium or is 400V enough for occasional road trips?" ],
+    answers: [ "The Seal uses a 550V system – not true 800V but way faster than 400V. 10‑80% in ~30 minutes on a 150kW charger.", "800V cuts charging time nearly in half. Kia EV6 and Taycan charge insanely fast.", "For daily driving, 400V is plenty. If you road trip often, 800V makes a huge difference." ],
+    opinions: [ "800V is nice but I charge at home 95% of the time. Not worth the extra cost for me.", "Once you experience 800V, you'll never go back. 18 minutes to 80% is game‑changing.", "BYD should make 800V standard across all models – it's becoming a competitive disadvantage." ]
   },
   'Seal Performance vs Model 3': {
-    questions: [
-      "Has anyone driven both the Seal Performance and Model 3 Performance? How do they compare?",
-      "Is the Seal really $8k cheaper than a comparably specced Model 3?",
-      "Which has better build quality – Seal or Model 3?"
-    ],
-    answers: [
-      "Test drove both. Seal is quieter, rides smoother, interior feels more premium. Model 3 has better software and app.",
-      "Yes, comparably equipped the Seal is about $8k less, before BYD's better warranty. Value is hard to beat.",
-      "Seal's panel gaps are more consistent, paint quality is better. Tesla's app ecosystem and OTA updates are superior."
-    ],
-    opinions: [
-      "I chose the Seal after testing both – better value, more comfortable ride, and physical climate buttons.",
-      "Tesla's Supercharger network is still the killer feature. Road tripping in a Seal requires more planning.",
-      "The Seal feels like a luxury car at a mainstream price. The Model 3 feels like a tech gadget on wheels."
-    ]
+    questions: [ "Has anyone driven both the Seal Performance and Model 3 Performance? How do they compare?", "Is the Seal really $8k cheaper than a comparably specced Model 3?", "Which has better build quality – Seal or Model 3?" ],
+    answers: [ "Test drove both. Seal is quieter, rides smoother, interior feels more premium. Model 3 has better software and app.", "Yes, comparably equipped the Seal is about $8k less, before BYD's better warranty. Value is hard to beat.", "Seal's panel gaps are more consistent, paint quality is better. Tesla's app ecosystem and OTA updates are superior." ],
+    opinions: [ "I chose the Seal after testing both – better value, more comfortable ride, and physical climate buttons.", "Tesla's Supercharger network is still the killer feature. Road tripping in a Seal requires more planning.", "The Seal feels like a luxury car at a mainstream price. The Model 3 feels like a tech gadget on wheels." ]
   },
   'ATTO 3 interior quality': {
-    questions: [
-      "How's the ATTO 3 interior holding up after a year? Any rattles?",
-      "Is the rotating screen useful or just a gimmick?",
-      "How does the interior compare to a VW ID.4 or Ioniq 5?"
-    ],
-    answers: [
-      "18 months in, interior still looks new. No rattles, no sagging seats. The vegan leather is durable.",
-      "I use the rotating screen daily – vertical for navigation, horizontal for everything else. Not a gimmick.",
-      "ATTO 3 interior is more playful than ID.4 – guitar string pockets, wavy dash. ID.4 is more conservative."
-    ],
-    opinions: [
-      "The ATTO 3 interior punches way above its price point. People think it's a $50k car inside.",
-      "Wish they'd tone down some design elements. Guitar strings are cool but the wavy dash is a bit much.",
-      "Build quality exceeded my expectations coming from a Honda. Genuinely impressive."
-    ]
+    questions: [ "How's the ATTO 3 interior holding up after a year? Any rattles?", "Is the rotating screen useful or just a gimmick?", "How does the interior compare to a VW ID.4 or Ioniq 5?" ],
+    answers: [ "18 months in, interior still looks new. No rattles, no sagging seats. The vegan leather is durable.", "I use the rotating screen daily – vertical for navigation, horizontal for everything else. Not a gimmick.", "ATTO 3 interior is more playful than ID.4 – guitar string pockets, wavy dash. ID.4 is more conservative." ],
+    opinions: [ "The ATTO 3 interior punches way above its price point. People think it's a $50k car inside.", "Wish they'd tone down some design elements. Guitar strings are cool but the wavy dash is a bit much.", "Build quality exceeded my expectations coming from a Honda. Genuinely impressive." ]
   },
   'Dolphin city driving': {
-    questions: [
-      "How's the Dolphin in tight city parking? As nimble as it looks?",
-      "What's the real‑world city range? EPA numbers seem optimistic.",
-      "Is it comfortable for taller drivers (6'2)?"
-    ],
-    answers: [
-      "Turning radius is crazy small – I can U‑turn on narrow streets my old Civic couldn't manage.",
-      "I get 190‑210 miles real city range with AC on. City driving is actually more efficient.",
-      "Upright seating gives good headroom. I'm 6'1 and have 3 inches clearance. Glass roof helps."
-    ],
-    opinions: [
-      "Dolphin is the perfect city car. Small enough to park anywhere, doesn't feel cramped.",
-      "Handles 70mph fine but it's happiest under 55 – that's where it shines.",
-      "For the price, nothing comes close. Bolt is cheaper but Dolphin has more features and faster charging."
-    ]
+    questions: [ "How's the Dolphin in tight city parking? As nimble as it looks?", "What's the real‑world city range? EPA numbers seem optimistic.", "Is it comfortable for taller drivers (6'2)?" ],
+    answers: [ "Turning radius is crazy small – I can U‑turn on narrow streets my old Civic couldn't manage.", "I get 190‑210 miles real city range with AC on. City driving is actually more efficient.", "Upright seating gives good headroom. I'm 6'1 and have 3 inches clearance. Glass roof helps." ],
+    opinions: [ "Dolphin is the perfect city car. Small enough to park anywhere, doesn't feel cramped.", "Handles 70mph fine but it's happiest under 55 – that's where it shines.", "For the price, nothing comes close. Bolt is cheaper but Dolphin has more features and faster charging." ]
   },
   'Han luxury features': {
-    questions: [
-      "Are the massage seats in the Han actually good or just a gimmick?",
-      "How does the Han's interior compare to a BMW 5 Series or E‑Class?",
-      "Is the Dynaudio sound system worth the upgrade?"
-    ],
-    answers: [
-      "Massage seats have 5 programs and work well on long drives – not as strong as a real massage but definitely noticeable.",
-      "Interior quality rivals the Germans at half the price. Real wood trim, Nappa leather, soft‑touch everywhere.",
-      "Dynaudio system is excellent – 12 speakers, dedicated subwoofer. Crystal clear, deep bass. Worth it."
-    ],
-    opinions: [
-      "The Han convinced me that Chinese cars can be luxury. It's not copying – it has its own design language.",
-      "Customer service is where the gap still exists. BMW and Mercedes have decades of experience.",
-      "You get S‑Class features for E‑Class money. Value is insane."
-    ]
+    questions: [ "Are the massage seats in the Han actually good or just a gimmick?", "How does the Han's interior compare to a BMW 5 Series or E‑Class?", "Is the Dynaudio sound system worth the upgrade?" ],
+    answers: [ "Massage seats have 5 programs and work well on long drives – not as strong as a real massage but definitely noticeable.", "Interior quality rivals the Germans at half the price. Real wood trim, Nappa leather, soft‑touch everywhere.", "Dynaudio system is excellent – 12 speakers, dedicated subwoofer. Crystal clear, deep bass. Worth it." ],
+    opinions: [ "The Han convinced me that Chinese cars can be luxury. It's not copying – it has its own design language.", "Customer service is where the gap still exists. BMW and Mercedes have decades of experience.", "You get S‑Class features for E‑Class money. Value is insane." ]
   },
   'Yangwang U8 off‑road capability': {
-    questions: [
-      "Can the U8 really float on water? Sounds like science fiction.",
-      "How does the U8 compare to a Land Rover Defender off‑road?",
-      "Is the U8 practical as a daily driver or too extreme?"
-    ],
-    answers: [
-      "Yes, it can float for 30 minutes in up to 1.4m of water. Uses wheels as propellers – emergency feature, not recreation.",
-      "1100 hp, individual wheel motors, tank turns. Genuinely capable – beats Defender on specs.",
-      "Despite extreme capability, it's luxurious on‑road. Air suspension, massage seats, 23‑speaker sound system."
-    ],
-    opinions: [
-      "The U8 is BYD's halo car – proves they can compete with anyone.",
-      "I don't need off‑road, but the tech trickles down to other models. That's exciting.",
-      "Pricey, but you get Range Rover capability with Rolls‑Royce tech. Hard to beat the proposition."
-    ]
+    questions: [ "Can the U8 really float on water? Sounds like science fiction.", "How does the U8 compare to a Land Rover Defender off‑road?", "Is the U8 practical as a daily driver or too extreme?" ],
+    answers: [ "Yes, it can float for 30 minutes in up to 1.4m of water. Uses wheels as propellers – emergency feature, not recreation.", "1100 hp, individual wheel motors, tank turns. Genuinely capable – beats Defender on specs.", "Despite extreme capability, it's luxurious on‑road. Air suspension, massage seats, 23‑speaker sound system." ],
+    opinions: [ "The U8 is BYD's halo car – proves they can compete with anyone.", "I don't need off‑road, but the tech trickles down to other models. That's exciting.", "Pricey, but you get Range Rover capability with Rolls‑Royce tech. Hard to beat the proposition." ]
   },
   'home charger installation': {
-    questions: [
-      "What did you pay for Level 2 installation? Getting wild quotes.",
-      "Does BYD cover any of the installation cost?",
-      "Can I install a charger myself or does it legally require an electrician?"
-    ],
-    answers: [
-      "Paid $1,200 total including ChargePoint Home Flex + professional install. Took about 3 hours.",
-      "BYD covers up to $1,000 in certain states – check with BladeBot for your eligibility.",
-      "Legally need a licensed electrician. Quotes ranged from $800 to $2,200. Shop around."
-    ],
-    opinions: [
-      "Installation cost was worth every penny. Waking up to a full battery every day is life‑changing.",
-      "Wish BYD included free installation like some competitors – adds up when you're already spending $40k+.",
-      "Don't cheap out on the electrician. A bad install can be dangerous – hire an EV specialist."
-    ]
+    questions: [ "What did you pay for Level 2 installation? Getting wild quotes.", "Does BYD cover any of the installation cost?", "Can I install a charger myself or does it legally require an electrician?" ],
+    answers: [ "Paid $1,200 total including ChargePoint Home Flex + professional install. Took about 3 hours.", "BYD covers up to $1,000 in certain states – check with BladeBot for your eligibility.", "Legally need a licensed electrician. Quotes ranged from $800 to $2,200. Shop around." ],
+    opinions: [ "Installation cost was worth every penny. Waking up to a full battery every day is life‑changing.", "Wish BYD included free installation like some competitors – adds up when you're already spending $40k+.", "Don't cheap out on the electrician. A bad install can be dangerous – hire an EV specialist." ]
   },
   'winter range impact': {
-    questions: [
-      "How much range do you actually lose in freezing temps?",
-      "Does the heat pump make a big difference or is it marginal?",
-      "Any tips for maximizing range in winter? First winter coming up."
-    ],
-    answers: [
-      "I lose about 25% at 25°F. Preheating while plugged in helps a lot.",
-      "Heat pump absolutely worth it. Old EV lost 40% in winter. Seal loses 25% max.",
-      "Use seat heaters instead of cabin heat, preheat while plugged in, keep tires at 42 PSI."
-    ],
-    opinions: [
-      "Winter range loss is real but totally manageable if you have home charging.",
-      "Range anxiety is worse than actual loss – after one winter you stop worrying.",
-      "Heat pump should be standard, not an option. It pays for itself in two winters."
-    ]
+    questions: [ "How much range do you actually lose in freezing temps?", "Does the heat pump make a big difference or is it marginal?", "Any tips for maximizing range in winter? First winter coming up." ],
+    answers: [ "I lose about 25% at 25°F. Preheating while plugged in helps a lot.", "Heat pump absolutely worth it. Old EV lost 40% in winter. Seal loses 25% max.", "Use seat heaters instead of cabin heat, preheat while plugged in, keep tires at 42 PSI." ],
+    opinions: [ "Winter range loss is real but totally manageable if you have home charging.", "Range anxiety is worse than actual loss – after one winter you stop worrying.", "Heat pump should be standard, not an option. It pays for itself in two winters." ]
   },
   'BYD vs Tesla competition': {
-    questions: [
-      "Is BYD really outselling Tesla globally? Numbers seem unbelievable.",
-      "What advantages does BYD have over Tesla besides price?",
-      "Will BYD overtake Tesla in the US eventually?"
-    ],
-    answers: [
-      "Yes, BYD sold more EVs than Tesla in Q4 2024 globally. Strength in China and Europe drives volume.",
-      "BYD makes their own batteries and chips – controls costs. Build quality is more consistent.",
-      "Will likely surpass Tesla in US within 3‑5 years once Mexico factory is operational and NACS access gained."
-    ],
-    opinions: [
-      "Competition is great for consumers. Tesla's dominance made them complacent.",
-      "Vertical integration is BYD's secret weapon – huge cost advantage.",
-      "Tesla still leads in software and charging. BYD wins on value and build quality. Different strengths."
-    ]
+    questions: [ "Is BYD really outselling Tesla globally? Numbers seem unbelievable.", "What advantages does BYD have over Tesla besides price?", "Will BYD overtake Tesla in the US eventually?" ],
+    answers: [ "Yes, BYD sold more EVs than Tesla in Q4 2024 globally. Strength in China and Europe drives volume.", "BYD makes their own batteries and chips – controls costs. Build quality is more consistent.", "Will likely surpass Tesla in US within 3‑5 years once Mexico factory is operational and NACS access gained." ],
+    opinions: [ "Competition is great for consumers. Tesla's dominance made them complacent.", "Vertical integration is BYD's secret weapon – huge cost advantage.", "Tesla still leads in software and charging. BYD wins on value and build quality. Different strengths." ]
   },
-  // -- Add more topics as needed (you can extend this object) --
 };
 
 // ============================================
-// NATURAL TOPIC DATABASE (references the rich content)
+// NATURAL TOPIC DATABASE (references rich content)
 // ============================================
 const conversationTopics = [
   { category: 'ev_tech', weight: 1.2, topics: ['Blade Battery safety testing', '800V charging architecture', 'battery thermal management', 'regenerative braking efficiency', 'V2L and V2G potential'] },
@@ -295,7 +174,7 @@ function generateNaturalResponse(persona, topic, phase, messageType, memory, tim
   if (content) {
     return generateRichResponse(persona, topicName, content, phase, messageType, memory, timeGreeting, mood);
   }
-  // Fallback for topics without rich content (should not happen with current topics)
+  // Fallback (should not happen with current topics)
   return `${timeGreeting}. Anyone have thoughts on ${topicName.toLowerCase()}?`;
 }
 
@@ -305,29 +184,20 @@ function generateRichResponse(persona, topicName, content, phase, messageType, m
 
   switch (phase) {
     case 'opening':
-      // Start with a real question from the content
       if (content.questions?.length) {
         let q = getRandomItem(content.questions);
-        if (persona.catchphrase && Math.random() < 0.3) {
-          q = `${persona.catchphrase}! ${q.toLowerCase()}`;
-        }
+        if (persona.catchphrase && Math.random() < 0.3) q = `${persona.catchphrase}! ${q.toLowerCase()}`;
         return `${timeGreeting}. ${q}`;
       }
       return `${timeGreeting}. Been thinking about ${topicName.toLowerCase()} lately. Anyone else?`;
 
     case 'discussion':
-      // Answer if someone asked a question
       if (wasQuestion && content.answers?.length) {
         let ans = getRandomItem(content.answers);
-        if (persona.catchphrase && Math.random() < 0.4) {
-          ans = `${persona.catchphrase} – ${ans.toLowerCase()}`;
-        }
+        if (persona.catchphrase && Math.random() < 0.4) ans = `${persona.catchphrase} – ${ans.toLowerCase()}`;
         return ans;
       }
-      // Otherwise mix opinions/answers based on messageType
-      if (messageType === 'question' && content.questions?.length) {
-        return getRandomItem(content.questions);
-      }
+      if (messageType === 'question' && content.questions?.length) return getRandomItem(content.questions);
       if (messageType === 'reaction') {
         const reactions = [
           `That's a good point. ${getRandomItem(content.opinions || content.answers)}`,
@@ -336,13 +206,10 @@ function generateRichResponse(persona, topicName, content, phase, messageType, m
         ];
         return getRandomItem(reactions);
       }
-      // Default – opinion or answer
       const pool = [...(content.opinions || []), ...(content.answers || [])];
       if (pool.length) {
         let msg = getRandomItem(pool);
-        if (persona.catchphrase && Math.random() < 0.25) {
-          msg = `${persona.catchphrase} – ${msg.toLowerCase()}`;
-        }
+        if (persona.catchphrase && Math.random() < 0.25) msg = `${persona.catchphrase} – ${msg.toLowerCase()}`;
         return msg;
       }
       return getRandomItem(content.questions || [`What's your take on ${topicName}?`]);
@@ -375,13 +242,10 @@ function generateRichResponse(persona, topicName, content, phase, messageType, m
       return `Good talk about ${topicName}. Anyone have more questions?`;
 
     default:
-      // fallback
       const fallbackPool = content.answers || content.opinions || content.questions;
       if (fallbackPool?.length) {
         let msg = getRandomItem(fallbackPool);
-        if (persona.catchphrase && Math.random() < 0.3) {
-          msg = `${persona.catchphrase} – ${msg.toLowerCase()}`;
-        }
+        if (persona.catchphrase && Math.random() < 0.3) msg = `${persona.catchphrase} – ${msg.toLowerCase()}`;
         return msg;
       }
       return `I've got thoughts on ${topicName}. Anyone else interested?`;
@@ -556,9 +420,7 @@ async function runLobbyChatter(client) {
         else if (mem.messageCount >= 2) mem.conversationPhase = 'discussion';
 
         // Trim memory
-        if (mem.messages.length > CONFIG.maxContextMessages) {
-          mem.messages = mem.messages.slice(-CONFIG.maxContextMessages);
-        }
+        if (mem.messages.length > CONFIG.maxContextMessages) mem.messages = mem.messages.slice(-CONFIG.maxContextMessages);
         sent++;
       }
 
@@ -614,9 +476,7 @@ async function processWelcomeQueue() {
     const member = guild?.members.cache.get(memberId);
     if (guild && member) {
       const config = await getGuildConfig(guild.id);
-      if (config?.lobby_chatter_enabled) {
-        await sendWelcomeMessage(guild, member, config);
-      }
+      if (config?.lobby_chatter_enabled) await sendWelcomeMessage(guild, member, config);
     }
   }
 }
