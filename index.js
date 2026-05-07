@@ -2,7 +2,7 @@
 require('./keepalive');
 const express = require('express');
 const path = require('path');
-const { Client, GatewayIntentBits, Collection, Partials, ActivityType } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, Partials, ActivityType, MessageFlags } = require('discord.js');
 const fs = require('fs');
 const config = require('./config');
 const logger = require('./utils/logger');
@@ -19,6 +19,7 @@ const { startTestimonialScheduler } = require('./schedulers/testimonialPosts');
 // ============================================
 let client = null;
 const startTime = Date.now();
+const EPHEMERAL = { flags: MessageFlags.Ephemeral };
 
 // ============================================
 // EXPRESS STATIC SERVER
@@ -27,14 +28,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const STATIC_URL = process.env.STATIC_BASE_URL || `http://localhost:${PORT}`;
 
-// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Serve static folder for images
 app.use('/static', express.static(path.join(__dirname, 'static')));
 
-// CORS headers for API
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
@@ -44,8 +41,6 @@ app.use((req, res, next) => {
 // ============================================
 // API ENDPOINTS
 // ============================================
-
-// Health check endpoint
 app.get('/', (req, res) => {
   res.json({
     status: 'online',
@@ -60,7 +55,6 @@ app.get('/', (req, res) => {
   });
 });
 
-// Detailed stats endpoint
 app.get('/stats', async (req, res) => {
   try {
     const autoPostStats = getAutoPostStats();
@@ -98,10 +92,8 @@ app.get('/stats', async (req, res) => {
   }
 });
 
-// Guilds list endpoint (admin only - requires auth in production)
 app.get('/guilds', (req, res) => {
   if (!client) return res.json({ error: 'Bot not ready' });
-  
   const guilds = client.guilds.cache.map(g => ({
     id: g.id,
     name: g.name,
@@ -109,27 +101,22 @@ app.get('/guilds', (req, res) => {
     ownerId: g.ownerId,
     joinedAt: g.joinedAt,
   }));
-  
   res.json({ total: guilds.length, guilds });
 });
 
-// Format uptime helper
 function formatUptime(seconds) {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = Math.floor(seconds % 60);
-  
   const parts = [];
   if (days > 0) parts.push(`${days}d`);
   if (hours > 0) parts.push(`${hours}h`);
   if (minutes > 0) parts.push(`${minutes}m`);
   if (secs > 0 || parts.length === 0) parts.push(`${secs}s`);
-  
   return parts.join(' ');
 }
 
-// Start Express server
 const server = app.listen(PORT, () => {
   logger.ready(`🌐 Web server running on port ${PORT}`);
   logger.info(`🖼️  Static files served at: ${STATIC_URL}/static/`);
@@ -149,16 +136,8 @@ client = new Client({
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.GuildModeration,
   ],
-  partials: [
-    Partials.Channel,
-    Partials.Message,
-    Partials.Reaction,
-    Partials.User,
-  ],
-  allowedMentions: {
-    parse: ['roles', 'users'],
-    repliedUser: true,
-  },
+  partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
+  allowedMentions: { parse: ['roles', 'users'], repliedUser: true },
   retryLimit: 3,
 });
 
@@ -171,8 +150,7 @@ client.startTime = startTime;
 // ============================================
 logger.separator('LOADING COMMANDS');
 const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
-let loadedCommands = 0;
-let failedCommands = 0;
+let loadedCommands = 0, failedCommands = 0;
 
 for (const file of commandFiles) {
   try {
@@ -193,19 +171,16 @@ for (const file of commandFiles) {
 logger.info(`📋 Commands loaded: ${loadedCommands} successful, ${failedCommands} failed`);
 
 // ============================================
-// LOAD EVENTS
+// LOAD EVENTS (standard Discord events)
 // ============================================
 logger.separator('LOADING EVENTS');
 const eventFiles = fs.readdirSync('./events').filter(file => file.endsWith('.js'));
-let loadedEvents = 0;
-let failedEvents = 0;
+let loadedEvents = 0, failedEvents = 0;
 
 for (const file of eventFiles) {
   try {
     const eventLoader = require(`./events/${file}`);
-    if (typeof eventLoader === 'function') {
-      eventLoader(client);
-    }
+    if (typeof eventLoader === 'function') eventLoader(client);
     logger.event(`✅ Loaded event: ${file}`);
     loadedEvents++;
   } catch (err) {
@@ -218,27 +193,18 @@ logger.info(`🎯 Events loaded: ${loadedEvents} successful, ${failedEvents} fai
 // ============================================
 // ERROR HANDLING
 // ============================================
-client.on('error', (error) => {
-  logger.error('Discord client error:', error);
-});
-
-client.on('shardError', (error) => {
-  logger.error('WebSocket shard error:', error);
-});
+client.on('error', (error) => logger.error('Discord client error:', error));
+client.on('shardError', (error) => logger.error('WebSocket shard error:', error));
 
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
-
-process.on('uncaughtException', (error) => { 
+process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception:', error);
   gracefulShutdown('UNCAUGHT_EXCEPTION');
 });
-
 process.on('warning', (warning) => {
-  if (warning.name !== 'DeprecationWarning') {
-    logger.warn('Process Warning:', warning.message);
-  }
+  if (warning.name !== 'DeprecationWarning') logger.warn('Process Warning:', warning.message);
 });
 
 // ============================================
@@ -249,34 +215,10 @@ let isShuttingDown = false;
 async function gracefulShutdown(signal = 'SIGTERM') {
   if (isShuttingDown) return;
   isShuttingDown = true;
-  
   logger.warn(`\n${signal} received. Shutting down gracefully...`);
-  
-  // Close database connection
-  try {
-    await pool.end();
-    logger.db('Database connection closed');
-  } catch (err) {
-    logger.error('Error closing database:', err);
-  }
-  
-  // Destroy Discord client
-  try {
-    client.destroy();
-    logger.info('Discord client destroyed');
-  } catch (err) {
-    logger.error('Error destroying client:', err);
-  }
-  
-  // Close Express server
-  try {
-    server.close(() => {
-      logger.info('Express server closed');
-    });
-  } catch (err) {
-    logger.error('Error closing server:', err);
-  }
-  
+  try { await pool.end(); logger.db('Database connection closed'); } catch (err) { logger.error('Error closing database:', err); }
+  try { client.destroy(); logger.info('Discord client destroyed'); } catch (err) { logger.error('Error destroying client:', err); }
+  try { server.close(() => logger.info('Express server closed')); } catch (err) { logger.error('Error closing server:', err); }
   logger.info('Shutdown complete. Goodbye! 👋');
   process.exit(0);
 }
@@ -300,12 +242,11 @@ client.once('ready', async () => {
     logger.info(`  📍 ${g.name} (${g.id}) - ${g.memberCount} members`);
   });
 
-  // Database initialization with retry
+  // Database init with retry
   logger.separator('DATABASE SETUP');
   let dbInitialized = false;
   let dbRetries = 0;
   const maxDbRetries = 3;
-  
   while (!dbInitialized && dbRetries < maxDbRetries) {
     try {
       await initDatabase();
@@ -323,42 +264,24 @@ client.once('ready', async () => {
     }
   }
 
-  // Schedulers
+  // Start all schedulers
   logger.separator('STARTING SCHEDULERS');
-  
-  // Follow-up scheduler
   try {
-    if (startFollowUpScheduler) {
-      startFollowUpScheduler(client);
-      logger.ready('✅ Follow-up scheduler started');
-    }
-  } catch (err) {
-    logger.error('❌ Follow-up scheduler:', err.message);
-  }
-  
-  // Auto post scheduler
+    if (startFollowUpScheduler) startFollowUpScheduler(client);
+    logger.ready('✅ Follow-up scheduler started');
+  } catch (err) { logger.error('❌ Follow-up scheduler:', err.message); }
   try {
     startAutoPostScheduler(client);
     logger.ready('✅ Auto poster scheduler started');
-  } catch (err) {
-    logger.error('❌ Auto poster scheduler:', err.message);
-  }
-  
-  // Lobby chatter scheduler
+  } catch (err) { logger.error('❌ Auto poster scheduler:', err.message); }
   try {
     startLobbyChatterScheduler(client);
     logger.ready('✅ Lobby chatter scheduler started');
-  } catch (err) {
-    logger.error('❌ Lobby chatter scheduler:', err.message);
-  }
-  
-  // Testimonial scheduler
+  } catch (err) { logger.error('❌ Lobby chatter scheduler:', err.message); }
   try {
     startTestimonialScheduler(client);
     logger.ready('✅ Testimonial scheduler started');
-  } catch (err) {
-    logger.error('❌ Testimonial scheduler:', err.message);
-  }
+  } catch (err) { logger.error('❌ Testimonial scheduler:', err.message); }
 
   // Presence rotation
   const presenceMessages = [
@@ -371,35 +294,25 @@ client.once('ready', async () => {
     { name: `${client.users.cache.size} EV enthusiasts`, type: ActivityType.Watching },
     { name: '⚡ Build Your Dreams', type: ActivityType.Playing },
   ];
-  
   let presenceIndex = 0;
   setInterval(() => {
     presenceIndex = (presenceIndex + 1) % presenceMessages.length;
-    client.user.setPresence({
-      activities: [presenceMessages[presenceIndex]],
-      status: 'online'
-    });
+    client.user.setPresence({ activities: [presenceMessages[presenceIndex]], status: 'online' });
   }, 30000);
 
   // Environment check
   logger.separator('ENVIRONMENT CHECK');
   const criticalEnv = ['DISCORD_TOKEN', 'DATABASE_URL'];
-  const optionalEnv = [
-    'OPENROUTER_API_KEY', 'AUTO_POST_CHANNELS', 'STATIC_BASE_URL', 
-    'BOT_OWNER_IDS', 'TESTIMONIAL_CHANNEL_ID', 'LOG_LEVEL'
-  ];
-  
+  const optionalEnv = ['OPENROUTER_API_KEY', 'AUTO_POST_CHANNELS', 'STATIC_BASE_URL', 'BOT_OWNER_IDS', 'TESTIMONIAL_CHANNEL_ID', 'LOG_LEVEL'];
   for (const key of criticalEnv) {
     if (process.env[key]) logger.success(`  ✅ ${key} is set`);
     else logger.error(`  🔴 ${key} is MISSING (CRITICAL)`);
   }
-  
   for (const key of optionalEnv) {
     if (process.env[key]) logger.success(`  ✅ ${key} is set`);
     else logger.warn(`  🟡 ${key} is not set (optional)`);
   }
 
-  // All systems go
   logger.separator('ALL SYSTEMS OPERATIONAL');
   logger.ready('🚀 BYD BladeBot is fully ready!');
   logger.info(`  🤖 Bot:      ${client.user.tag}`);
@@ -414,130 +327,96 @@ client.once('ready', async () => {
 });
 
 // ============================================
-// INTERACTION HANDLER
+// INTERACTION HANDLER (all in one place)
 // ============================================
 client.on('interactionCreate', async (interaction) => {
-  // Handle commands
+  // ---------- Slash commands ----------
   if (interaction.isCommand()) {
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
-    
-    // Cooldown check
+
+    // Cooldown
     const { cooldowns } = client;
-    if (!cooldowns.has(command.data.name)) {
-      cooldowns.set(command.data.name, new Collection());
-    }
-    
+    if (!cooldowns.has(command.data.name)) cooldowns.set(command.data.name, new Collection());
     const now = Date.now();
     const timestamps = cooldowns.get(command.data.name);
     const cooldownAmount = (command.cooldown || 3) * 1000;
-    
     if (timestamps.has(interaction.user.id)) {
       const expirationTime = timestamps.get(interaction.user.id) + cooldownAmount;
       if (now < expirationTime) {
         const timeLeft = (expirationTime - now) / 1000;
-        return interaction.reply({ 
-          content: `⏰ Please wait ${timeLeft.toFixed(1)} seconds before using \`/${command.data.name}\` again.`, 
-          ephemeral: true 
-        });
+        return interaction.reply({ content: `⏰ Please wait ${timeLeft.toFixed(1)} seconds before using \`/${command.data.name}\` again.`, ...EPHEMERAL });
       }
     }
-    
     timestamps.set(interaction.user.id, now);
     setTimeout(() => timestamps.delete(interaction.user.id), cooldownAmount);
-    
+
     try {
       await command.execute(interaction);
       logger.cmd(`/${interaction.commandName} executed by ${interaction.user.tag}`);
     } catch (error) {
       logger.error(`Command ${interaction.commandName} failed:`, error);
-      const reply = { content: '❌ There was an error executing this command.', ephemeral: true };
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(reply);
-      } else {
-        await interaction.reply(reply);
-      }
+      const reply = { content: '❌ There was an error executing this command.', ...EPHEMERAL };
+      if (interaction.deferred || interaction.replied) await interaction.editReply(reply);
+      else await interaction.reply(reply);
     }
     return;
   }
-  
-  // Handle buttons - delegate to command handlers
+
+  // ---------- Buttons ----------
   if (interaction.isButton()) {
-    // Check if it's a car giveaway button
+    // Car giveaway entry button
     if (interaction.customId === 'cargiveaway_enter') {
       const { handleCarGiveawayButton } = require('./commands/cargiveaway');
       return handleCarGiveawayButton(interaction);
     }
-    
-    // Check admin commands
+    // Admin dashboard buttons
     if (interaction.customId.startsWith('admin_')) {
       const adminCommand = client.commands.get('admin');
-      if (adminCommand && adminCommand.handleButton) {
-        return adminCommand.handleButton(interaction);
-      }
+      if (adminCommand && adminCommand.handleButton) return adminCommand.handleButton(interaction);
     }
-    
-    // Check ticket commands
+    // Ticket buttons
     if (interaction.customId === 'create_ticket' || interaction.customId === 'close_ticket') {
       const ticketCommand = client.commands.get('ticket');
-      if (ticketCommand && ticketCommand.handleButton) {
-        return ticketCommand.handleButton(interaction);
-      }
+      if (ticketCommand && ticketCommand.handleButton) return ticketCommand.handleButton(interaction);
     }
-    
-    // Check verification button
+    // Verification button
     if (interaction.customId === 'verify_button') {
       const verifyCommand = client.commands.get('verify');
-      if (verifyCommand && verifyCommand.handleButton) {
-        return verifyCommand.handleButton(interaction);
-      }
+      if (verifyCommand && verifyCommand.handleButton) return verifyCommand.handleButton(interaction);
     }
-    
-    // Default button handler from interactionCreate event
-    const interactionHandler = require('./handlers/interactionCreate');
-    if (interactionHandler.handleButton) {
-      return interactionHandler.handleButton(interaction);
-    }
+    // Default: unknown button
+    logger.warn(`Unknown button customId: ${interaction.customId}`);
+    return interaction.reply({ content: '❓ Unknown option. Use the buttons provided.', ...EPHEMERAL });
   }
-  
-  // Handle select menus
+
+  // ---------- Select Menus ----------
   if (interaction.isStringSelectMenu()) {
-    // Check admin select menus
+    // Admin leads select menu
     if (interaction.customId === 'admin_select_giveaway_leads') {
       const adminCommand = client.commands.get('admin');
-      if (adminCommand && adminCommand.handleSelect) {
-        return adminCommand.handleSelect(interaction);
-      }
+      if (adminCommand && adminCommand.handleSelect) return adminCommand.handleSelect(interaction);
     }
-    
-    // Default select menu handler
-    const interactionHandler = require('./handlers/interactionCreate');
-    if (interactionHandler.handleSelectMenu) {
-      return interactionHandler.handleSelectMenu(interaction);
-    }
+    // Fallback for other select menus (handled by command modules)
+    logger.warn(`Unknown select menu customId: ${interaction.customId}`);
+    return interaction.reply({ content: '❓ Unknown selection.', ...EPHEMERAL });
   }
-  
-  // Handle modals
+
+  // ---------- Modals ----------
   if (interaction.isModalSubmit()) {
-    // Check car giveaway modal
+    // Car giveaway entry modal
     if (interaction.customId === 'cargiveaway_entry_modal') {
       const { handleCarGiveawayModal } = require('./commands/cargiveaway');
       return handleCarGiveawayModal(interaction);
     }
-    
-    // Check admin modals
+    // Admin modals
     if (interaction.customId.startsWith('admin_modal_')) {
       const adminCommand = client.commands.get('admin');
-      if (adminCommand && adminCommand.handleModal) {
-        return adminCommand.handleModal(interaction);
-      }
+      if (adminCommand && adminCommand.handleModal) return adminCommand.handleModal(interaction);
     }
-    
-    // Default modal handler
-    const interactionHandler = require('./handlers/interactionCreate');
-    if (interactionHandler.handleModal) {
-      return interactionHandler.handleModal(interaction);
-    }
+    // Fallback
+    logger.warn(`Unknown modal customId: ${interaction.customId}`);
+    return interaction.reply({ content: '❓ Unknown form.', ...EPHEMERAL });
   }
 });
 
