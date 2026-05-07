@@ -1,4 +1,9 @@
 // utils/lobbyChatter.js
+//
+// IMPORTANT: To prevent memory leaks, call clearMessageHistory(guildId)
+// when a guild is deleted (guildDelete event) or when lobby chatter is disabled.
+// For bulk cleanup, use cleanupStaleMessageHistory(existingGuildIds).
+
 const { getRandomItem, weightedRandom } = require('./helpers');
 
 // ============================================
@@ -66,6 +71,31 @@ function getRandomMessage(type, guildId = null) {
   }
   
   return getRandomItem(arr);
+}
+
+/**
+ * Removes message history for a specific guild.
+ * @param {string} guildId - ID of the guild to clear.
+ */
+function clearMessageHistory(guildId) {
+  if (guildId) {
+    messageHistory.delete(guildId);
+  } else {
+    messageHistory.clear();
+  }
+}
+
+/**
+ * Removes message history for guilds that are no longer active.
+ * Call this periodically (e.g., every hour) or after a guildDelete event.
+ * @param {Set<string>} existingGuildIds - Set of currently active guild IDs.
+ */
+function cleanupStaleMessageHistory(existingGuildIds) {
+  for (const guildId of messageHistory.keys()) {
+    if (!existingGuildIds.has(guildId)) {
+      messageHistory.delete(guildId);
+    }
+  }
 }
 
 // ============================================
@@ -898,14 +928,6 @@ function getMessageCounts() {
   return counts;
 }
 
-function clearMessageHistory(guildId) {
-  if (guildId) {
-    messageHistory.delete(guildId);
-  } else {
-    messageHistory.clear();
-  }
-}
-
 // ============================================
 // EXPORTS
 // ============================================
@@ -940,11 +962,12 @@ module.exports = {
   // Context
   ConversationContext,
 
-  // Analytics & History
+  // Analytics & History (with memory leak prevention)
   getMessageCounts,
   getAnalytics,
   trackMessageUsage,
   clearMessageHistory,
+  cleanupStaleMessageHistory,   // <-- new export for bulk cleanup
 
   // Raw Data
   chatterMessages,
