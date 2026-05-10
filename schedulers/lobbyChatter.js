@@ -164,7 +164,9 @@ async function runLobbyChatter(client) {
     }
 
     // ---- Pick one random guild ----
-    const { guild, config } = getRandomItem(eligibleGuilds);
+    const selection = getRandomItem(eligibleGuilds);
+    if (!selection) continue;      // safety check
+    const { guild, config } = selection;
     const mem = getGuildMemory(guild.id);
 
     // ---- Phase transition (based on message count) ----
@@ -180,17 +182,34 @@ async function runLobbyChatter(client) {
       mem.conversationPhase = 'wrapping';
     }
 
-    // ---- Persona selection (avoid same speaker twice) ----
+    // ---- Persona selection (robust against broken configs) ----
     let personas = config.lobby_chatter_personas || defaultPersonas;
     if (typeof personas === 'string') {
       try { personas = JSON.parse(personas); } catch { personas = defaultPersonas; }
     }
+    // Ensure it's an array and remove any null/undefined entries
+    if (!Array.isArray(personas)) {
+      logger.warn(`Guild ${guild.id}: personas config is not an array, using defaults`);
+      personas = defaultPersonas;
+    } else {
+      personas = personas.filter(p => p != null);   // remove null/undefined
+      if (personas.length === 0) {
+        personas = defaultPersonas;
+      }
+    }
+
+    // Avoid same speaker twice
     let available = personas.filter(p => p.name !== mem.lastSpeaker);
-    if (!available.length) available = personas;
-    const persona = getRandomItem(available);
+    if (available.length === 0) available = personas;
+
+    let persona = getRandomItem(available);
+    // Final fallback – if getRandomItem somehow returns null
+    if (!persona) {
+      persona = getRandomItem(defaultPersonas);
+      logger.warn(`Guild ${guild.id}: persona was null, fell back to ${persona?.name}`);
+    }
 
     // ---- Generate a natural chat turn ----
-    // We pass guildId to benefit from per‑guild message history (avoid repetition)
     const message = generateChatTurn(persona, {
       includePersonalNote: true,
       includeFavModel: true,
