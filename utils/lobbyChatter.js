@@ -4,7 +4,9 @@
 // when a guild is deleted (guildDelete event) or when lobby chatter is disabled.
 // For bulk cleanup, use cleanupStaleMessageHistory(existingGuildIds).
 
+// utils/lobbyChatter.js
 const { getRandomItem, weightedRandom } = require('./helpers');
+const logger = require('./logger'); // optional, falls back to console if not available
 
 // ============================================
 // CONVERSATION CONTEXT TRACKING
@@ -73,10 +75,6 @@ function getRandomMessage(type, guildId = null) {
   return getRandomItem(arr);
 }
 
-/**
- * Removes message history for a specific guild.
- * @param {string} guildId - ID of the guild to clear.
- */
 function clearMessageHistory(guildId) {
   if (guildId) {
     messageHistory.delete(guildId);
@@ -85,11 +83,6 @@ function clearMessageHistory(guildId) {
   }
 }
 
-/**
- * Removes message history for guilds that are no longer active.
- * Call this periodically (e.g., every hour) or after a guildDelete event.
- * @param {Set<string>} existingGuildIds - Set of currently active guild IDs.
- */
 function cleanupStaleMessageHistory(existingGuildIds) {
   for (const guildId of messageHistory.keys()) {
     if (!existingGuildIds.has(guildId)) {
@@ -782,6 +775,15 @@ function getRandomMessageType() {
 }
 
 function generateChatTurn(persona, options = {}) {
+  // ----- NULL SAFETY GUARD -----
+  if (!persona) {
+    if (typeof logger?.warn === 'function') {
+      logger.warn('generateChatTurn called with null persona, using random fallback');
+    }
+    persona = getRandomPersona();  // guaranteed to be valid
+  }
+  // -----------------------------
+
   const {
     includePersonalNote = true,
     includeFavModel = true,
@@ -967,7 +969,7 @@ module.exports = {
   getAnalytics,
   trackMessageUsage,
   clearMessageHistory,
-  cleanupStaleMessageHistory,   // <-- new export for bulk cleanup
+  cleanupStaleMessageHistory,
 
   // Raw Data
   chatterMessages,
