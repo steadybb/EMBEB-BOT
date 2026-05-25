@@ -70,8 +70,8 @@ function getVerificationEmbed() {
       `✨ Verified members get **priority test drive scheduling** and **exclusive event invites**.`
     )
     .setColor('#00BFFF')
-    .setThumbnail('https://cdn.byd.com/bot/byd-logo.png')
-    .setFooter({ text: '⚡ Blade Battery Technology • Trusted by 15,000+ drivers', iconURL: 'https://cdn.byd.com/bot/byd-logo.png' })
+    .setThumbnail('https://res.cloudinary.com/dkfsr0g6x/image/upload/v1777372767/IMG_4290_u1qsxo.jpg')
+    .setFooter({ text: '⚡ Blade Battery Technology • Trusted by 15,000+ drivers', iconURL: 'https://res.cloudinary.com/dkfsr0g6x/image/upload/v1777372767/IMG_4290_u1qsxo.jpg' })
     .setTimestamp();
 }
 
@@ -85,8 +85,8 @@ function createTicketPanelEmbed() {
       `⏰ **Response:** Within 1 hour (business days)\n🔒 Private – only you and staff see it.`
     )
     .setColor('#00BFFF')
-    .setThumbnail('https://cdn.byd.com/bot/byd-logo.png')
-    .setFooter({ text: '⚡ BYD Blade Battery | Trusted by 15,000+ EV drivers', iconURL: 'https://cdn.byd.com/bot/byd-logo.png' })
+    .setThumbnail('https://res.cloudinary.com/dkfsr0g6x/image/upload/v1777372767/IMG_4290_u1qsxo.jpg')
+    .setFooter({ text: '⚡ BYD Blade Battery | Trusted by 15,000+ EV drivers', iconURL: 'https://res.cloudinary.com/dkfsr0g6x/image/upload/v1777372767/IMG_4290_u1qsxo.jpg' })
     .setTimestamp();
 }
 
