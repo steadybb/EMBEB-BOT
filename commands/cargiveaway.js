@@ -243,7 +243,7 @@ async function startCarGiveaway(interaction) {
     .setTitle('🚗 **OFFICIAL BYD CAR GIVEAWAY!** 🚗')
     .setDescription(`### 🎁 Win a ${year} BYD ${model}!\n\n### 📊 Vehicle Specs:\n• **MSRP:** $${carData.msrp.toLocaleString()}\n• **Range:** ${carData.range}\n• **Type:** ${carData.type}\n\n### ✨ How to Enter:\nClick **"ENTER GIVEAWAY"** below.\n\n### 📋 Winner Pays:\n• Shipping: $${shippingCost.toLocaleString()}\n• Doc Fee: $${docFee.toLocaleString()}\n• **Total:** $${totalWinnerCost.toLocaleString()}\n\n### ⏰ Entry Deadline:\n<t:${Math.floor(endTime / 1000)}:R>\n\n### 👑 Winners to be selected: **${winnersCount}**\n\n🎯 **Winners can be selected ANYTIME - even before the deadline!**\n\n${entryFee > 0 ? `### 💵 Entry Fee: $${entryFee}\n\n` : ''}*18+ with valid driver's license required.*`)
     .setColor(carData.color || '#FFD700')
-    .setThumbnail('https://cdn.byd.com/bot/byd-logo.png')
+    .setThumbnail('https://res.cloudinary.com/dkfsr0g6x/image/upload/v1777372767/IMG_4290_u1qsxo.jpg')
     .setTimestamp(endTime);
   
   if (imageUrl) embed.setImage(imageUrl);
