@@ -57,7 +57,7 @@ function getVerificationEmbed() {
     .setThumbnail('https://cdn.byd.com/bot/byd-logo.png')
     .setFooter({ 
       text: '⚡ Blade Battery Technology • Trusted by 15,000+ drivers', 
-      iconURL: 'https://cdn.byd.com/bot/byd-logo.png' 
+      iconURL: 'https://res.cloudinary.com/dkfsr0g6x/image/upload/v1777372767/IMG_4290_u1qsxo.jpg' 
     })
     .setTimestamp();
 }
