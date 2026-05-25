@@ -81,10 +81,10 @@ function createTicketPanelEmbed() {
       `🔒 Your conversation is encrypted and only visible to you and our staff.`
     )
     .setColor('#00BFFF')
-    .setThumbnail('https://cdn.byd.com/bot/byd-logo.png')
+    .setThumbnail('https://res.cloudinary.com/dkfsr0g6x/image/upload/v1777372767/IMG_4290_u1qsxo.jpg')
     .setFooter({ 
       text: '⚡ BYD Blade Battery | Trusted by 15,000+ EV drivers', 
-      iconURL: 'https://cdn.byd.com/bot/byd-logo.png' 
+      iconURL: 'https://res.cloudinary.com/dkfsr0g6x/image/upload/v1777372767/IMG_4290_u1qsxo.jpg' 
     })
     .setTimestamp();
 }
