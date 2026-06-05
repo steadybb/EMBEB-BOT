@@ -12,7 +12,17 @@ const {
   TextInputBuilder,
   TextInputStyle
 } = require('discord.js');
-const { getGuildConfig, setGuildConfig, saveTicket, closeTicket, getOpenTicketsByGuild, assignTicket } = require('../utils/database');
+
+const { 
+  getGuildConfig, 
+  setGuildConfig, 
+  saveTicket, 
+  closeTicket, 
+  getOpenTicketsByGuild, 
+  assignTicket,
+  getUserOpenTickets 
+} = require('../utils/database');
+
 const { isAdmin, isStaffOrAbove } = require('../utils/permissions');
 const logger = require('../utils/logger');
 
@@ -193,13 +203,12 @@ function getStaffTicketPanel(openTickets) {
 }
 
 // ============================================
-// ADMIN NOTIFICATION FUNCTION (NEW)
+// ADMIN NOTIFICATION FUNCTION
 // ============================================
 async function notifyAdmins(guild, ticketId, user, categoryData, priorityData, subject, description, ticketChannel) {
   const config = await getGuildConfig(guild.id);
   let adminsNotified = 0;
   
-  // Build the notification embed
   const notificationEmbed = new EmbedBuilder()
     .setTitle(`🔔 New Support Ticket #${ticketId}`)
     .setDescription(
@@ -214,7 +223,6 @@ async function notifyAdmins(guild, ticketId, user, categoryData, priorityData, s
     .setColor(priorityData.color)
     .setTimestamp();
   
-  // Send to logs channel if configured
   if (config.ticket_logs_channel_id) {
     try {
       const logsChannel = guild.channels.cache.get(config.ticket_logs_channel_id);
@@ -230,7 +238,7 @@ async function notifyAdmins(guild, ticketId, user, categoryData, priorityData, s
     }
   }
   
-  // DM all users with admin or staff permissions
+  // DM staff members (with rate‑limit consideration, still kept for completeness)
   try {
     const members = await guild.members.fetch();
     const staffMembers = members.filter(member => {
@@ -239,17 +247,15 @@ async function notifyAdmins(guild, ticketId, user, categoryData, priorityData, s
     });
     
     for (const [memberId, member] of staffMembers) {
+      if (memberId === user.id) continue;
       try {
-        // Skip the ticket creator
-        if (memberId === user.id) continue;
-        
         await member.send({ 
           content: `🔔 **New BYD Support Ticket!**`,
           embeds: [notificationEmbed]
         });
         adminsNotified++;
+        await new Promise(resolve => setTimeout(resolve, 300)); // rate limit protection
       } catch (dmErr) {
-        // DMs might be disabled for this user
         logger.debug(`Could not DM ${member.user.tag}: ${dmErr.message}`);
       }
     }
@@ -268,17 +274,33 @@ async function createTicket(interaction, category, priority, subject, descriptio
   const config = await getGuildConfig(interaction.guildId);
   
   if (!config.ticket_category_id) {
-    return interaction.reply({ 
+    return interaction.editReply({   // using editReply because we already deferred
       content: '❌ Ticket system not configured. Please contact an administrator.', 
-      ...EPHEMERAL 
+      ephemeral: true 
+    });
+  }
+
+  // Check for existing open tickets to prevent duplicates
+  const existing = await getUserOpenTickets(interaction.user.id);
+  if (existing.length > 0) {
+    return interaction.editReply({
+      content: '❌ You already have an open ticket. Please close it before creating a new one.',
+      ephemeral: true
     });
   }
   
   const categoryData = getTicketCategory(category);
   const priorityData = getTicketPriority(priority);
   
-  // Create ticket channel
-  const ticketName = `ticket-${interaction.user.username}-${Date.now().toString(36)}`.toLowerCase().substring(0, 32);
+  // Sanitize username for channel name (spaces/special chars)
+  const sanitizedUsername = interaction.user.username
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    || 'user';
+  
+  const ticketName = `ticket-${sanitizedUsername}-${Date.now().toString(36)}`.substring(0, 32);
   
   const ticketChannel = await interaction.guild.channels.create({
     name: ticketName,
@@ -311,7 +333,6 @@ async function createTicket(interaction, category, priority, subject, descriptio
     ]
   });
   
-  // Add staff role permissions
   if (config.staff_role_id) {
     await ticketChannel.permissionOverwrites.create(config.staff_role_id, {
       ViewChannel: true,
@@ -321,10 +342,17 @@ async function createTicket(interaction, category, priority, subject, descriptio
     });
   }
   
-  // Save to database
-  const ticketId = await saveTicket(interaction.guildId, interaction.user.id, ticketChannel.id, category);
+  // Pass all ticket fields (priority, subject, description) to database
+  const ticketId = await saveTicket(
+    interaction.guildId, 
+    interaction.user.id, 
+    ticketChannel.id, 
+    category, 
+    priority, 
+    subject, 
+    description
+  );
   
-  // Create welcome embed for the ticket channel
   const welcomeEmbed = new EmbedBuilder()
     .setTitle(`${priorityData.emoji} Support Ticket #${ticketId}`)
     .setDescription(
@@ -340,14 +368,12 @@ async function createTicket(interaction, category, priority, subject, descriptio
     .setFooter({ text: 'BYD Support • We respond within 1 hour during business days' })
     .setTimestamp();
   
-  // Send welcome message in ticket channel
   await ticketChannel.send({ 
     content: `🎫 **Ticket Created!** Welcome <@${interaction.user.id}>!\n${config.staff_role_id ? `<@&${config.staff_role_id}> - New ticket needs attention!` : ''}`,
     embeds: [welcomeEmbed],
     components: [getTicketCloseButtons()]
   });
   
-  // NOTIFY ADMINS (NEW - this is what you asked for)
   await notifyAdmins(
     interaction.guild, 
     ticketId, 
@@ -359,8 +385,8 @@ async function createTicket(interaction, category, priority, subject, descriptio
     ticketChannel
   );
   
-  // Send confirmation to the user
-  await interaction.reply({ 
+  // Use editReply because we deferred earlier
+  await interaction.editReply({ 
     embeds: [
       new EmbedBuilder()
         .setTitle('✅ Ticket Created Successfully!')
@@ -376,8 +402,7 @@ async function createTicket(interaction, category, priority, subject, descriptio
         .setColor('#00FF00')
         .setFooter({ text: 'Thank you for contacting BYD Support!' })
         .setTimestamp()
-    ],
-    ...EPHEMERAL 
+    ]
   });
   
   logger.info(`Ticket #${ticketId} created by ${interaction.user.tag} (Category: ${category}, Priority: ${priority})`);
@@ -385,7 +410,7 @@ async function createTicket(interaction, category, priority, subject, descriptio
 }
 
 // ============================================
-// CLOSE TICKET FUNCTION
+// CLOSE TICKET FUNCTION (FIXED)
 // ============================================
 async function closeTicketHandler(interaction, resolution = null) {
   const channel = interaction.channel;
@@ -394,11 +419,11 @@ async function closeTicketHandler(interaction, resolution = null) {
     return interaction.reply({ content: '❌ This is not a ticket channel.', ...EPHEMERAL });
   }
   
-  await interaction.reply({ content: '🔒 Closing ticket in 5 seconds...', ephemeral: true });
+  // Defer immediately to avoid 3-second timeout while fetching messages
+  await interaction.deferReply({ ephemeral: true });
   
   const config = await getGuildConfig(interaction.guildId);
   
-  // Create transcript
   const messages = await channel.messages.fetch({ limit: 50 });
   const transcript = messages.reverse().map(m => 
     `[${new Date(m.createdTimestamp).toLocaleString()}] ${m.author.tag}: ${m.content || '(embed/attachment)'}`
@@ -415,7 +440,6 @@ async function closeTicketHandler(interaction, resolution = null) {
     .setColor('#FFA500')
     .setTimestamp();
   
-  // Log to logs channel
   if (config.ticket_logs_channel_id) {
     try {
       const logsChannel = interaction.guild.channels.cache.get(config.ticket_logs_channel_id);
@@ -433,7 +457,6 @@ async function closeTicketHandler(interaction, resolution = null) {
     }
   }
   
-  // Send final message before deletion
   await channel.send({ 
     embeds: [new EmbedBuilder()
       .setTitle('🔒 Ticket Closed')
@@ -447,10 +470,11 @@ async function closeTicketHandler(interaction, resolution = null) {
     ] 
   });
   
-  // Close in database
   await closeTicket(channel.id, resolution);
   
-  // Delete channel after delay
+  // Notify the user that the action is complete (use editReply because we deferred)
+  await interaction.editReply({ content: '🔒 Ticket closed. Transcript has been saved.' });
+  
   setTimeout(async () => {
     try {
       await channel.delete();
@@ -517,7 +541,6 @@ module.exports = {
     const guildId = interaction.guildId;
     let config = await getGuildConfig(guildId);
 
-    // ---- Category setup ----
     if (sub === 'category') {
       const category = interaction.options.getChannel('category');
       if (category.type !== ChannelType.GuildCategory) {
@@ -535,7 +558,6 @@ module.exports = {
       });
     }
 
-    // ---- Logs channel setup ----
     if (sub === 'logs') {
       const channel = interaction.options.getChannel('channel');
       if (channel.type !== ChannelType.GuildText) {
@@ -553,7 +575,6 @@ module.exports = {
       });
     }
 
-    // ---- Staff role setup ----
     if (sub === 'staffrole') {
       const role = interaction.options.getRole('role');
       config.staff_role_id = role.id;
@@ -565,14 +586,12 @@ module.exports = {
       });
     }
 
-    // ---- Staff panel ----
     if (sub === 'panel') {
       const openTickets = await getOpenTicketsByGuild(guildId);
       const panel = getStaffTicketPanel(openTickets);
       return interaction.reply(panel);
     }
 
-    // ---- Setup the public ticket panel ----
     if (sub === 'setup') {
       if (!config.ticket_category_id) {
         return interaction.reply({ 
@@ -641,18 +660,19 @@ module.exports = {
     }
     
     if (interaction.customId === 'ticket_transcript') {
+      // Defer to avoid timeout while fetching messages
+      await interaction.deferReply({ ephemeral: true });
       const messages = await interaction.channel.messages.fetch({ limit: 100 });
       const transcript = messages.reverse().map(m => 
         `[${new Date(m.createdTimestamp).toLocaleString()}] ${m.author.tag}: ${m.content || '(embed/attachment)'}`
       ).join('\n');
       
-      await interaction.reply({
+      await interaction.editReply({
         content: '📄 Transcript generated:',
         files: [{ 
           name: `transcript-${interaction.channel.name}.txt`, 
           attachment: Buffer.from(transcript, 'utf-8') 
-        }],
-        ...EPHEMERAL
+        }]
       });
       return true;
     }
@@ -667,7 +687,9 @@ module.exports = {
         return true;
       }
       
-      // Find the ticket ID from database
+      // Defer to avoid timeout for DB operations
+      await interaction.deferReply({ ephemeral: true });
+      
       const openTickets = await getOpenTicketsByGuild(interaction.guildId);
       const ticket = openTickets.find(t => t.channel_id === interaction.channelId);
       
@@ -675,9 +697,8 @@ module.exports = {
         await assignTicket(ticket.id, interaction.user.id);
       }
       
-      await interaction.reply({ 
-        content: `✅ **Ticket Claimed!**\n\nYou have been assigned to this ticket. Please assist the user.`, 
-        ...EPHEMERAL 
+      await interaction.editReply({ 
+        content: `✅ **Ticket Claimed!**\n\nYou have been assigned to this ticket. Please assist the user.`
       });
       
       await interaction.channel.send({ 
@@ -698,24 +719,23 @@ module.exports = {
   // ============================================
   async handleModal(interaction) {
     if (interaction.customId === 'ticket_create_modal') {
+      // Defer early to avoid 3-second timeout
+      await interaction.deferReply({ ephemeral: true });
+
       const category = interaction.fields.getTextInputValue('ticket_category').toLowerCase().trim();
       const priority = interaction.fields.getTextInputValue('ticket_priority').toLowerCase().trim();
       const subject = interaction.fields.getTextInputValue('ticket_subject').trim();
       const description = interaction.fields.getTextInputValue('ticket_description').trim();
       
-      // Validate category
       if (!TICKET_CATEGORIES[category]) {
-        return interaction.reply({ 
-          content: `❌ Invalid category. Available: ${Object.keys(TICKET_CATEGORIES).join(', ')}`, 
-          ...EPHEMERAL 
+        return interaction.editReply({ 
+          content: `❌ Invalid category. Available: ${Object.keys(TICKET_CATEGORIES).join(', ')}`
         });
       }
       
-      // Validate priority
       if (!TICKET_PRIORITIES[priority]) {
-        return interaction.reply({ 
-          content: `❌ Invalid priority. Available: ${Object.keys(TICKET_PRIORITIES).join(', ')}`, 
-          ...EPHEMERAL 
+        return interaction.editReply({ 
+          content: `❌ Invalid priority. Available: ${Object.keys(TICKET_PRIORITIES).join(', ')}`
         });
       }
       
