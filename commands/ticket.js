@@ -13,7 +13,6 @@ const {
   TextInputStyle
 } = require('discord.js');
 
-// 🔧 FIX: Import getUserOpenTickets for duplicate check
 const { 
   getGuildConfig, 
   setGuildConfig, 
@@ -275,13 +274,13 @@ async function createTicket(interaction, category, priority, subject, descriptio
   const config = await getGuildConfig(interaction.guildId);
   
   if (!config.ticket_category_id) {
-    return interaction.editReply({   // 🔧 FIX: use editReply because we already deferred
+    return interaction.editReply({   // using editReply because we already deferred
       content: '❌ Ticket system not configured. Please contact an administrator.', 
       ephemeral: true 
     });
   }
 
-  // 🔧 FIX: Check for existing open tickets to prevent duplicates
+  // Check for existing open tickets to prevent duplicates
   const existing = await getUserOpenTickets(interaction.user.id);
   if (existing.length > 0) {
     return interaction.editReply({
@@ -293,7 +292,7 @@ async function createTicket(interaction, category, priority, subject, descriptio
   const categoryData = getTicketCategory(category);
   const priorityData = getTicketPriority(priority);
   
-  // 🔧 FIX: Sanitize username for channel name (spaces/special chars)
+  // Sanitize username for channel name (spaces/special chars)
   const sanitizedUsername = interaction.user.username
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '-')
@@ -343,7 +342,7 @@ async function createTicket(interaction, category, priority, subject, descriptio
     });
   }
   
-  // 🔧 FIX: Pass all ticket fields (priority, subject, description) to database
+  // Pass all ticket fields (priority, subject, description) to database
   const ticketId = await saveTicket(
     interaction.guildId, 
     interaction.user.id, 
@@ -386,7 +385,7 @@ async function createTicket(interaction, category, priority, subject, descriptio
     ticketChannel
   );
   
-  // 🔧 FIX: Use editReply because we deferred the reply earlier
+  // Use editReply because we deferred earlier
   await interaction.editReply({ 
     embeds: [
       new EmbedBuilder()
@@ -411,7 +410,7 @@ async function createTicket(interaction, category, priority, subject, descriptio
 }
 
 // ============================================
-// CLOSE TICKET FUNCTION
+// CLOSE TICKET FUNCTION (FIXED)
 // ============================================
 async function closeTicketHandler(interaction, resolution = null) {
   const channel = interaction.channel;
@@ -420,7 +419,8 @@ async function closeTicketHandler(interaction, resolution = null) {
     return interaction.reply({ content: '❌ This is not a ticket channel.', ...EPHEMERAL });
   }
   
-  await interaction.reply({ content: '🔒 Closing ticket in 5 seconds...', ephemeral: true });
+  // Defer immediately to avoid 3-second timeout while fetching messages
+  await interaction.deferReply({ ephemeral: true });
   
   const config = await getGuildConfig(interaction.guildId);
   
@@ -471,6 +471,9 @@ async function closeTicketHandler(interaction, resolution = null) {
   });
   
   await closeTicket(channel.id, resolution);
+  
+  // Notify the user that the action is complete (use editReply because we deferred)
+  await interaction.editReply({ content: '🔒 Ticket closed. Transcript has been saved.' });
   
   setTimeout(async () => {
     try {
@@ -657,7 +660,7 @@ module.exports = {
     }
     
     if (interaction.customId === 'ticket_transcript') {
-      // 🔧 FIX: Defer to avoid timeout while fetching messages
+      // Defer to avoid timeout while fetching messages
       await interaction.deferReply({ ephemeral: true });
       const messages = await interaction.channel.messages.fetch({ limit: 100 });
       const transcript = messages.reverse().map(m => 
@@ -684,7 +687,7 @@ module.exports = {
         return true;
       }
       
-      // 🔧 FIX: Defer to avoid timeout for DB operations
+      // Defer to avoid timeout for DB operations
       await interaction.deferReply({ ephemeral: true });
       
       const openTickets = await getOpenTicketsByGuild(interaction.guildId);
@@ -716,7 +719,7 @@ module.exports = {
   // ============================================
   async handleModal(interaction) {
     if (interaction.customId === 'ticket_create_modal') {
-      // 🔧 FIX: Defer early to avoid 3-second timeout
+      // Defer early to avoid 3-second timeout
       await interaction.deferReply({ ephemeral: true });
 
       const category = interaction.fields.getTextInputValue('ticket_category').toLowerCase().trim();
