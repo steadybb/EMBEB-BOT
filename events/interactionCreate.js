@@ -34,7 +34,6 @@ const {
 } = require('../utils/database');
 
 // 🔧 FIX: Moved admin require to top to avoid inline circular dependency issues.
-// (admin.js does not require interactionCreate.js, so this is safe.)
 const { handleLeadSelect } = require('../commands/admin');
 
 // 🔧 FIX: Import the advanced ticket module handlers
@@ -71,7 +70,6 @@ function getPersonalAdvisor() {
   return getRandomItem(advisorNames);
 }
 
-// 🔧 FIX: Helper for CSV escaping
 function escapeCsvField(field) {
   if (field == null) return '';
   const str = String(field);
@@ -84,7 +82,7 @@ function escapeCsvField(field) {
 // ========== BOT INIT ==========
 module.exports = (client) => {
   client.on('interactionCreate', async (interaction) => {
-    // 🔧 FIX: Only skip if already replied. Deferred interactions can still be handled.
+    // Only skip if already replied. Deferred interactions can still be handled.
     if (interaction.replied) return;
 
     // Slash Commands
@@ -131,18 +129,23 @@ module.exports = (client) => {
 
 // ------------------------- BUTTON HANDLERS -------------------------
 async function handleButton(interaction, client) {
-  const { customId, user } = interaction;
+  let { customId, user } = interaction; // let to allow remapping
   const userId = user.id;
   let state = await getUserState(userId, user.username);
 
   logger.debug(`Button pressed: ${customId} by ${user.tag}`);
+
+  // ========== LEGACY TICKET BUTTON MAPPING ==========
+  // The old system used 'close_ticket' – map it to the new module's 'ticket_close'
+  if (customId === 'close_ticket') {
+    customId = 'ticket_close';
+  }
 
   // ========== ADVANCED TICKET SYSTEM BUTTONS (delegate to ticket.js) ==========
   if (['create_ticket', 'ticket_close', 'ticket_transcript', 'ticket_claim'].includes(customId)) {
     await ticketModule.handleButton(interaction);
     return;
   }
-  // (Old 'close_ticket' is removed – ticket module uses 'ticket_close' now)
 
   // BYD Lead Capture buttons
   if (customId === 'welcome_model_dolphin') return selectModel(interaction, 'Dolphin');
@@ -218,8 +221,8 @@ async function handleButton(interaction, client) {
   if (customId.startsWith('verify_entry_')) return handleVerifyEntry(interaction);
   if (customId.startsWith('contact_entry_')) return handleContactEntry(interaction);
   if (customId.startsWith('disqualify_entry_')) return handleDisqualifyEntry(interaction);
-  if (customId.startsWith('verified_')) return; // Already verified, ignore
-  if (customId.startsWith('disqualified_')) return; // Already disqualified, ignore
+  if (customId.startsWith('verified_')) return;
+  if (customId.startsWith('disqualified_')) return;
 
   logger.warn(`Unknown button customId: ${customId}`);
   await interaction.reply({ content: '❓ Unknown option. Use the buttons provided.', flags: MessageFlags.Ephemeral });
@@ -304,7 +307,6 @@ async function handleSelectMenu(interaction, client) {
   
   // Admin pull leads select menu
   if (customId === 'admin_select_giveaway_leads') {
-    // 🔧 FIX: Use the top-level required handleLeadSelect (no inline require)
     if (typeof handleLeadSelect === 'function') {
       return handleLeadSelect(interaction);
     } else {
@@ -672,11 +674,10 @@ async function adminPullAllLeads(interaction) {
     });
   }
 
-  // 🔧 FIX: CSV with proper escaping
   const header = 'Giveaway,User ID,Email,Phone,Entered At\n';
   let csv = header;
   for (const e of entries) {
-    const giveawayName = `"${e.car_year} BYD ${e.car_model}"`; // already quoted
+    const giveawayName = `"${e.car_year} BYD ${e.car_model}"`;
     csv += `${giveawayName},${escapeCsvField(e.user_id)},${escapeCsvField(e.user_email)},${escapeCsvField(e.user_phone)},${escapeCsvField(e.entered_at)}\n`;
   }
 
@@ -1173,7 +1174,6 @@ async function handleVerifyEntry(interaction) {
     return interaction.reply({ content: '❌ Only admins or staff can verify entries.', flags: MessageFlags.Ephemeral });
   }
   
-  // 🔧 FIX: Disable all action buttons after verification to prevent double actions
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`verified_${giveawayId}_${userId}`).setLabel('✅ Verified').setStyle(ButtonStyle.Success).setDisabled(true),
     new ButtonBuilder().setCustomId(`contact_entry_${giveawayId}_${userId}`).setLabel('📩 Contact').setStyle(ButtonStyle.Primary).setDisabled(true),
@@ -1409,7 +1409,6 @@ async function askForDateTime(interaction, locationType) {
 }
 
 async function confirmTestDrive(interaction, client, date, time, locationType) {
-  // 🔧 FIX: Immediately defer to avoid timeout, then use editReply.
   await interaction.deferUpdate();
 
   const userId = interaction.user.id;
@@ -1459,7 +1458,6 @@ async function setTradeCondition(interaction, condition) {
   const userId = interaction.user.id;
   const state = await getUserState(userId, interaction.user.username);
   const { makeModel, odometer } = state.tempData || {};
-  // 🔧 FIX: Placeholder value adjusted to a more realistic range (still placeholder)
   const estimatedValue = 5000 + Math.floor(Math.random() * 25000);
   await interaction.reply({
     content: `✅ Your ${makeModel || 'vehicle'} with ${odometer || 'N/A'} miles is rated **${condition}**. Estimated trade‑in: $${estimatedValue.toLocaleString()}. A formal offer will be sent shortly.`,
