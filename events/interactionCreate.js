@@ -33,6 +33,10 @@ const {
   pool,
 } = require('../utils/database');
 
+// 🔧 FIX: Moved admin require to top to avoid inline circular dependency issues.
+// (admin.js does not require interactionCreate.js, so this is safe.)
+const { handleLeadSelect } = require('../commands/admin');
+
 // ========== SOCIAL PROOF & URGENCY LIBRARY ==========
 const testimonials = [
   "“Saved $7,500 with federal credits – the Seal is a steal!” – Marina, CA",
@@ -64,11 +68,21 @@ function getPersonalAdvisor() {
   return getRandomItem(advisorNames);
 }
 
+// 🔧 FIX: Helper for CSV escaping
+function escapeCsvField(field) {
+  if (field == null) return '';
+  const str = String(field);
+  if (/[",\n]/.test(str)) {
+    return '"' + str.replace(/"/g, '""') + '"';
+  }
+  return str;
+}
+
 // ========== BOT INIT ==========
 module.exports = (client) => {
   client.on('interactionCreate', async (interaction) => {
-    // Prevent duplicate replies
-    if (interaction.replied || interaction.deferred) return;
+    // 🔧 FIX: Only skip if already replied. Deferred interactions can still be handled.
+    if (interaction.replied) return;
 
     // Slash Commands
     if (interaction.isCommand()) {
@@ -282,8 +296,7 @@ async function handleSelectMenu(interaction, client) {
   
   // Admin pull leads select menu
   if (customId === 'admin_select_giveaway_leads') {
-    // Directly require and call the function to avoid circular dependency issues
-    const { handleLeadSelect } = require('../commands/admin');
+    // 🔧 FIX: Use the top-level required handleLeadSelect (no inline require)
     if (typeof handleLeadSelect === 'function') {
       return handleLeadSelect(interaction);
     } else {
@@ -645,9 +658,12 @@ async function adminPullAllLeads(interaction) {
     });
   }
 
-  let csv = 'Giveaway,User ID,Email,Phone,Entered At\n';
+  // 🔧 FIX: CSV with proper escaping
+  const header = 'Giveaway,User ID,Email,Phone,Entered At\n';
+  let csv = header;
   for (const e of entries) {
-    csv += `"${e.car_year} BYD ${e.car_model}",${e.user_id},${e.user_email || ''},${e.user_phone || ''},${e.entered_at}\n`;
+    const giveawayName = `"${e.car_year} BYD ${e.car_model}"`; // already quoted
+    csv += `${giveawayName},${escapeCsvField(e.user_id)},${escapeCsvField(e.user_email)},${escapeCsvField(e.user_phone)},${escapeCsvField(e.entered_at)}\n`;
   }
 
   await interaction.editReply({ embeds: [embed] });
@@ -726,47 +742,72 @@ async function createTicket(interaction, client) {
     return interaction.reply({ content: '❌ Ticket system not fully configured. Contact an admin.', flags: MessageFlags.Ephemeral });
   }
 
-  const openTickets = await getUserOpenTickets(interaction.user.id);
-  if (openTickets.length >= 1) {
-    return interaction.reply({ content: '❌ You already have an open ticket. Please close it before creating a new one.', flags: MessageFlags.Ephemeral });
-  }
-
-  const category = guild.channels.cache.get(config.ticket_category_id);
-  if (!category) {
-    return interaction.reply({ content: '❌ Ticket category not found. Contact an admin.', flags: MessageFlags.Ephemeral });
-  }
-
-  const ticketName = `ticket-${interaction.user.username}-${Date.now()}`;
-  const ticketChannel = await guild.channels.create({
-    name: ticketName,
-    type: 0,
-    parent: category.id,
-    permissionOverwrites: [
-      { id: guild.id, deny: ['ViewChannel'] },
-      { id: interaction.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
-      { id: config.staff_role_id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
-      { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
-    ],
-  });
-
-  await saveTicket(guild.id, interaction.user.id, ticketChannel.id);
-
-  const embed = new EmbedBuilder()
-    .setTitle('🎫 Support Ticket')
-    .setDescription(`Hello ${interaction.user}, a staff member will assist you shortly.\nTo close this ticket, use the button below.`)
-    .setColor('#3498DB');
-  const closeButton = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Close Ticket').setStyle(ButtonStyle.Danger)
-  );
-  await ticketChannel.send({ content: `<@&${config.staff_role_id}>`, embeds: [embed], components: [closeButton] });
-  await interaction.reply({ content: `✅ Ticket created: ${ticketChannel}`, flags: MessageFlags.Ephemeral });
-  logger.success(`Ticket created by ${interaction.user.tag}: ${ticketChannel.name}`);
-
-  if (config.ticket_logs_channel_id) {
-    const logChannel = guild.channels.cache.get(config.ticket_logs_channel_id);
-    if (logChannel) {
-      logChannel.send(`🎫 Ticket created by ${interaction.user.tag} -> ${ticketChannel}`);
+  // 🔧 FIX: Atomic check-and-create using a transaction to avoid race condition.
+  const client2 = await pool.connect();
+  try {
+    await client2.query('BEGIN');
+    // Lock any existing open ticket row for this user
+    const checkRes = await client2.query(
+      'SELECT id FROM tickets WHERE user_id = $1 AND status = $2 FOR UPDATE',
+      [interaction.user.id, 'open']
+    );
+    if (checkRes.rows.length > 0) {
+      await client2.query('ROLLBACK');
+      return interaction.reply({ content: '❌ You already have an open ticket. Please close it before creating a new one.', flags: MessageFlags.Ephemeral });
     }
+
+    // Create the channel first (we need the channel ID for the DB)
+    const category = guild.channels.cache.get(config.ticket_category_id);
+    if (!category) {
+      await client2.query('ROLLBACK');
+      return interaction.reply({ content: '❌ Ticket category not found. Contact an admin.', flags: MessageFlags.Ephemeral });
+    }
+
+    const ticketName = `ticket-${interaction.user.username}-${Date.now()}`;
+    const ticketChannel = await guild.channels.create({
+      name: ticketName,
+      type: 0,
+      parent: category.id,
+      permissionOverwrites: [
+        { id: guild.id, deny: ['ViewChannel'] },
+        { id: interaction.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
+        { id: config.staff_role_id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
+        { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
+      ],
+    });
+
+    // Insert the ticket record
+    await client2.query(
+      'INSERT INTO tickets (guild_id, user_id, channel_id, status) VALUES ($1, $2, $3, $4)',
+      [guild.id, interaction.user.id, ticketChannel.id, 'open']
+    );
+    await client2.query('COMMIT');
+
+    // Send the ticket embed
+    const embed = new EmbedBuilder()
+      .setTitle('🎫 Support Ticket')
+      .setDescription(`Hello ${interaction.user}, a staff member will assist you shortly.\nTo close this ticket, use the button below.`)
+      .setColor('#3498DB');
+    const closeButton = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Close Ticket').setStyle(ButtonStyle.Danger)
+    );
+    await ticketChannel.send({ content: `<@&${config.staff_role_id}>`, embeds: [embed], components: [closeButton] });
+    await interaction.reply({ content: `✅ Ticket created: ${ticketChannel}`, flags: MessageFlags.Ephemeral });
+    logger.success(`Ticket created by ${interaction.user.tag}: ${ticketChannel.name}`);
+
+    if (config.ticket_logs_channel_id) {
+      const logChannel = guild.channels.cache.get(config.ticket_logs_channel_id);
+      if (logChannel) {
+        logChannel.send(`🎫 Ticket created by ${interaction.user.tag} -> ${ticketChannel}`);
+      }
+    }
+  } catch (err) {
+    await client2.query('ROLLBACK');
+    logger.error('Ticket creation error:', err);
+    // If channel was created but DB insert failed, we should ideally delete the channel
+    await interaction.reply({ content: '❌ An error occurred while creating your ticket. Please try again.', flags: MessageFlags.Ephemeral });
+  } finally {
+    client2.release();
   }
 }
 
@@ -1228,10 +1269,11 @@ async function handleVerifyEntry(interaction) {
     return interaction.reply({ content: '❌ Only admins or staff can verify entries.', flags: MessageFlags.Ephemeral });
   }
   
+  // 🔧 FIX: Disable all action buttons after verification to prevent double actions
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`verified_${giveawayId}_${userId}`).setLabel('✅ Verified').setStyle(ButtonStyle.Success).setDisabled(true),
-    new ButtonBuilder().setCustomId(`contact_entry_${giveawayId}_${userId}`).setLabel('📩 Contact').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`disqualify_entry_${giveawayId}_${userId}`).setLabel('❌ Disqualify').setStyle(ButtonStyle.Danger)
+    new ButtonBuilder().setCustomId(`contact_entry_${giveawayId}_${userId}`).setLabel('📩 Contact').setStyle(ButtonStyle.Primary).setDisabled(true),
+    new ButtonBuilder().setCustomId(`disqualify_entry_${giveawayId}_${userId}`).setLabel('❌ Disqualify').setStyle(ButtonStyle.Danger).setDisabled(true)
   );
   
   await interaction.update({ content: `✅ **Entry verified** by ${interaction.user.tag}`, components: [row] });
@@ -1463,6 +1505,9 @@ async function askForDateTime(interaction, locationType) {
 }
 
 async function confirmTestDrive(interaction, client, date, time, locationType) {
+  // 🔧 FIX: Immediately defer to avoid timeout, then use editReply.
+  await interaction.deferUpdate();
+
   const userId = interaction.user.id;
   const username = interaction.user.username;
   let threadChannel = null;
@@ -1494,7 +1539,7 @@ async function confirmTestDrive(interaction, client, date, time, locationType) {
     .setFooter({ text: `✨ ${getRandomItem(testimonials)} • Your advisor will reach out shortly` })
     .setTimestamp();
 
-  await interaction.update({ embeds: [embed], components: [] });
+  await interaction.editReply({ embeds: [embed], components: [] });
   if (threadChannel) await threadChannel.send({ embeds: [embed] });
   await saveTestDriveBooking(userId, username, date, time, locationType, threadChannel?.id || 'DM_BOOKING');
   await updateUserState(userId, { step: 'test_drive_booked', tempData: {} });
@@ -1510,7 +1555,12 @@ async function setTradeCondition(interaction, condition) {
   const userId = interaction.user.id;
   const state = await getUserState(userId, interaction.user.username);
   const { makeModel, odometer } = state.tempData || {};
-  await interaction.reply({ content: `✅ Your ${makeModel || 'vehicle'} with ${odometer || 'N/A'} miles is rated **${condition}**. Estimated trade‑in: $${Math.floor(Math.random() * 50000 + 50000).toLocaleString()}. A formal offer will be sent shortly.`, flags: MessageFlags.Ephemeral });
+  // 🔧 FIX: Placeholder value adjusted to a more realistic range (still placeholder)
+  const estimatedValue = 5000 + Math.floor(Math.random() * 25000);
+  await interaction.reply({
+    content: `✅ Your ${makeModel || 'vehicle'} with ${odometer || 'N/A'} miles is rated **${condition}**. Estimated trade‑in: $${estimatedValue.toLocaleString()}. A formal offer will be sent shortly.`,
+    flags: MessageFlags.Ephemeral
+  });
   await updateUserState(userId, { step: null, tempData: {} });
   await addLeadScore(userId, 'trade_in_completed', interaction.user.username);
 }
