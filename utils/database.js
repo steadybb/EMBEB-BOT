@@ -128,7 +128,7 @@ async function initDatabase() {
       updated_at TIMESTAMP DEFAULT NOW()
     );
 
-    -- Ticket System
+    -- Ticket System (updated)
     CREATE TABLE IF NOT EXISTS tickets (
       id SERIAL PRIMARY KEY,
       guild_id TEXT NOT NULL,
@@ -137,11 +137,13 @@ async function initDatabase() {
       status TEXT DEFAULT 'open',
       priority TEXT DEFAULT 'normal',
       category TEXT DEFAULT 'general',
+      subject TEXT,
+      description TEXT,
       assigned_to TEXT,
+      resolution TEXT,
       transcript TEXT,
       created_at TIMESTAMP DEFAULT NOW(),
-      closed_at TIMESTAMP,
-      resolution TEXT
+      closed_at TIMESTAMP
     );
 
     -- Regular Giveaways
@@ -248,6 +250,10 @@ async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_tickets_user_id ON tickets(user_id);
     CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
     CREATE INDEX IF NOT EXISTS idx_tickets_assigned_to ON tickets(assigned_to);
+    CREATE INDEX IF NOT EXISTS idx_tickets_channel_id ON tickets(channel_id);
+    
+    -- Enforce one open ticket per user at database level
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_tickets_user_open ON tickets (user_id) WHERE status = 'open';
     
     CREATE INDEX IF NOT EXISTS idx_giveaways_message_id ON giveaways(message_id);
     CREATE INDEX IF NOT EXISTS idx_giveaways_end_time ON giveaways(end_time);
@@ -283,18 +289,21 @@ async function initDatabase() {
   // RUN ALTER STATEMENTS INDIVIDUALLY (Render compatible)
   // ============================================
   const alterStatements = [
+    // Leads
     `ALTER TABLE leads ADD COLUMN IF NOT EXISTS lead_score INTEGER DEFAULT 0`,
     `ALTER TABLE leads ADD COLUMN IF NOT EXISTS lead_stage TEXT DEFAULT 'COLD'`,
     `ALTER TABLE leads ADD COLUMN IF NOT EXISTS interactions INTEGER DEFAULT 0`,
     `ALTER TABLE leads ADD COLUMN IF NOT EXISTS session_id TEXT`,
     `ALTER TABLE leads ADD COLUMN IF NOT EXISTS session_started_at TIMESTAMP`,
     
+    // Test drive bookings
     `ALTER TABLE test_drive_bookings ADD COLUMN IF NOT EXISTS username TEXT`,
     `ALTER TABLE test_drive_bookings ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'confirmed'`,
     `ALTER TABLE test_drive_bookings ADD COLUMN IF NOT EXISTS notes TEXT`,
     `ALTER TABLE test_drive_bookings ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMP`,
     `ALTER TABLE test_drive_bookings ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP`,
     
+    // Guild config
     `ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS verify_channel_id TEXT`,
     `ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS lead_role_id TEXT`,
     `ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS auto_post_enabled BOOLEAN DEFAULT false`,
@@ -310,12 +319,16 @@ async function initDatabase() {
     `ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS admin_role_id TEXT`,
     `ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`,
     
+    // Tickets (add missing columns)
     `ALTER TABLE tickets ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'normal'`,
     `ALTER TABLE tickets ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'general'`,
+    `ALTER TABLE tickets ADD COLUMN IF NOT EXISTS subject TEXT`,
+    `ALTER TABLE tickets ADD COLUMN IF NOT EXISTS description TEXT`,
     `ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assigned_to TEXT`,
     `ALTER TABLE tickets ADD COLUMN IF NOT EXISTS resolution TEXT`,
     `ALTER TABLE tickets ADD COLUMN IF NOT EXISTS transcript TEXT`,
     
+    // Auto post logs
     `ALTER TABLE auto_post_logs ADD COLUMN IF NOT EXISTS response_time_ms INTEGER`,
   ];
 
@@ -325,11 +338,18 @@ async function initDatabase() {
       await pool.query(stmt);
       migrationsRun++;
     } catch (err) {
-      // Silently skip - column likely already exists
       if (!err.message.includes('already exists')) {
         logger.debug(`Migration note: ${err.message}`);
       }
     }
+  }
+  
+  // Ensure the unique partial index exists (idempotent)
+  try {
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_tickets_user_open ON tickets (user_id) WHERE status = 'open'`);
+    logger.db('Partial unique index for open tickets ensured.');
+  } catch (err) {
+    logger.error('Failed to create unique index on tickets:', err.message);
   }
   
   if (migrationsRun > 0) {
@@ -649,37 +669,41 @@ async function setGuildConfig(guildId, config) {
 }
 
 // ============================================
-// TICKET SYSTEM
+// TICKET SYSTEM (UPDATED)
 // ============================================
 
-async function saveTicket(guildId, userId, channelId, category = 'general') {
+async function saveTicket(guildId, userId, channelId, category = 'general', priority = 'normal', subject = null, description = null) {
   const res = await pool.query(
-    'INSERT INTO tickets (guild_id, user_id, channel_id, category) VALUES ($1,$2,$3,$4) RETURNING id',
-    [guildId, userId, channelId, category]
+    `INSERT INTO tickets (guild_id, user_id, channel_id, category, priority, subject, description)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+    [guildId, userId, channelId, category, priority, subject, description]
   );
   return res.rows[0].id;
 }
 
 async function closeTicket(channelId, resolution = null) {
   const res = await pool.query(
-    'UPDATE tickets SET status = $1, closed_at = NOW(), resolution = $2 WHERE channel_id = $3 AND status = $4 RETURNING id',
-    ['closed', resolution, channelId, 'open']
+    `UPDATE tickets SET status = $1, closed_at = NOW(), resolution = $2
+     WHERE channel_id = $3 AND status = 'open' RETURNING id`,
+    ['closed', resolution, channelId]
   );
   return res.rows[0]?.id;
 }
 
 async function getUserOpenTickets(userId) {
   const res = await pool.query(
-    'SELECT * FROM tickets WHERE user_id = $1 AND status = $2 ORDER BY created_at DESC',
-    [userId, 'open']
+    `SELECT * FROM tickets WHERE user_id = $1 AND status = 'open'
+     ORDER BY created_at DESC`,
+    [userId]
   );
   return res.rows;
 }
 
 async function getOpenTicketsByGuild(guildId) {
   const res = await pool.query(
-    'SELECT * FROM tickets WHERE guild_id = $1 AND status = $2 ORDER BY priority DESC, created_at ASC',
-    [guildId, 'open']
+    `SELECT * FROM tickets WHERE guild_id = $1 AND status = 'open'
+     ORDER BY priority DESC, created_at ASC`,
+    [guildId]
   );
   return res.rows;
 }
