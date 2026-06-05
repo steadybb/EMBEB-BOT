@@ -37,6 +37,9 @@ const {
 // (admin.js does not require interactionCreate.js, so this is safe.)
 const { handleLeadSelect } = require('../commands/admin');
 
+// 🔧 FIX: Import the advanced ticket module handlers
+const ticketModule = require('../commands/ticket');
+
 // ========== SOCIAL PROOF & URGENCY LIBRARY ==========
 const testimonials = [
   "“Saved $7,500 with federal credits – the Seal is a steal!” – Marina, CA",
@@ -134,6 +137,13 @@ async function handleButton(interaction, client) {
 
   logger.debug(`Button pressed: ${customId} by ${user.tag}`);
 
+  // ========== ADVANCED TICKET SYSTEM BUTTONS (delegate to ticket.js) ==========
+  if (['create_ticket', 'ticket_close', 'ticket_transcript', 'ticket_claim'].includes(customId)) {
+    await ticketModule.handleButton(interaction);
+    return;
+  }
+  // (Old 'close_ticket' is removed – ticket module uses 'ticket_close' now)
+
   // BYD Lead Capture buttons
   if (customId === 'welcome_model_dolphin') return selectModel(interaction, 'Dolphin');
   if (customId === 'welcome_model_seal') return selectModel(interaction, 'Seal');
@@ -173,10 +183,8 @@ async function handleButton(interaction, client) {
   if (customId === 'need_city') return recommendCity(interaction);
   if (customId === 'need_fleet') return handleFleet(interaction);
 
-  // Verification & Ticket System
+  // Verification
   if (customId === 'verify_button') return handleVerify(interaction);
-  if (customId === 'create_ticket') return createTicket(interaction, client);
-  if (customId === 'close_ticket') return closeTicketHandler(interaction, client);
 
   // ============================================
   // ADMIN DASHBOARD BUTTONS
@@ -316,6 +324,12 @@ async function handleModal(interaction) {
   const state = await getUserState(userId, user.username);
 
   logger.debug(`Modal submitted: ${customId} by ${user.tag}`);
+
+  // ========== ADVANCED TICKET MODALS (delegate to ticket.js) ==========
+  if (['ticket_create_modal', 'ticket_close_modal'].includes(customId)) {
+    await ticketModule.handleModal(interaction);
+    return;
+  }
 
   // Trade-in modals
   if (customId === 'tradein_make_model') {
@@ -698,7 +712,7 @@ async function adminPullActiveLeads(interaction) {
   await interaction.editReply({ content: '📋 **Select a giveaway to export leads:**', components: [row] });
 }
 
-// ------------------------- VERIFICATION & TICKET FUNCTIONS -------------------------
+// ------------------------- VERIFICATION FUNCTION -------------------------
 async function handleVerify(interaction) {
   const guildId = interaction.guildId;
   const config = await getGuildConfig(guildId);
@@ -732,116 +746,6 @@ async function handleVerify(interaction) {
     logger.error('Verification error:', err);
     await interaction.reply({ content: '❌ Failed to assign role. Please contact an admin.', flags: MessageFlags.Ephemeral });
   }
-}
-
-async function createTicket(interaction, client) {
-  const guild = interaction.guild;
-  const config = await getGuildConfig(guild.id);
-
-  if (!config.ticket_category_id || !config.staff_role_id) {
-    return interaction.reply({ content: '❌ Ticket system not fully configured. Contact an admin.', flags: MessageFlags.Ephemeral });
-  }
-
-  // 🔧 FIX: Atomic check-and-create using a transaction to avoid race condition.
-  const client2 = await pool.connect();
-  try {
-    await client2.query('BEGIN');
-    // Lock any existing open ticket row for this user
-    const checkRes = await client2.query(
-      'SELECT id FROM tickets WHERE user_id = $1 AND status = $2 FOR UPDATE',
-      [interaction.user.id, 'open']
-    );
-    if (checkRes.rows.length > 0) {
-      await client2.query('ROLLBACK');
-      return interaction.reply({ content: '❌ You already have an open ticket. Please close it before creating a new one.', flags: MessageFlags.Ephemeral });
-    }
-
-    // Create the channel first (we need the channel ID for the DB)
-    const category = guild.channels.cache.get(config.ticket_category_id);
-    if (!category) {
-      await client2.query('ROLLBACK');
-      return interaction.reply({ content: '❌ Ticket category not found. Contact an admin.', flags: MessageFlags.Ephemeral });
-    }
-
-    const ticketName = `ticket-${interaction.user.username}-${Date.now()}`;
-    const ticketChannel = await guild.channels.create({
-      name: ticketName,
-      type: 0,
-      parent: category.id,
-      permissionOverwrites: [
-        { id: guild.id, deny: ['ViewChannel'] },
-        { id: interaction.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
-        { id: config.staff_role_id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
-        { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
-      ],
-    });
-
-    // Insert the ticket record
-    await client2.query(
-      'INSERT INTO tickets (guild_id, user_id, channel_id, status) VALUES ($1, $2, $3, $4)',
-      [guild.id, interaction.user.id, ticketChannel.id, 'open']
-    );
-    await client2.query('COMMIT');
-
-    // Send the ticket embed
-    const embed = new EmbedBuilder()
-      .setTitle('🎫 Support Ticket')
-      .setDescription(`Hello ${interaction.user}, a staff member will assist you shortly.\nTo close this ticket, use the button below.`)
-      .setColor('#3498DB');
-    const closeButton = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Close Ticket').setStyle(ButtonStyle.Danger)
-    );
-    await ticketChannel.send({ content: `<@&${config.staff_role_id}>`, embeds: [embed], components: [closeButton] });
-    await interaction.reply({ content: `✅ Ticket created: ${ticketChannel}`, flags: MessageFlags.Ephemeral });
-    logger.success(`Ticket created by ${interaction.user.tag}: ${ticketChannel.name}`);
-
-    if (config.ticket_logs_channel_id) {
-      const logChannel = guild.channels.cache.get(config.ticket_logs_channel_id);
-      if (logChannel) {
-        logChannel.send(`🎫 Ticket created by ${interaction.user.tag} -> ${ticketChannel}`);
-      }
-    }
-  } catch (err) {
-    await client2.query('ROLLBACK');
-    logger.error('Ticket creation error:', err);
-    // If channel was created but DB insert failed, we should ideally delete the channel
-    await interaction.reply({ content: '❌ An error occurred while creating your ticket. Please try again.', flags: MessageFlags.Ephemeral });
-  } finally {
-    client2.release();
-  }
-}
-
-async function closeTicketHandler(interaction, client) {
-  const channel = interaction.channel;
-  if (!channel.name.startsWith('ticket-')) {
-    return interaction.reply({ content: '❌ This command can only be used inside a ticket channel.', flags: MessageFlags.Ephemeral });
-  }
-
-  const config = await getGuildConfig(interaction.guildId);
-  const staffRoleId = config.staff_role_id;
-  const isStaff = staffRoleId && interaction.member.roles.cache.has(staffRoleId);
-  const isAdminUser = interaction.member.permissions.has('Administrator');
-
-  if (!isStaff && !isAdminUser) {
-    return interaction.reply({ content: '❌ Only staff members or admins can close tickets.', flags: MessageFlags.Ephemeral });
-  }
-
-  await interaction.reply('🔒 Closing ticket in 5 seconds...');
-  logger.info(`Ticket ${channel.name} will be closed by ${interaction.user.tag}`);
-
-  setTimeout(async () => {
-    try {
-      await closeTicket(channel.id);
-      if (config.ticket_logs_channel_id) {
-        const logChannel = interaction.guild.channels.cache.get(config.ticket_logs_channel_id);
-        if (logChannel) logChannel.send(`🔒 Ticket closed: ${channel.name}`);
-      }
-      await channel.delete();
-      logger.success(`Ticket ${channel.name} closed and deleted`);
-    } catch (err) {
-      logger.error('Error closing ticket:', err);
-    }
-  }, 5000);
 }
 
 // ------------------------- ADMIN DASHBOARD INTERFACE -------------------------
