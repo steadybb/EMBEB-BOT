@@ -33,12 +33,6 @@ const {
   pool,
 } = require('../utils/database');
 
-// 🔧 FIX: Moved admin require to top to avoid inline circular dependency issues.
-const { handleLeadSelect } = require('../commands/admin');
-
-// 🔧 FIX: Import the advanced ticket module handlers
-const ticketModule = require('../commands/ticket');
-
 // ========== SOCIAL PROOF & URGENCY LIBRARY ==========
 const testimonials = [
   "“Saved $7,500 with federal credits – the Seal is a steal!” – Marina, CA",
@@ -70,20 +64,11 @@ function getPersonalAdvisor() {
   return getRandomItem(advisorNames);
 }
 
-function escapeCsvField(field) {
-  if (field == null) return '';
-  const str = String(field);
-  if (/[",\n]/.test(str)) {
-    return '"' + str.replace(/"/g, '""') + '"';
-  }
-  return str;
-}
-
 // ========== BOT INIT ==========
 module.exports = (client) => {
   client.on('interactionCreate', async (interaction) => {
-    // Only skip if already replied. Deferred interactions can still be handled.
-    if (interaction.replied) return;
+    // Prevent duplicate replies
+    if (interaction.replied || interaction.deferred) return;
 
     // Slash Commands
     if (interaction.isCommand()) {
@@ -129,23 +114,11 @@ module.exports = (client) => {
 
 // ------------------------- BUTTON HANDLERS -------------------------
 async function handleButton(interaction, client) {
-  let { customId, user } = interaction; // let to allow remapping
+  const { customId, user } = interaction;
   const userId = user.id;
   let state = await getUserState(userId, user.username);
 
   logger.debug(`Button pressed: ${customId} by ${user.tag}`);
-
-  // ========== LEGACY TICKET BUTTON MAPPING ==========
-  // The old system used 'close_ticket' – map it to the new module's 'ticket_close'
-  if (customId === 'close_ticket') {
-    customId = 'ticket_close';
-  }
-
-  // ========== ADVANCED TICKET SYSTEM BUTTONS (delegate to ticket.js) ==========
-  if (['create_ticket', 'ticket_close', 'ticket_transcript', 'ticket_claim'].includes(customId)) {
-    await ticketModule.handleButton(interaction);
-    return;
-  }
 
   // BYD Lead Capture buttons
   if (customId === 'welcome_model_dolphin') return selectModel(interaction, 'Dolphin');
@@ -186,8 +159,10 @@ async function handleButton(interaction, client) {
   if (customId === 'need_city') return recommendCity(interaction);
   if (customId === 'need_fleet') return handleFleet(interaction);
 
-  // Verification
+  // Verification & Ticket System
   if (customId === 'verify_button') return handleVerify(interaction);
+  if (customId === 'create_ticket') return createTicket(interaction, client);
+  if (customId === 'close_ticket') return closeTicketHandler(interaction, client);
 
   // ============================================
   // ADMIN DASHBOARD BUTTONS
@@ -221,8 +196,8 @@ async function handleButton(interaction, client) {
   if (customId.startsWith('verify_entry_')) return handleVerifyEntry(interaction);
   if (customId.startsWith('contact_entry_')) return handleContactEntry(interaction);
   if (customId.startsWith('disqualify_entry_')) return handleDisqualifyEntry(interaction);
-  if (customId.startsWith('verified_')) return;
-  if (customId.startsWith('disqualified_')) return;
+  if (customId.startsWith('verified_')) return; // Already verified, ignore
+  if (customId.startsWith('disqualified_')) return; // Already disqualified, ignore
 
   logger.warn(`Unknown button customId: ${customId}`);
   await interaction.reply({ content: '❓ Unknown option. Use the buttons provided.', flags: MessageFlags.Ephemeral });
@@ -307,6 +282,8 @@ async function handleSelectMenu(interaction, client) {
   
   // Admin pull leads select menu
   if (customId === 'admin_select_giveaway_leads') {
+    // Directly require and call the function to avoid circular dependency issues
+    const { handleLeadSelect } = require('../commands/admin');
     if (typeof handleLeadSelect === 'function') {
       return handleLeadSelect(interaction);
     } else {
@@ -326,12 +303,6 @@ async function handleModal(interaction) {
   const state = await getUserState(userId, user.username);
 
   logger.debug(`Modal submitted: ${customId} by ${user.tag}`);
-
-  // ========== ADVANCED TICKET MODALS (delegate to ticket.js) ==========
-  if (['ticket_create_modal', 'ticket_close_modal'].includes(customId)) {
-    await ticketModule.handleModal(interaction);
-    return;
-  }
 
   // Trade-in modals
   if (customId === 'tradein_make_model') {
@@ -674,11 +645,9 @@ async function adminPullAllLeads(interaction) {
     });
   }
 
-  const header = 'Giveaway,User ID,Email,Phone,Entered At\n';
-  let csv = header;
+  let csv = 'Giveaway,User ID,Email,Phone,Entered At\n';
   for (const e of entries) {
-    const giveawayName = `"${e.car_year} BYD ${e.car_model}"`;
-    csv += `${giveawayName},${escapeCsvField(e.user_id)},${escapeCsvField(e.user_email)},${escapeCsvField(e.user_phone)},${escapeCsvField(e.entered_at)}\n`;
+    csv += `"${e.car_year} BYD ${e.car_model}",${e.user_id},${e.user_email || ''},${e.user_phone || ''},${e.entered_at}\n`;
   }
 
   await interaction.editReply({ embeds: [embed] });
@@ -713,7 +682,7 @@ async function adminPullActiveLeads(interaction) {
   await interaction.editReply({ content: '📋 **Select a giveaway to export leads:**', components: [row] });
 }
 
-// ------------------------- VERIFICATION FUNCTION -------------------------
+// ------------------------- VERIFICATION & TICKET FUNCTIONS -------------------------
 async function handleVerify(interaction) {
   const guildId = interaction.guildId;
   const config = await getGuildConfig(guildId);
@@ -747,6 +716,91 @@ async function handleVerify(interaction) {
     logger.error('Verification error:', err);
     await interaction.reply({ content: '❌ Failed to assign role. Please contact an admin.', flags: MessageFlags.Ephemeral });
   }
+}
+
+async function createTicket(interaction, client) {
+  const guild = interaction.guild;
+  const config = await getGuildConfig(guild.id);
+
+  if (!config.ticket_category_id || !config.staff_role_id) {
+    return interaction.reply({ content: '❌ Ticket system not fully configured. Contact an admin.', flags: MessageFlags.Ephemeral });
+  }
+
+  const openTickets = await getUserOpenTickets(interaction.user.id);
+  if (openTickets.length >= 1) {
+    return interaction.reply({ content: '❌ You already have an open ticket. Please close it before creating a new one.', flags: MessageFlags.Ephemeral });
+  }
+
+  const category = guild.channels.cache.get(config.ticket_category_id);
+  if (!category) {
+    return interaction.reply({ content: '❌ Ticket category not found. Contact an admin.', flags: MessageFlags.Ephemeral });
+  }
+
+  const ticketName = `ticket-${interaction.user.username}-${Date.now()}`;
+  const ticketChannel = await guild.channels.create({
+    name: ticketName,
+    type: 0,
+    parent: category.id,
+    permissionOverwrites: [
+      { id: guild.id, deny: ['ViewChannel'] },
+      { id: interaction.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
+      { id: config.staff_role_id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
+      { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
+    ],
+  });
+
+  await saveTicket(guild.id, interaction.user.id, ticketChannel.id);
+
+  const embed = new EmbedBuilder()
+    .setTitle('🎫 Support Ticket')
+    .setDescription(`Hello ${interaction.user}, a staff member will assist you shortly.\nTo close this ticket, use the button below.`)
+    .setColor('#3498DB');
+  const closeButton = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Close Ticket').setStyle(ButtonStyle.Danger)
+  );
+  await ticketChannel.send({ content: `<@&${config.staff_role_id}>`, embeds: [embed], components: [closeButton] });
+  await interaction.reply({ content: `✅ Ticket created: ${ticketChannel}`, flags: MessageFlags.Ephemeral });
+  logger.success(`Ticket created by ${interaction.user.tag}: ${ticketChannel.name}`);
+
+  if (config.ticket_logs_channel_id) {
+    const logChannel = guild.channels.cache.get(config.ticket_logs_channel_id);
+    if (logChannel) {
+      logChannel.send(`🎫 Ticket created by ${interaction.user.tag} -> ${ticketChannel}`);
+    }
+  }
+}
+
+async function closeTicketHandler(interaction, client) {
+  const channel = interaction.channel;
+  if (!channel.name.startsWith('ticket-')) {
+    return interaction.reply({ content: '❌ This command can only be used inside a ticket channel.', flags: MessageFlags.Ephemeral });
+  }
+
+  const config = await getGuildConfig(interaction.guildId);
+  const staffRoleId = config.staff_role_id;
+  const isStaff = staffRoleId && interaction.member.roles.cache.has(staffRoleId);
+  const isAdminUser = interaction.member.permissions.has('Administrator');
+
+  if (!isStaff && !isAdminUser) {
+    return interaction.reply({ content: '❌ Only staff members or admins can close tickets.', flags: MessageFlags.Ephemeral });
+  }
+
+  await interaction.reply('🔒 Closing ticket in 5 seconds...');
+  logger.info(`Ticket ${channel.name} will be closed by ${interaction.user.tag}`);
+
+  setTimeout(async () => {
+    try {
+      await closeTicket(channel.id);
+      if (config.ticket_logs_channel_id) {
+        const logChannel = interaction.guild.channels.cache.get(config.ticket_logs_channel_id);
+        if (logChannel) logChannel.send(`🔒 Ticket closed: ${channel.name}`);
+      }
+      await channel.delete();
+      logger.success(`Ticket ${channel.name} closed and deleted`);
+    } catch (err) {
+      logger.error('Error closing ticket:', err);
+    }
+  }, 5000);
 }
 
 // ------------------------- ADMIN DASHBOARD INTERFACE -------------------------
@@ -1176,8 +1230,8 @@ async function handleVerifyEntry(interaction) {
   
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`verified_${giveawayId}_${userId}`).setLabel('✅ Verified').setStyle(ButtonStyle.Success).setDisabled(true),
-    new ButtonBuilder().setCustomId(`contact_entry_${giveawayId}_${userId}`).setLabel('📩 Contact').setStyle(ButtonStyle.Primary).setDisabled(true),
-    new ButtonBuilder().setCustomId(`disqualify_entry_${giveawayId}_${userId}`).setLabel('❌ Disqualify').setStyle(ButtonStyle.Danger).setDisabled(true)
+    new ButtonBuilder().setCustomId(`contact_entry_${giveawayId}_${userId}`).setLabel('📩 Contact').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`disqualify_entry_${giveawayId}_${userId}`).setLabel('❌ Disqualify').setStyle(ButtonStyle.Danger)
   );
   
   await interaction.update({ content: `✅ **Entry verified** by ${interaction.user.tag}`, components: [row] });
@@ -1409,8 +1463,6 @@ async function askForDateTime(interaction, locationType) {
 }
 
 async function confirmTestDrive(interaction, client, date, time, locationType) {
-  await interaction.deferUpdate();
-
   const userId = interaction.user.id;
   const username = interaction.user.username;
   let threadChannel = null;
@@ -1442,7 +1494,7 @@ async function confirmTestDrive(interaction, client, date, time, locationType) {
     .setFooter({ text: `✨ ${getRandomItem(testimonials)} • Your advisor will reach out shortly` })
     .setTimestamp();
 
-  await interaction.editReply({ embeds: [embed], components: [] });
+  await interaction.update({ embeds: [embed], components: [] });
   if (threadChannel) await threadChannel.send({ embeds: [embed] });
   await saveTestDriveBooking(userId, username, date, time, locationType, threadChannel?.id || 'DM_BOOKING');
   await updateUserState(userId, { step: 'test_drive_booked', tempData: {} });
@@ -1458,11 +1510,7 @@ async function setTradeCondition(interaction, condition) {
   const userId = interaction.user.id;
   const state = await getUserState(userId, interaction.user.username);
   const { makeModel, odometer } = state.tempData || {};
-  const estimatedValue = 5000 + Math.floor(Math.random() * 25000);
-  await interaction.reply({
-    content: `✅ Your ${makeModel || 'vehicle'} with ${odometer || 'N/A'} miles is rated **${condition}**. Estimated trade‑in: $${estimatedValue.toLocaleString()}. A formal offer will be sent shortly.`,
-    flags: MessageFlags.Ephemeral
-  });
+  await interaction.reply({ content: `✅ Your ${makeModel || 'vehicle'} with ${odometer || 'N/A'} miles is rated **${condition}**. Estimated trade‑in: $${Math.floor(Math.random() * 50000 + 50000).toLocaleString()}. A formal offer will be sent shortly.`, flags: MessageFlags.Ephemeral });
   await updateUserState(userId, { step: null, tempData: {} });
   await addLeadScore(userId, 'trade_in_completed', interaction.user.username);
 }
