@@ -33,10 +33,7 @@ const {
   pool,
 } = require('../utils/database');
 
-// 🔧 FIX: Moved admin require to top to avoid inline circular dependency issues.
 const { handleLeadSelect } = require('../commands/admin');
-
-// 🔧 FIX: Import the advanced ticket module handlers
 const ticketModule = require('../commands/ticket');
 
 // ========== SOCIAL PROOF & URGENCY LIBRARY ==========
@@ -82,7 +79,6 @@ function escapeCsvField(field) {
 // ========== BOT INIT ==========
 module.exports = (client) => {
   client.on('interactionCreate', async (interaction) => {
-    // Only skip if already replied. Deferred interactions can still be handled.
     if (interaction.replied) return;
 
     // Slash Commands
@@ -129,23 +125,29 @@ module.exports = (client) => {
 
 // ------------------------- BUTTON HANDLERS -------------------------
 async function handleButton(interaction, client) {
-  let { customId, user } = interaction; // let to allow remapping
-  const userId = user.id;
-  let state = await getUserState(userId, user.username);
+  // Extract customId immediately, no async work
+  let { customId, user } = interaction;
 
-  logger.debug(`Button pressed: ${customId} by ${user.tag}`);
+  // Remap legacy close button before any await
+  if (customId === 'close_ticket') customId = 'ticket_close';
 
-  // ========== LEGACY TICKET BUTTON MAPPING ==========
-  // The old system used 'close_ticket' – map it to the new module's 'ticket_close'
-  if (customId === 'close_ticket') {
-    customId = 'ticket_close';
-  }
-
-  // ========== ADVANCED TICKET SYSTEM BUTTONS (delegate to ticket.js) ==========
+  // ========== IMMEDIATE TICKET DELEGATION ==========
   if (['create_ticket', 'ticket_close', 'ticket_transcript', 'ticket_claim'].includes(customId)) {
-    await ticketModule.handleButton(interaction);
+    try {
+      await ticketModule.handleButton(interaction);
+    } catch (err) {
+      logger.error(`Ticket button handler failed for ${customId}:`, err);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: '❌ An error occurred.', flags: MessageFlags.Ephemeral });
+      }
+    }
     return;
   }
+
+  // Now safe to await user state for other buttons
+  const userId = user.id;
+  let state = await getUserState(userId, user.username);
+  logger.debug(`Button pressed: ${customId} by ${user.tag}`);
 
   // BYD Lead Capture buttons
   if (customId === 'welcome_model_dolphin') return selectModel(interaction, 'Dolphin');
@@ -321,17 +323,26 @@ async function handleSelectMenu(interaction, client) {
 
 // ------------------------- MODAL HANDLERS -------------------------
 async function handleModal(interaction) {
-  const { customId, fields, user } = interaction;
+  const { customId } = interaction;   // no await
+
+  // ========== IMMEDIATE TICKET MODAL DELEGATION ==========
+  if (['ticket_create_modal', 'ticket_close_modal'].includes(customId)) {
+    try {
+      await ticketModule.handleModal(interaction);
+    } catch (err) {
+      logger.error(`Ticket modal handler failed for ${customId}:`, err);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: '❌ An error occurred.', flags: MessageFlags.Ephemeral });
+      }
+    }
+    return;
+  }
+
+  const { fields, user } = interaction;
   const userId = user.id;
   const state = await getUserState(userId, user.username);
 
   logger.debug(`Modal submitted: ${customId} by ${user.tag}`);
-
-  // ========== ADVANCED TICKET MODALS (delegate to ticket.js) ==========
-  if (['ticket_create_modal', 'ticket_close_modal'].includes(customId)) {
-    await ticketModule.handleModal(interaction);
-    return;
-  }
 
   // Trade-in modals
   if (customId === 'tradein_make_model') {
