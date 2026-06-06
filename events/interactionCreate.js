@@ -1,4 +1,3 @@
-Is this correct? .: // handlers/interactionCreate.js
 const {
   ButtonBuilder,
   ButtonStyle,
