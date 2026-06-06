@@ -121,7 +121,7 @@ function getDelay(phase, messageCount) {
 }
 
 // ============================================
-// MAIN INFINITE LOOP
+// MAIN INFINITE LOOP (FIXED)
 // ============================================
 let loopRunning = false;
 
@@ -182,20 +182,13 @@ async function runLobbyChatter(client) {
       mem.conversationPhase = 'wrapping';
     }
 
-    // ---- Persona selection (robust against broken configs) ----
+    // ---- Persona selection (robust) ----
     let personas = config.lobby_chatter_personas || defaultPersonas;
-    if (typeof personas === 'string') {
-      try { personas = JSON.parse(personas); } catch { personas = defaultPersonas; }
-    }
-    // Ensure it's an array and remove any null/undefined entries
     if (!Array.isArray(personas)) {
-      logger.warn(`Guild ${guild.id}: personas config is not an array, using defaults`);
       personas = defaultPersonas;
     } else {
-      personas = personas.filter(p => p != null);   // remove null/undefined
-      if (personas.length === 0) {
-        personas = defaultPersonas;
-      }
+      personas = personas.filter(p => p != null);
+      if (personas.length === 0) personas = defaultPersonas;
     }
 
     // Avoid same speaker twice
@@ -233,6 +226,13 @@ async function runLobbyChatter(client) {
 
         // Keep history from growing forever (max 200 messages)
         if (mem.messages.length > 200) mem.messages = mem.messages.slice(-150);
+
+        // ---- RESET AFTER WRAPPING ----
+        if (mem.conversationPhase === 'wrapping') {
+          mem.messageCount = 0;
+          mem.conversationPhase = 'opening';
+          logger.debug(`Guild ${guild.id}: conversation wrapped, resetting for next topic.`);
+        }
       }
     } catch (err) {
       logger.error(`Lobby post failed for ${guild.id}:`, err.message);
