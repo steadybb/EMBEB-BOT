@@ -68,6 +68,36 @@ function getTicketPriority(priorityId) {
 }
 
 // ============================================
+// FUZZY INPUT MATCHING
+// ============================================
+function normalizeInput(str) {
+  return str
+    .toLowerCase()
+    .trim()
+    .replace(/[_\-\s]+/g, ' ')   // collapse underscores, hyphens, spaces into a single space
+    .trim();
+}
+
+function findCategory(raw) {
+  const norm = normalizeInput(raw);
+  // Check each known category
+  for (const key of Object.keys(TICKET_CATEGORIES)) {
+    const keyNorm = normalizeInput(key);
+    if (norm === keyNorm) return key;
+  }
+  return null;
+}
+
+function findPriority(raw) {
+  const norm = normalizeInput(raw);
+  for (const key of Object.keys(TICKET_PRIORITIES)) {
+    const keyNorm = normalizeInput(key);
+    if (norm === keyNorm) return key;
+  }
+  return null;
+}
+
+// ============================================
 // TICKET PANEL EMBED
 // ============================================
 function createTicketPanelEmbed() {
@@ -110,14 +140,14 @@ function createTicketModal() {
   const categorySelect = new TextInputBuilder()
     .setCustomId('ticket_category')
     .setLabel('Issue Category')
-    .setPlaceholder('general, test_drive, sales, technical, paperwork, complaint')
+    .setPlaceholder('e.g., General, Test Drive, Sales, Technical…')
     .setStyle(TextInputStyle.Short)
     .setRequired(true);
   
   const prioritySelect = new TextInputBuilder()
     .setCustomId('ticket_priority')
-    .setLabel('Priority (low, normal, high, urgent)')
-    .setPlaceholder('normal')
+    .setLabel('Priority')
+    .setPlaceholder('e.g., Low, Normal, High, Urgent')
     .setStyle(TextInputStyle.Short)
     .setRequired(true);
   
@@ -711,28 +741,32 @@ module.exports = {
   },
   
   // ============================================
-  // MODAL HANDLERS
+  // MODAL HANDLERS (with fuzzy matching)
   // ============================================
   async handleModal(interaction) {
     if (interaction.customId === 'ticket_create_modal') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-      const category = interaction.fields.getTextInputValue('ticket_category').toLowerCase().trim();
-      const priority = interaction.fields.getTextInputValue('ticket_priority').toLowerCase().trim();
-      const subject = interaction.fields.getTextInputValue('ticket_subject').trim();
-      const description = interaction.fields.getTextInputValue('ticket_description').trim();
+      const rawCategory = interaction.fields.getTextInputValue('ticket_category');
+      const rawPriority = interaction.fields.getTextInputValue('ticket_priority');
       
-      if (!TICKET_CATEGORIES[category]) {
+      const category = findCategory(rawCategory);
+      const priority = findPriority(rawPriority);
+      
+      if (!category) {
         return interaction.editReply({ 
           content: `❌ Invalid category. Available: ${Object.keys(TICKET_CATEGORIES).join(', ')}`
         });
       }
       
-      if (!TICKET_PRIORITIES[priority]) {
+      if (!priority) {
         return interaction.editReply({ 
           content: `❌ Invalid priority. Available: ${Object.keys(TICKET_PRIORITIES).join(', ')}`
         });
       }
+      
+      const subject = interaction.fields.getTextInputValue('ticket_subject').trim();
+      const description = interaction.fields.getTextInputValue('ticket_description').trim();
       
       await createTicket(interaction, category, priority, subject, description);
       return true;
