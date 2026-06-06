@@ -410,7 +410,7 @@ async function createTicket(interaction, category, priority, subject, descriptio
 }
 
 // ============================================
-// CLOSE TICKET FUNCTION (FIXED)
+// CLOSE TICKET FUNCTION (PERMISSION CHECK ADDED)
 // ============================================
 async function closeTicketHandler(interaction, resolution = null) {
   const channel = interaction.channel;
@@ -419,8 +419,19 @@ async function closeTicketHandler(interaction, resolution = null) {
     return interaction.reply({ content: '❌ This is not a ticket channel.', ...EPHEMERAL });
   }
   
-  // Defer immediately to avoid 3-second timeout – use flags, not ephemeral
+  // Defer immediately to avoid 3‑second timeout
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  
+  // Permission check (moved here from button handler)
+  const isStaffMember = await isStaffOrAbove(interaction.member);
+  const isTicketOwner = interaction.channel.name.startsWith('ticket-') && 
+    interaction.channel.permissionsFor(interaction.user)?.has('ViewChannel');
+  
+  if (!isStaffMember && !isTicketOwner) {
+    return interaction.editReply({
+      content: '❌ Only staff members or the ticket owner can close this ticket.'
+    });
+  }
   
   const config = await getGuildConfig(interaction.guildId);
   
@@ -472,7 +483,6 @@ async function closeTicketHandler(interaction, resolution = null) {
   
   await closeTicket(channel.id, resolution);
   
-  // Notify the user that the action is complete (use editReply because we deferred)
   await interaction.editReply({ content: '🔒 Ticket closed. Transcript has been saved.' });
   
   setTimeout(async () => {
@@ -621,7 +631,7 @@ module.exports = {
   },
   
   // ============================================
-  // BUTTON HANDLERS
+  // BUTTON HANDLERS (FIXED)
   // ============================================
   async handleButton(interaction) {
     if (interaction.customId === 'create_ticket') {
@@ -631,18 +641,7 @@ module.exports = {
     }
     
     if (interaction.customId === 'ticket_close') {
-      const isStaffMember = await isStaffOrAbove(interaction.member);
-      const isTicketOwner = interaction.channel.name.startsWith('ticket-') && 
-        interaction.channel.permissionsFor(interaction.user)?.has('ViewChannel');
-      
-      if (!isStaffMember && !isTicketOwner) {
-        await interaction.reply({ 
-          content: '❌ Only staff members or the ticket owner can close this ticket.', 
-          ...EPHEMERAL 
-        });
-        return true;
-      }
-      
+      // Show modal immediately – permission checks moved to modal handler
       const modal = new ModalBuilder()
         .setCustomId('ticket_close_modal')
         .setTitle('Close Ticket');
@@ -660,7 +659,6 @@ module.exports = {
     }
     
     if (interaction.customId === 'ticket_transcript') {
-      // Defer to avoid timeout while fetching messages
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const messages = await interaction.channel.messages.fetch({ limit: 100 });
       const transcript = messages.reverse().map(m => 
@@ -678,17 +676,15 @@ module.exports = {
     }
     
     if (interaction.customId === 'ticket_claim') {
+      // Defer first, then check permissions
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      
       const isStaffMember = await isStaffOrAbove(interaction.member);
       if (!isStaffMember) {
-        await interaction.reply({ 
-          content: '❌ Only staff members can claim tickets.', 
-          ...EPHEMERAL 
+        return interaction.editReply({
+          content: '❌ Only staff members can claim tickets.'
         });
-        return true;
       }
-      
-      // Defer to avoid timeout for DB operations
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       
       const openTickets = await getOpenTicketsByGuild(interaction.guildId);
       const ticket = openTickets.find(t => t.channel_id === interaction.channelId);
@@ -697,11 +693,11 @@ module.exports = {
         await assignTicket(ticket.id, interaction.user.id);
       }
       
-      await interaction.editReply({ 
+      await interaction.editReply({
         content: `✅ **Ticket Claimed!**\n\nYou have been assigned to this ticket. Please assist the user.`
       });
       
-      await interaction.channel.send({ 
+      await interaction.channel.send({
         embeds: [new EmbedBuilder()
           .setDescription(`👑 **${interaction.user.tag}** has claimed this ticket and will assist you shortly.`)
           .setColor('#00FF00')
@@ -719,7 +715,6 @@ module.exports = {
   // ============================================
   async handleModal(interaction) {
     if (interaction.customId === 'ticket_create_modal') {
-      // Defer early to avoid 3-second timeout
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       const category = interaction.fields.getTextInputValue('ticket_category').toLowerCase().trim();
