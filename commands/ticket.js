@@ -419,8 +419,8 @@ async function closeTicketHandler(interaction, resolution = null) {
     return interaction.reply({ content: '❌ This is not a ticket channel.', ...EPHEMERAL });
   }
   
-  // Defer immediately to avoid 3-second timeout while fetching messages
-  await interaction.deferReply({ ephemeral: true });
+  // Defer immediately to avoid 3-second timeout – use flags, not ephemeral
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   
   const config = await getGuildConfig(interaction.guildId);
   
@@ -661,7 +661,7 @@ module.exports = {
     
     if (interaction.customId === 'ticket_transcript') {
       // Defer to avoid timeout while fetching messages
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const messages = await interaction.channel.messages.fetch({ limit: 100 });
       const transcript = messages.reverse().map(m => 
         `[${new Date(m.createdTimestamp).toLocaleString()}] ${m.author.tag}: ${m.content || '(embed/attachment)'}`
@@ -688,7 +688,7 @@ module.exports = {
       }
       
       // Defer to avoid timeout for DB operations
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       
       const openTickets = await getOpenTicketsByGuild(interaction.guildId);
       const ticket = openTickets.find(t => t.channel_id === interaction.channelId);
@@ -720,7 +720,7 @@ module.exports = {
   async handleModal(interaction) {
     if (interaction.customId === 'ticket_create_modal') {
       // Defer early to avoid 3-second timeout
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       const category = interaction.fields.getTextInputValue('ticket_category').toLowerCase().trim();
       const priority = interaction.fields.getTextInputValue('ticket_priority').toLowerCase().trim();
